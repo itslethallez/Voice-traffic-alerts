@@ -3,6 +3,8 @@ import { mockAlerts } from '../api/waze/__mocks__/alerts.fixture';
 import { selectAnnounceableAlerts } from '../engine/selectAlerts';
 import { createInitialAnnouncerState, submitCandidates, tick } from '../speech/announcer';
 import { configureDuckingAudioSession } from '../speech/audioSession';
+import { enabledTypesFromSettings } from '../store/settingsDefaults';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { advanceSimulatedDriver, initialSimulatedDriver } from './tripSimulator';
 
@@ -16,13 +18,19 @@ const SIMULATION_TICK_MS = 1000;
 
 /**
  * Drives the Drive screen: advances a simulated driver position, runs it
- * through the Step 4 filtering engine against the mock fixture, and
- * dispatches qualifying alerts to the Step 5 announcer. Real location
- * (Step 8) and the live API (Step 9) will replace the simulated driver
- * and the mock fixture respectively without changing this loop's shape.
+ * through the Step 4 filtering engine (with Step 7's Settings - category
+ * filter and announcement distance) against the mock fixture, and
+ * dispatches qualifying alerts to the Step 5 announcer (with Settings'
+ * voice volume/rate). Real location (Step 8) and the live API (Step 9)
+ * will replace the simulated driver and the mock fixture respectively
+ * without changing this loop's shape.
  */
 export function useDriveLoop(): void {
-  const isMuted = useTripStore((state) => state.isMuted);
+  const masterMute = useSettingsStore((state) => state.masterMute);
+  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
+  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const voiceVolume = useSettingsStore((state) => state.voiceVolume);
+  const voiceRate = useSettingsStore((state) => state.voiceRate);
   const pushAnnouncement = useTripStore((state) => state.pushAnnouncement);
 
   const driverRef = useRef(initialSimulatedDriver);
@@ -37,6 +45,7 @@ export function useDriveLoop(): void {
 
   useEffect(() => {
     let cancelled = false;
+    const enabledTypes = enabledTypesFromSettings(categoriesEnabled);
 
     const timer = setInterval(() => {
       void (async () => {
@@ -48,17 +57,21 @@ export function useDriveLoop(): void {
 
         driverRef.current = advanceSimulatedDriver(driverRef.current, elapsedMs);
 
-        if (isMuted) return;
+        if (masterMute) return;
 
         const candidates = selectAnnounceableAlerts(
           mockAlerts,
           driverRef.current,
           announcerRef.current.announcedIds,
-          now
+          now,
+          { enabledTypes, maxDistanceMeters: announceDistanceMeters }
         );
         announcerRef.current = submitCandidates(announcerRef.current, candidates);
 
-        const result = await tick(announcerRef.current, now);
+        const result = await tick(announcerRef.current, now, {
+          rate: voiceRate,
+          volume: voiceVolume,
+        });
         announcerRef.current = result.state;
         if (result.spoken) {
           pushAnnouncement(result.spoken);
@@ -70,5 +83,12 @@ export function useDriveLoop(): void {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [isMuted, pushAnnouncement]);
+  }, [
+    masterMute,
+    categoriesEnabled,
+    announceDistanceMeters,
+    voiceVolume,
+    voiceRate,
+    pushAnnouncement,
+  ]);
 }

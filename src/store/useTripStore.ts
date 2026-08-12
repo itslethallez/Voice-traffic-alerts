@@ -5,13 +5,18 @@ export type TripStatus = 'listening' | 'muted' | 'offline';
 
 const MAX_RECENT_ANNOUNCEMENTS = 3;
 
+/**
+ * Ephemeral trip state - resets on relaunch. Master mute lives in
+ * useSettingsStore.ts instead (Step 7): it's a persisted preference, not
+ * trip state, and the Drive screen's mute button and the Settings
+ * screen's master mute switch both read/write that single source of
+ * truth so they can't drift out of sync with each other.
+ */
 interface TripStoreState {
-  isMuted: boolean;
   isOffline: boolean;
   rateLimitBannerVisible: boolean;
   locationError: string | null;
   recentAnnouncements: RecentAnnouncement[];
-  toggleMute: () => void;
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
   setOffline: (offline: boolean) => void;
   setRateLimitBannerVisible: (visible: boolean) => void;
@@ -19,12 +24,10 @@ interface TripStoreState {
 }
 
 export const useTripStore = create<TripStoreState>((set) => ({
-  isMuted: false,
   isOffline: false,
   rateLimitBannerVisible: false,
   locationError: null,
   recentAnnouncements: [],
-  toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
   pushAnnouncement: (announcement) =>
     set((state) => ({
       recentAnnouncements: [announcement, ...state.recentAnnouncements].slice(
@@ -37,8 +40,8 @@ export const useTripStore = create<TripStoreState>((set) => ({
   setLocationError: (message) => set({ locationError: message }),
 }));
 
-export function statusFor(state: { isMuted: boolean; isOffline: boolean }): TripStatus {
-  if (state.isMuted) return 'muted';
+export function statusFor(state: { masterMute: boolean; isOffline: boolean }): TripStatus {
+  if (state.masterMute) return 'muted';
   if (state.isOffline) return 'offline';
   return 'listening';
 }

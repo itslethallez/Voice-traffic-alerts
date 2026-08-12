@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { formatRelativeTime } from './formatRelativeTime';
 import { useDriveLoop } from './useDriveLoop';
 
@@ -11,19 +12,19 @@ import { useDriveLoop } from './useDriveLoop';
 const ANNOUNCEMENT_OPACITY = [1, 0.6, 0.35];
 
 interface DriveScreenProps {
-  /** No-op until Step 7 builds the Settings screen and App.tsx wires real navigation. */
   onOpenSettings?: () => void;
 }
 
 export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
   useDriveLoop();
 
-  const isMuted = useTripStore((state) => state.isMuted);
+  const masterMute = useSettingsStore((state) => state.masterMute);
+  const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
+
   const isOffline = useTripStore((state) => state.isOffline);
   const rateLimitBannerVisible = useTripStore((state) => state.rateLimitBannerVisible);
   const locationError = useTripStore((state) => state.locationError);
   const recentAnnouncements = useTripStore((state) => state.recentAnnouncements);
-  const toggleMute = useTripStore((state) => state.toggleMute);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -31,7 +32,7 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
     return () => clearInterval(timer);
   }, []);
 
-  const status = statusFor({ isMuted, isOffline });
+  const status = statusFor({ masterMute, isOffline });
 
   return (
     <View style={styles.root}>
@@ -82,15 +83,15 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
         </View>
 
         <Pressable
-          onPress={toggleMute}
+          onPress={toggleMasterMute}
           style={({ pressed }) => [
             styles.muteButton,
             { backgroundColor: pressed ? colors.muteButtonActive : colors.muteButtonIdle },
           ]}
           accessibilityRole="button"
-          accessibilityLabel={isMuted ? 'Unmute alerts' : 'Mute alerts'}
+          accessibilityLabel={masterMute ? 'Unmute alerts' : 'Mute alerts'}
         >
-          <Text style={styles.muteButtonText}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+          <Text style={styles.muteButtonText}>{masterMute ? 'Unmute' : 'Mute'}</Text>
         </Pressable>
       </SafeAreaView>
     </View>

@@ -26,6 +26,18 @@ describe('isDistanceAnnounceable', () => {
     expect(isDistanceAnnounceable(0)).toBe(false);
     expect(isDistanceAnnounceable(5000)).toBe(false);
   });
+
+  it('accepts a custom upper bound (Step 7 distance slider) without changing the fixed 300m floor', () => {
+    expect(isDistanceAnnounceable(2500, 3000)).toBe(true);
+    expect(isDistanceAnnounceable(3000, 3000)).toBe(true);
+    expect(isDistanceAnnounceable(3000.001, 3000)).toBe(false);
+    expect(isDistanceAnnounceable(299.999, 3000)).toBe(false);
+  });
+
+  it('a custom bound can also be lower than the default 2000m', () => {
+    expect(isDistanceAnnounceable(600, 500)).toBe(false);
+    expect(isDistanceAnnounceable(500, 500)).toBe(true);
+  });
 });
 
 describe('isBearingAnnounceable', () => {

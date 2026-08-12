@@ -103,7 +103,7 @@ the real key server-side, and point the app at that proxy instead.
 - [x] Step 4: Polling and filtering engine
 - [x] Step 5: Speech queue and audio session config
 - [x] Step 6: Drive screen
-- [ ] Step 7: Settings screen and persistence
+- [x] Step 7: Settings screen and persistence
 - [ ] Step 8: Background location task
 - [ ] Step 9: Swap mock for live API
 

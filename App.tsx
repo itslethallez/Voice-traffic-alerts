@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { useFonts } from 'expo-font';
@@ -9,6 +10,9 @@ import {
 } from '@expo-google-fonts/archivo';
 import { colors } from './src/theme/colors';
 import { DriveScreen } from './src/screens/DriveScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
+
+type Screen = 'drive' | 'settings';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -17,6 +21,7 @@ export default function App() {
     Archivo_700Bold,
     Archivo_900Black,
   });
+  const [screen, setScreen] = useState<Screen>('drive');
 
   if (!fontsLoaded) {
     return <View style={styles.loading} />;
@@ -24,8 +29,11 @@ export default function App() {
 
   return (
     <View style={styles.root}>
-      {/* Step 7 wires real navigation to a Settings screen. */}
-      <DriveScreen onOpenSettings={() => {}} />
+      {screen === 'drive' ? (
+        <DriveScreen onOpenSettings={() => setScreen('settings')} />
+      ) : (
+        <SettingsScreen onClose={() => setScreen('drive')} />
+      )}
       <StatusBar style="light" />
     </View>
   );

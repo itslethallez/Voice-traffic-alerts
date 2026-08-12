@@ -99,4 +99,33 @@ describe('selectAnnounceableAlerts', () => {
       'wm-015',
     ]);
   });
+
+  it('respects a Settings-provided category filter', () => {
+    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now, {
+      enabledTypes: new Set(['HAZARD']),
+      maxDistanceMeters: 2000,
+    });
+    const types = new Set(result.map((r) => r.alert.type));
+    expect(types).toEqual(new Set(['HAZARD']));
+    expect(result.map((r) => r.alert.alert_id).sort()).toEqual(['wm-003', 'wm-013', 'wm-018']);
+  });
+
+  it('respects a Settings-provided announcement distance (narrower than the 2000m default)', () => {
+    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now, {
+      maxDistanceMeters: 1000,
+    });
+    const ids = result.map((r) => r.alert.alert_id).sort();
+    expect(ids).toEqual(['wm-001', 'wm-003', 'wm-010', 'wm-012', 'wm-016', 'wm-018'].sort());
+    for (const r of result) {
+      expect(r.distanceMeters).toBeLessThanOrEqual(1000);
+    }
+  });
+
+  it('respects a Settings-provided announcement distance wider than the 2000m default', () => {
+    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now, {
+      maxDistanceMeters: 3000,
+    });
+    const ids = new Set(result.map((r) => r.alert.alert_id));
+    expect(ids.has('wm-005')).toBe(true); // 2996.63m, excluded by the 2000m default, included at 3000m
+  });
 });
