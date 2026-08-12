@@ -1,19 +1,10 @@
 import type { GeoPoint } from './types';
 import { destinationPoint } from './destination';
+import { formatCorner } from './format';
 
 export interface WazeBoundingBoxParams {
   bottom_left: string;
   top_right: string;
-}
-
-/**
- * "lat,lon" - the order confirmed against real sample requests/responses
- * from the alerts-and-jams endpoint (see README's "Waze API" section).
- * Getting this order backwards doesn't error, it just silently returns
- * an empty alerts array.
- */
-function formatCorner(point: GeoPoint): string {
-  return `${point.latitude},${point.longitude}`;
 }
 
 /**

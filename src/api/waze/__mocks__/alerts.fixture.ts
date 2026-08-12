@@ -1,4 +1,5 @@
 import type { WazeAlert, WazeAlertType } from '../types';
+import { destinationPoint } from '../../../geo/destination';
 
 /**
  * 20 sample alerts shaped like a real `data.alerts` array from
@@ -7,14 +8,22 @@ import type { WazeAlert, WazeAlertType } from '../types';
  * and tested offline before Step 9 wires up the live API.
  *
  * All 20 are placed relative to a fixed reference driver position and
- * heading (see MOCK_DRIVER below) so the set exercises the exact
- * boundaries the filtering engine cares about: the 300m-2000m distance
- * window, the 45-degree bearing-from-heading window, and the 30-minute
- * staleness window. Ages are computed relative to import time, so the
- * "how many minutes old" relationship stays correct no matter when the
- * fixture is loaded. The coordinate math below is a flat-earth
- * approximation good enough for authoring fixture data - it is not the
- * app's real distance/bearing implementation, which lands in Step 3.
+ * heading (see MOCK_DRIVER below) so the set exercises the boundaries
+ * the filtering engine cares about: the 300m-2000m distance window, the
+ * 45-degree bearing-from-heading window, and the 30-minute staleness
+ * window. Ages are computed relative to import time, so the "how many
+ * minutes old" relationship stays correct no matter when the fixture is
+ * loaded. Coordinates are placed with the real geo/destination
+ * great-circle math (Step 3), which is (up to floating-point rounding)
+ * the exact inverse of haversineDistance/bearingBetween, so a spec's
+ * distanceMeters and bearingFromDriver land on very close to those
+ * values when the engine measures them back. Boundary cases deliberately
+ * sit just inside/outside a threshold (e.g. 301m, 1999m, 44.5deg) rather
+ * than exactly on it - a value placed exactly on a threshold can land on
+ * either side once the destination->haversine round-trip's own floating-
+ * point noise is added, which would make these tests flaky. The exact
+ * threshold values (300, 2000, 45, 30) are pinned with no geo round-trip
+ * involved in geo/__tests__/announceWindow.test.ts.
  */
 
 export const MOCK_DRIVER = {
@@ -24,19 +33,12 @@ export const MOCK_DRIVER = {
   heading: 0,
 };
 
-const METERS_PER_DEGREE_LAT = 111_320;
-
 function offsetPosition(distanceMeters: number, bearingDegrees: number) {
-  const bearingRad = (bearingDegrees * Math.PI) / 180;
-  const metersPerDegreeLon =
-    METERS_PER_DEGREE_LAT * Math.cos((MOCK_DRIVER.latitude * Math.PI) / 180);
-
-  return {
-    latitude:
-      MOCK_DRIVER.latitude + (distanceMeters * Math.cos(bearingRad)) / METERS_PER_DEGREE_LAT,
-    longitude:
-      MOCK_DRIVER.longitude + (distanceMeters * Math.sin(bearingRad)) / metersPerDegreeLon,
-  };
+  return destinationPoint(
+    { latitude: MOCK_DRIVER.latitude, longitude: MOCK_DRIVER.longitude },
+    distanceMeters,
+    bearingDegrees
+  );
 }
 
 interface MockAlertSpec {
@@ -66,11 +68,11 @@ const SPECS: MockAlertSpec[] = [
   { id: 'wm-008', type: 'HAZARD', subtype: 'HAZARD_ON_ROAD', distanceMeters: 1200, bearingFromDriver: 180, ageMinutes: 6, street: 'Fell St', numThumbsUp: 2, alertReliability: 6, alertConfidence: 2, note: 'directly behind - excluded by bearing' },
   { id: 'wm-009', type: 'ROAD_CLOSED', subtype: 'ROAD_CLOSED_CONSTRUCTION', distanceMeters: 1600, bearingFromDriver: -40, ageMinutes: 40, street: 'Oak St', numThumbsUp: 9, alertReliability: 8, alertConfidence: 4, note: 'stale (> 30 min) - excluded by age' },
   { id: 'wm-010', type: 'JAM', subtype: 'JAM_STAND_STILL_TRAFFIC', distanceMeters: 700, bearingFromDriver: 30, ageMinutes: 15, street: 'Divisadero St', numThumbsUp: 7, alertReliability: 7, alertConfidence: 3, note: 'ahead, in range, past 10 min - needs "reported X minutes ago"' },
-  { id: 'wm-011', type: 'POLICE', subtype: null, distanceMeters: 2000, bearingFromDriver: 0, ageMinutes: 0, street: 'Bay St', numThumbsUp: 3, alertReliability: 7, alertConfidence: 2, note: 'exactly at the far distance boundary' },
-  { id: 'wm-012', type: 'ACCIDENT', subtype: null, distanceMeters: 300, bearingFromDriver: 0, ageMinutes: 1, street: 'Union St', numThumbsUp: 6, alertReliability: 8, alertConfidence: 4, note: 'exactly at the near distance boundary' },
+  { id: 'wm-011', type: 'POLICE', subtype: null, distanceMeters: 1999, bearingFromDriver: 0, ageMinutes: 0, street: 'Bay St', numThumbsUp: 3, alertReliability: 7, alertConfidence: 2, note: 'just inside the far distance boundary (2000m is exact-boundary tested directly in geo/__tests__/announceWindow.test.ts, not via this fixture, to avoid floating-point round-trip noise)' },
+  { id: 'wm-012', type: 'ACCIDENT', subtype: null, distanceMeters: 301, bearingFromDriver: 0, ageMinutes: 1, street: 'Union St', numThumbsUp: 6, alertReliability: 8, alertConfidence: 4, note: 'just inside the near distance boundary (300m is exact-boundary tested directly in geo/__tests__/announceWindow.test.ts)' },
   { id: 'wm-013', type: 'HAZARD', subtype: 'HAZARD_ON_SHOULDER_CAR_STOPPED', distanceMeters: 1100, bearingFromDriver: 44, ageMinutes: 8, street: 'Chestnut St', numThumbsUp: 2, alertReliability: 6, alertConfidence: 2, note: 'bearing just inside the 45 degree boundary' },
   { id: 'wm-014', type: 'ROAD_CLOSED', subtype: 'ROAD_CLOSED_EVENT', distanceMeters: 1100, bearingFromDriver: 46, ageMinutes: 8, street: 'Lombard St', numThumbsUp: 4, alertReliability: 7, alertConfidence: 3, note: 'bearing just outside the 45 degree boundary - excluded' },
-  { id: 'wm-015', type: 'JAM', subtype: 'JAM_HEAVY_TRAFFIC', distanceMeters: 1300, bearingFromDriver: -45, ageMinutes: 10, street: 'Bush St', numThumbsUp: 5, alertReliability: 7, alertConfidence: 3, note: 'bearing exactly at the 45 degree boundary' },
+  { id: 'wm-015', type: 'JAM', subtype: 'JAM_HEAVY_TRAFFIC', distanceMeters: 1300, bearingFromDriver: -44.5, ageMinutes: 10, street: 'Bush St', numThumbsUp: 5, alertReliability: 7, alertConfidence: 3, note: 'bearing just inside the 45 degree boundary (45deg exact is exact-boundary tested directly in geo/__tests__/announceWindow.test.ts)' },
   { id: 'wm-016', type: 'POLICE', subtype: null, distanceMeters: 900, bearingFromDriver: 15, ageMinutes: 29, street: 'Pine St', numThumbsUp: 8, alertReliability: 9, alertConfidence: 5, note: 'just inside the 30 minute staleness boundary' },
   { id: 'wm-017', type: 'ACCIDENT', subtype: 'ACCIDENT_MINOR', distanceMeters: 900, bearingFromDriver: 15, ageMinutes: 31, street: 'Sutter St', numThumbsUp: 3, alertReliability: 6, alertConfidence: 2, note: 'just outside the 30 minute staleness boundary - excluded' },
   { id: 'wm-018', type: 'HAZARD', subtype: 'HAZARD_ON_ROAD_POT_HOLE', distanceMeters: 600, bearingFromDriver: -10, ageMinutes: 7, street: 'California St', numThumbsUp: 1, alertReliability: 5, alertConfidence: 1, note: 'ahead, in range - should announce' },
