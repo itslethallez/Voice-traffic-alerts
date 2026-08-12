@@ -50,6 +50,12 @@ Start the dev server:
 pnpm start
 ```
 
+Run the unit tests:
+
+```powershell
+pnpm test
+```
+
 ## Waze API
 
 Verified against the OpenWeb Ninja Waze API docs (`https://www.openwebninja.com/api/waze/docs`
@@ -82,7 +88,7 @@ the real key server-side, and point the app at that proxy instead.
 
 - [x] Step 1: Expo scaffold, TypeScript config, folder structure, env handling
 - [x] Step 2: Typed Waze API client + mock fixtures
-- [ ] Step 3: Geo utilities + unit tests
+- [x] Step 3: Geo utilities + unit tests
 - [ ] Step 4: Polling and filtering engine
 - [ ] Step 5: Speech queue and audio session config
 - [ ] Step 6: Drive screen
