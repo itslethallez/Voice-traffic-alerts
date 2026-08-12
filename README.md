@@ -90,7 +90,7 @@ the real key server-side, and point the app at that proxy instead.
 - [x] Step 2: Typed Waze API client + mock fixtures
 - [x] Step 3: Geo utilities + unit tests
 - [x] Step 4: Polling and filtering engine
-- [ ] Step 5: Speech queue and audio session config
+- [x] Step 5: Speech queue and audio session config
 - [ ] Step 6: Drive screen
 - [ ] Step 7: Settings screen and persistence
 - [ ] Step 8: Background location task
