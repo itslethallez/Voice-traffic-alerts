@@ -50,6 +50,23 @@ Start the dev server:
 pnpm start
 ```
 
+## Waze API
+
+Verified against the OpenWeb Ninja Waze API docs (`https://www.openwebninja.com/api/waze/docs`
+and `https://www.openwebninja.com/api/waze`), cross-checked against a verbatim sample
+response from a mirror of the same API
+(https://zylalabs.com/api-marketplace/travel/waze+alerts+and+jams+information+api/1910).
+
+- `GET https://api.openwebninja.com/waze/alerts-and-jams`
+- Auth: `x-api-key` header
+- Query params: `bottom_left`, `top_right` (each `"lat,lon"`), `max_alerts` (max 200, default 20), `max_jams` (max 800, default 20 — set to 0 to skip fetching jam segments, which this app doesn't use)
+- No server-side alert-type filter exists, so category filtering (police/accident/hazard/etc) happens client-side against the `type` field
+- Response: `{ status, request_id, parameters, data: { alerts: WazeAlert[], jams: [] } }`
+
+See `src/api/waze/types.ts` for the full typed `WazeAlert` shape and `src/api/waze/client.ts`
+for the client. `src/api/waze/__mocks__/alerts.fixture.ts` has 20 sample alerts for building
+the rest of the app offline.
+
 ## API key: this needs a proxy before public release
 
 `EXPO_PUBLIC_*` environment variables are inlined into the JavaScript bundle
@@ -64,7 +81,7 @@ the real key server-side, and point the app at that proxy instead.
 ## Build status
 
 - [x] Step 1: Expo scaffold, TypeScript config, folder structure, env handling
-- [ ] Step 2: Typed Waze API client + mock fixtures
+- [x] Step 2: Typed Waze API client + mock fixtures
 - [ ] Step 3: Geo utilities + unit tests
 - [ ] Step 4: Polling and filtering engine
 - [ ] Step 5: Speech queue and audio session config
