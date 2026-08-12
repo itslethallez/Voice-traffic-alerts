@@ -28,6 +28,17 @@ src/
   config/       Environment/config access (this step)
 ```
 
+### Simulated drive (Steps 6-7)
+
+The Drive and Settings screens are built against a simulated driver
+(`src/screens/tripSimulator.ts`) rather than real GPS: a driver position
+that advances at a constant speed along a fixed heading, run through the
+real Step 4 engine against the Step 2 mock fixture. That's what makes the
+app demoable in Expo Go before Step 8 wires up `expo-location` (foreground
+watch + background task) and Step 9 swaps the mock fixture for the live
+Waze client - neither of those steps changes the shape of the engine ->
+speech pipeline, just what feeds it.
+
 ## Setup
 
 Requires Node 22.x and pnpm. All commands below use semicolons so they work
@@ -91,7 +102,7 @@ the real key server-side, and point the app at that proxy instead.
 - [x] Step 3: Geo utilities + unit tests
 - [x] Step 4: Polling and filtering engine
 - [x] Step 5: Speech queue and audio session config
-- [ ] Step 6: Drive screen
+- [x] Step 6: Drive screen
 - [ ] Step 7: Settings screen and persistence
 - [ ] Step 8: Background location task
 - [ ] Step 9: Swap mock for live API
