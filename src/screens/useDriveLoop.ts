@@ -1,43 +1,42 @@
 import { useEffect, useRef } from 'react';
-import { mockAlerts } from '../api/waze/__mocks__/alerts.fixture';
-import { selectAnnounceableAlerts } from '../engine/selectAlerts';
-import { createInitialAnnouncerState, submitCandidates, tick } from '../speech/announcer';
+import * as Location from 'expo-location';
+import {
+  startBackgroundLocationUpdatesAsync,
+  stopBackgroundLocationUpdatesAsync,
+} from '../background/locationTask';
+import type { DriverState } from '../engine/types';
+import { BACKGROUND_DENIED_EXPLANATION, ensureLocationPermissions } from '../location/permissions';
+import { toDriverState } from '../location/toDriverState';
 import { configureDuckingAudioSession } from '../speech/audioSession';
-import { enabledTypesFromSettings } from '../store/settingsDefaults';
-import { useSettingsStore } from '../store/useSettingsStore';
+import { handleDriverUpdate, resetTripRuntime } from '../trip/tripRuntime';
 import { useTripStore } from '../store/useTripStore';
-import { advanceSimulatedDriver, initialSimulatedDriver } from './tripSimulator';
+
+const FOREGROUND_LOCATION_OPTIONS: Location.LocationOptions = {
+  accuracy: Location.Accuracy.High,
+  timeInterval: 3000,
+  /** Matches (and comfortably exceeds) engine/constants.ts's SIGNIFICANT_MOVEMENT_THRESHOLD_M
+   * assumption that the location provider is already distance-filtered. */
+  distanceInterval: 10,
+};
 
 /**
- * How often the simulated drive loop re-evaluates, not the real Waze
- * polling cadence (45s/5min from engine/constants.ts) - there's no
- * network fetch to space out yet since Step 6-7 run on the mock fixture.
- * 1s keeps the simulation feeling live for a demo.
- */
-const SIMULATION_TICK_MS = 1000;
-
-/**
- * Drives the Drive screen: advances a simulated driver position, runs it
- * through the Step 4 filtering engine (with Step 7's Settings - category
- * filter and announcement distance) against the mock fixture, and
- * dispatches qualifying alerts to the Step 5 announcer (with Settings'
- * voice volume/rate). Real location (Step 8) and the live API (Step 9)
- * will replace the simulated driver and the mock fixture respectively
- * without changing this loop's shape.
+ * Drives the Drive screen with real device location: requests foreground
+ * permission (blocking - the app can't do anything without it), then
+ * separately requests background permission (non-blocking - denied just
+ * means alerts stop when the app isn't in the foreground, noted via the
+ * banner, not a hard failure). Every position update goes through
+ * trip/tripRuntime.ts, the same shared pipeline the background location
+ * task uses, so foreground and background execution can't drift apart
+ * or double-announce.
  */
 export function useDriveLoop(): void {
-  const masterMute = useSettingsStore((state) => state.masterMute);
-  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
-  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
-  const voiceVolume = useSettingsStore((state) => state.voiceVolume);
-  const voiceRate = useSettingsStore((state) => state.voiceRate);
-  const pushAnnouncement = useTripStore((state) => state.pushAnnouncement);
+  const setLocationError = useTripStore((state) => state.setLocationError);
+  const setBannerMessage = useTripStore((state) => state.setBannerMessage);
 
-  const driverRef = useRef(initialSimulatedDriver);
-  const announcerRef = useRef(createInitialAnnouncerState());
-  const lastTickAtRef = useRef<number | null>(null);
+  const driverRef = useRef<DriverState | null>(null);
 
   useEffect(() => {
+    resetTripRuntime();
     configureDuckingAudioSession().catch((error) => {
       console.warn('[speech] failed to configure audio session', error);
     });
@@ -45,50 +44,45 @@ export function useDriveLoop(): void {
 
   useEffect(() => {
     let cancelled = false;
-    const enabledTypes = enabledTypesFromSettings(categoriesEnabled);
+    let subscription: Location.LocationSubscription | null = null;
 
-    const timer = setInterval(() => {
-      void (async () => {
-        if (cancelled) return;
+    (async () => {
+      const permissions = await ensureLocationPermissions();
+      if (cancelled) return;
 
-        const now = Date.now();
-        const elapsedMs = lastTickAtRef.current === null ? 0 : now - lastTickAtRef.current;
-        lastTickAtRef.current = now;
+      if (!permissions.foregroundGranted) {
+        setLocationError(permissions.explanation);
+        return;
+      }
+      setLocationError(null);
 
-        driverRef.current = advanceSimulatedDriver(driverRef.current, elapsedMs);
-
-        if (masterMute) return;
-
-        const candidates = selectAnnounceableAlerts(
-          mockAlerts,
-          driverRef.current,
-          announcerRef.current.announcedIds,
-          now,
-          { enabledTypes, maxDistanceMeters: announceDistanceMeters }
-        );
-        announcerRef.current = submitCandidates(announcerRef.current, candidates);
-
-        const result = await tick(announcerRef.current, now, {
-          rate: voiceRate,
-          volume: voiceVolume,
+      if (permissions.backgroundGranted) {
+        startBackgroundLocationUpdatesAsync().catch((error) => {
+          console.warn('[location] failed to start background updates', error);
         });
-        announcerRef.current = result.state;
-        if (result.spoken) {
-          pushAnnouncement(result.spoken);
-        }
-      })();
-    }, SIMULATION_TICK_MS);
+      } else {
+        setBannerMessage(BACKGROUND_DENIED_EXPLANATION);
+      }
+
+      subscription = await Location.watchPositionAsync(FOREGROUND_LOCATION_OPTIONS, (location) => {
+        const driver = toDriverState(
+          {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            heading: location.coords.heading,
+            speed: location.coords.speed,
+          },
+          driverRef.current
+        );
+        driverRef.current = driver;
+        void handleDriverUpdate(driver, Date.now());
+      });
+    })();
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      subscription?.remove();
+      stopBackgroundLocationUpdatesAsync().catch(() => {});
     };
-  }, [
-    masterMute,
-    categoriesEnabled,
-    announceDistanceMeters,
-    voiceVolume,
-    voiceRate,
-    pushAnnouncement,
-  ]);
+  }, [setLocationError, setBannerMessage]);
 }

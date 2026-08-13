@@ -24,20 +24,52 @@ src/
   speech/       TTS announcement queue and audio session setup (Step 5)
   screens/      DriveScreen, SettingsScreen (Steps 6-7)
   store/        Zustand stores (settings, trip state)
+  location/     Permission flow and LocationObject -> DriverState conversion (Step 8)
   background/   expo-task-manager background location task (Step 8)
-  config/       Environment/config access (this step)
+  trip/         Shared runtime tying location -> engine -> speech together (Step 8)
+  config/       Environment/config access (Step 1)
 ```
 
-### Simulated drive (Steps 6-7)
+### Simulated drive (Steps 6-7, replaced in Step 8)
 
-The Drive and Settings screens are built against a simulated driver
-(`src/screens/tripSimulator.ts`) rather than real GPS: a driver position
-that advances at a constant speed along a fixed heading, run through the
-real Step 4 engine against the Step 2 mock fixture. That's what makes the
-app demoable in Expo Go before Step 8 wires up `expo-location` (foreground
-watch + background task) and Step 9 swaps the mock fixture for the live
-Waze client - neither of those steps changes the shape of the engine ->
-speech pipeline, just what feeds it.
+Steps 6-7 built the Drive and Settings screens against a simulated driver
+(a position advancing at constant speed along a fixed heading) rather than
+real GPS, so the screens were demoable in Expo Go before real location
+existed. Step 8 replaced that simulation with real `expo-location`
+foreground and background tracking; the mock *alerts* fixture is still in
+use until Step 9 swaps in the live Waze client.
+
+### Real location (Step 8)
+
+`src/trip/tripRuntime.ts` is the one place a driver position turns into
+"maybe speak an alert" - it's a plain module (not a React hook or
+component), so it's reachable from both `src/screens/useDriveLoop.ts`
+(foreground: requests permission, then `Location.watchPositionAsync`) and
+`src/background/locationTask.ts` (a `TaskManager.defineTask` registered at
+module scope in `index.ts`, so the OS can run it even with no app UI
+mounted). Sharing one runtime means a trip's pending announcement queue and
+announced-alert dedupe stay consistent regardless of whether a given
+location fix arrives while the app is foregrounded or backgrounded.
+
+Permission handling (`src/location/permissions.ts`) follows the spec's two
+separate edge cases: foreground denied blocks the app entirely, with a
+one-line explanation swapped in for the status line; background denied
+still lets the app work normally in the foreground, with a small banner
+noting alerts will stop when the app isn't open. `src/location/toDriverState.ts`
+converts a raw GPS sample into the engine's `DriverState`, including a
+fallback for missing/unreliable heading (common at low speed) that derives
+a bearing from the previous position instead.
+
+**Expo Go limitation:** per expo-task-manager's own docs, `TaskManager` is
+not available on Android in Expo Go, and doesn't support background
+execution on iOS in Expo Go either - a development build is required to
+exercise the background task for real. This step's real-device/background
+behavior (permission dialogs, actual GPS, speech while backgrounded)
+couldn't be exercised in the sandboxed environment this was built in; it's
+verified as far as static analysis and `expo prebuild` go (typecheck,
+tests, a clean `expo export`, and a `expo prebuild --platform ios` run
+confirming the generated Info.plist has the right permission strings and
+`UIBackgroundModes`), not on a physical device or simulator.
 
 ## Setup
 
@@ -104,7 +136,7 @@ the real key server-side, and point the app at that proxy instead.
 - [x] Step 5: Speech queue and audio session config
 - [x] Step 6: Drive screen
 - [x] Step 7: Settings screen and persistence
-- [ ] Step 8: Background location task
+- [x] Step 8: Background location task
 - [ ] Step 9: Swap mock for live API
 
 ## Non-goals for v1

@@ -23,7 +23,18 @@
     },
     "plugins": [
       "expo-audio",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Voice Traffic Alerts uses your location, including in the background, to warn you about what is ahead on your route.",
+          "locationAlwaysPermission": "Voice Traffic Alerts uses your location, including in the background, to warn you about what is ahead on your route.",
+          "locationWhenInUsePermission": "Voice Traffic Alerts uses your location to warn you about what is ahead on your route.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
     ]
   }
 }

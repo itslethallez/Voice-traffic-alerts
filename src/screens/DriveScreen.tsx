@@ -22,7 +22,7 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
 
   const isOffline = useTripStore((state) => state.isOffline);
-  const rateLimitBannerVisible = useTripStore((state) => state.rateLimitBannerVisible);
+  const bannerMessage = useTripStore((state) => state.bannerMessage);
   const locationError = useTripStore((state) => state.locationError);
   const recentAnnouncements = useTripStore((state) => state.recentAnnouncements);
 
@@ -51,9 +51,9 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
           <Text style={styles.settingsIcon}>{'⚙'}</Text>
         </Pressable>
 
-        {rateLimitBannerVisible ? (
+        {bannerMessage ? (
           <View style={styles.banner}>
-            <Text style={styles.bannerText}>Requests are being limited. Retrying shortly.</Text>
+            <Text style={styles.bannerText}>{bannerMessage}</Text>
           </View>
         ) : null}
 

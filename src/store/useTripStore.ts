@@ -14,18 +14,22 @@ const MAX_RECENT_ANNOUNCEMENTS = 3;
  */
 interface TripStoreState {
   isOffline: boolean;
-  rateLimitBannerVisible: boolean;
+  /** Small one-line banner slot - the rate-limit notice (Step 9) or the
+   * background-location-off notice (Step 8) share this single slot,
+   * since only one is likely to be relevant at a time and the spec asks
+   * for "a small banner", not a stack of them. */
+  bannerMessage: string | null;
   locationError: string | null;
   recentAnnouncements: RecentAnnouncement[];
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
   setOffline: (offline: boolean) => void;
-  setRateLimitBannerVisible: (visible: boolean) => void;
+  setBannerMessage: (message: string | null) => void;
   setLocationError: (message: string | null) => void;
 }
 
 export const useTripStore = create<TripStoreState>((set) => ({
   isOffline: false,
-  rateLimitBannerVisible: false,
+  bannerMessage: null,
   locationError: null,
   recentAnnouncements: [],
   pushAnnouncement: (announcement) =>
@@ -36,7 +40,7 @@ export const useTripStore = create<TripStoreState>((set) => ({
       ),
     })),
   setOffline: (offline) => set({ isOffline: offline }),
-  setRateLimitBannerVisible: (visible) => set({ rateLimitBannerVisible: visible }),
+  setBannerMessage: (message) => set({ bannerMessage: message }),
   setLocationError: (message) => set({ locationError: message }),
 }));
 
