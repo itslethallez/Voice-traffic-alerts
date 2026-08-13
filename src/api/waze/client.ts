@@ -1,5 +1,6 @@
 import { env } from '../../config/env';
-import type { WazeAlertsResponse, WazeBoundingBox } from './types';
+import type { WazeBoundingBoxParams } from '../../geo/boundingBox';
+import type { WazeAlertsResponse } from './types';
 
 export class WazeApiError extends Error {
   status: number | null;
@@ -13,10 +14,6 @@ export class WazeApiError extends Error {
   }
 }
 
-function formatCorner(corner: { lat: number; lon: number }): string {
-  return `${corner.lat},${corner.lon}`;
-}
-
 export interface FetchWazeAlertsOptions {
   /** Capped at 200 by the API. Defaults to 200 (the max) per the task's "always request the max" rule. */
   maxAlerts?: number;
@@ -25,13 +22,19 @@ export interface FetchWazeAlertsOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * `box` is already in the "lat,lon" string format the endpoint expects
+ * (see geo/boundingBox.ts's WazeBoundingBoxParams) - geo/boundingBox.ts,
+ * geo/radiusBoundingBox.ts and engine/pollPlanner.ts all produce it
+ * directly, so no conversion happens here.
+ */
 export async function fetchWazeAlerts(
-  box: WazeBoundingBox,
+  box: WazeBoundingBoxParams,
   { maxAlerts = 200, maxJams = 0, signal }: FetchWazeAlertsOptions = {}
 ): Promise<WazeAlertsResponse> {
   const url = new URL('alerts-and-jams', env.wazeApiBaseUrl);
-  url.searchParams.set('bottom_left', formatCorner(box.bottomLeft));
-  url.searchParams.set('top_right', formatCorner(box.topRight));
+  url.searchParams.set('bottom_left', box.bottom_left);
+  url.searchParams.set('top_right', box.top_right);
   url.searchParams.set('max_alerts', String(maxAlerts));
   url.searchParams.set('max_jams', String(maxJams));
 

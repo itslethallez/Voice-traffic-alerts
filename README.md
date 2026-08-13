@@ -30,26 +30,46 @@ src/
   config/       Environment/config access (Step 1)
 ```
 
-### Simulated drive (Steps 6-7, replaced in Step 8)
+### Simulated drive (Steps 6-7, replaced in Step 8-9)
 
 Steps 6-7 built the Drive and Settings screens against a simulated driver
 (a position advancing at constant speed along a fixed heading) rather than
 real GPS, so the screens were demoable in Expo Go before real location
 existed. Step 8 replaced that simulation with real `expo-location`
-foreground and background tracking; the mock *alerts* fixture is still in
-use until Step 9 swaps in the live Waze client.
+foreground and background tracking, and Step 9 replaced the mock alerts
+fixture with the live Waze client - the app no longer uses simulated or
+mock data for anything at runtime. `src/api/waze/__mocks__/alerts.fixture.ts`
+is kept purely as a test fixture now.
 
-### Real location (Step 8)
+### Real location and live polling (Steps 8-9)
 
 `src/trip/tripRuntime.ts` is the one place a driver position turns into
-"maybe speak an alert" - it's a plain module (not a React hook or
-component), so it's reachable from both `src/screens/useDriveLoop.ts`
-(foreground: requests permission, then `Location.watchPositionAsync`) and
-`src/background/locationTask.ts` (a `TaskManager.defineTask` registered at
-module scope in `index.ts`, so the OS can run it even with no app UI
-mounted). Sharing one runtime means a trip's pending announcement queue and
-announced-alert dedupe stay consistent regardless of whether a given
+"maybe fetch fresh alerts, maybe speak one" - it's a plain module (not a
+React hook or component), so it's reachable from both
+`src/screens/useDriveLoop.ts` (foreground: requests permission, then
+`Location.watchPositionAsync`) and `src/background/locationTask.ts` (a
+`TaskManager.defineTask` registered at module scope in `index.ts`, so the
+OS can run it even with no app UI mounted). Sharing one runtime means a
+trip's pending announcement queue, announced-alert dedupe, movement/speed
+history and alerts cache stay consistent regardless of whether a given
 location fix arrives while the app is foregrounded or backgrounded.
+
+On every driver update, `tripRuntime` runs `engine/pollPlanner.ts`'s
+moving/stationary/paused decision (45s moving, 5 minutes stationary, pause
+after 15 minutes with no movement - Step 4's logic, only actually wired up
+to a real fetch now) to decide whether it's time to hit the live API, using
+`engine/cache.ts` to keep serving the last successful response on failure.
+`api/waze/fetchAlertsForBoundingBox.ts` re-queries as four quadrants
+(`geo/quadrants.ts`) and merges + dedupes by `alert_id`
+(`api/waze/mergeAlerts.ts`) whenever a response hits the 200-alert cap - the
+signal that an area holds more alerts than one call can return. A rate
+limit (`WazeApiError.isRateLimited`) shows the "small banner" once and
+backs off exponentially (`trip/backoff.ts`, 1 minute up to a 15 minute
+ceiling) instead of hammering the API on the normal cadence; any other
+fetch failure marks the status line "Offline" while still serving cache.
+Speaking itself (not data freshness) is also gated on master mute and on
+Step 4's `engine/speedGate.ts` sustained-low-speed check (the
+passenger/train edge case - built in Step 4 but only wired in here).
 
 Permission handling (`src/location/permissions.ts`) follows the spec's two
 separate edge cases: foreground denied blocks the app entirely, with a
@@ -137,7 +157,7 @@ the real key server-side, and point the app at that proxy instead.
 - [x] Step 6: Drive screen
 - [x] Step 7: Settings screen and persistence
 - [x] Step 8: Background location task
-- [ ] Step 9: Swap mock for live API
+- [x] Step 9: Swap mock for live API
 
 ## Non-goals for v1
 

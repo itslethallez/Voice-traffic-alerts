@@ -67,10 +67,3 @@ export interface WazeAlertsResponse {
     jams: WazeJam[];
   };
 }
-
-export interface WazeBoundingBox {
-  /** Bottom-left corner as "lat,lon" */
-  bottomLeft: { lat: number; lon: number };
-  /** Top-right corner as "lat,lon" */
-  topRight: { lat: number; lon: number };
-}
