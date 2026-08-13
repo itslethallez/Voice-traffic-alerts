@@ -3,7 +3,10 @@
  * (https://www.openwebninja.com/api/waze/docs and
  * https://www.openwebninja.com/api/waze), cross-checked against a
  * verbatim sample response from a mirror of the same API
- * (https://zylalabs.com/api-marketplace/travel/waze+alerts+and+jams+information+api/1910).
+ * (https://zylalabs.com/api-marketplace/travel/waze+alerts+and+jams+information+api/1910),
+ * and confirmed against one real live call (Step 9) - which is where
+ * `street: string | null` and the `provider`/`provider_id` fields came
+ * from, neither documented anywhere beforehand.
  *
  * `type` is known to include at least POLICE, JAM, ROAD_CLOSED and HAZARD
  * from the documented examples; ACCIDENT is the standard Waze category and
@@ -36,13 +39,17 @@ export interface WazeAlert {
   publish_datetime_utc: string;
   country: string;
   city: string;
-  street: string;
+  /** Null in practice for some real alerts (e.g. TRANSCOM-sourced ones), not always a string. */
+  street: string | null;
   latitude: number;
   longitude: number;
   num_thumbs_up: number;
   alert_reliability: number;
   alert_confidence: number;
   near_by: string | null;
+  /** Present on alerts sourced from a third-party feed (e.g. "TRANSCOM"), absent on driver-reported ones. */
+  provider?: string | null;
+  provider_id?: string | null;
   comments: WazeAlertComment[];
   num_comments: number;
 }
