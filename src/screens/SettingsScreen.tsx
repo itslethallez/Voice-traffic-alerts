@@ -3,8 +3,10 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } f
 import {
   ALERT_CATEGORIES,
   MAX_ANNOUNCE_DISTANCE_METERS,
+  MAX_BRIEFING_RADIUS_METERS,
   MAX_VOICE_RATE,
   MIN_ANNOUNCE_DISTANCE_METERS,
+  MIN_BRIEFING_RADIUS_METERS,
   MIN_VOICE_RATE,
   type AlertCategory,
 } from '../store/settingsDefaults';
@@ -28,11 +30,13 @@ interface SettingsScreenProps {
 export function SettingsScreen({ onClose }: SettingsScreenProps) {
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const briefingRadiusMeters = useSettingsStore((state) => state.briefingRadiusMeters);
   const voiceVolume = useSettingsStore((state) => state.voiceVolume);
   const voiceRate = useSettingsStore((state) => state.voiceRate);
   const masterMute = useSettingsStore((state) => state.masterMute);
   const toggleCategory = useSettingsStore((state) => state.toggleCategory);
   const setAnnounceDistanceMeters = useSettingsStore((state) => state.setAnnounceDistanceMeters);
+  const setBriefingRadiusMeters = useSettingsStore((state) => state.setBriefingRadiusMeters);
   const setVoiceVolume = useSettingsStore((state) => state.setVoiceVolume);
   const setVoiceRate = useSettingsStore((state) => state.setVoiceRate);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
@@ -78,6 +82,24 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
               maximumValue={MAX_ANNOUNCE_DISTANCE_METERS}
               step={100}
               onValueChange={setAnnounceDistanceMeters}
+              minimumTrackTintColor={colors.accent}
+              maximumTrackTintColor={colors.muteButtonIdle}
+              thumbTintColor={colors.accent}
+            />
+          </View>
+
+          <Text style={styles.sectionTitle}>Briefing radius</Text>
+          <View style={styles.card}>
+            <View style={styles.sliderHeader}>
+              <Text style={styles.rowLabel}>Brief me within</Text>
+              <Text style={styles.valueText}>{formatDistance(briefingRadiusMeters)}</Text>
+            </View>
+            <Slider
+              value={briefingRadiusMeters}
+              minimumValue={MIN_BRIEFING_RADIUS_METERS}
+              maximumValue={MAX_BRIEFING_RADIUS_METERS}
+              step={500}
+              onValueChange={setBriefingRadiusMeters}
               minimumTrackTintColor={colors.accent}
               maximumTrackTintColor={colors.muteButtonIdle}
               thumbTintColor={colors.accent}

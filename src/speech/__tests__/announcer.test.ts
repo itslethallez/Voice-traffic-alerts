@@ -2,13 +2,22 @@ import type { WazeAlert, WazeAlertType } from '../../api/waze/types';
 import type { AnnounceableAlert } from '../../engine/types';
 
 const speakAsync = jest.fn<Promise<void>, [string, Record<string, unknown>?]>();
+const stopSpeaking = jest.fn<Promise<void>, []>();
 
 jest.mock('../ttsAdapter', () => ({
   speakAsync: (...args: [string, Record<string, unknown>?]) => speakAsync(...args),
+  stopSpeaking: () => stopSpeaking(),
 }));
 
-import { createInitialAnnouncerState, submitCandidates, tick } from '../announcer';
-import { MIN_ANNOUNCEMENT_GAP_MS } from '../constants';
+const delayMock = jest.fn<Promise<void>, [number, AbortSignal?]>();
+
+jest.mock('../delay', () => ({
+  delay: (...args: [number, AbortSignal?]) => delayMock(...args),
+}));
+
+import { createInitialAnnouncerState, speakBriefing, submitCandidates, tick } from '../announcer';
+import { BRIEFING_GAP_MS, MIN_ANNOUNCEMENT_GAP_MS } from '../constants';
+import { formatBriefingAlert } from '../formatAnnouncement';
 
 function makeCandidate(id: string, type: WazeAlertType, distanceMeters = 500): AnnounceableAlert {
   const alert: WazeAlert = {
@@ -38,6 +47,10 @@ describe('announcer', () => {
   beforeEach(() => {
     speakAsync.mockReset();
     speakAsync.mockResolvedValue(undefined);
+    stopSpeaking.mockReset();
+    stopSpeaking.mockResolvedValue(undefined);
+    delayMock.mockReset();
+    delayMock.mockResolvedValue(undefined);
   });
 
   it('is a no-op when nothing is pending', async () => {
@@ -98,5 +111,134 @@ describe('announcer', () => {
 
     expect(result.spoken?.alertId).toBe('a');
     expect(result.state.queue.isSpeaking).toBe(false);
+  });
+});
+
+describe('speakBriefing', () => {
+  beforeEach(() => {
+    speakAsync.mockReset();
+    speakAsync.mockResolvedValue(undefined);
+    stopSpeaking.mockReset();
+    stopSpeaking.mockResolvedValue(undefined);
+    delayMock.mockReset();
+    delayMock.mockResolvedValue(undefined);
+  });
+
+  it('speaks candidates in the given order, not resorted by severity', async () => {
+    const state = createInitialAnnouncerState();
+    // Deliberately POLICE-then-ACCIDENT: severity would flip this order,
+    // nearest-first (already applied by the caller) should not be touched.
+    const candidates = [makeCandidate('near', 'POLICE'), makeCandidate('far', 'ACCIDENT')];
+
+    await speakBriefing(state, candidates, formatBriefingAlert);
+
+    expect(speakAsync.mock.calls[0][0]).toContain('Police');
+    expect(speakAsync.mock.calls[1][0]).toContain('Crash');
+  });
+
+  it('waits for each utterance to complete before starting the gap, and uses BRIEFING_GAP_MS by default', async () => {
+    const callOrder: string[] = [];
+    speakAsync.mockImplementation(async () => {
+      callOrder.push('speak');
+    });
+    delayMock.mockImplementation(async () => {
+      callOrder.push('gap');
+    });
+
+    const state = createInitialAnnouncerState();
+    const candidates = [makeCandidate('a', 'POLICE'), makeCandidate('b', 'JAM')];
+
+    await speakBriefing(state, candidates, formatBriefingAlert);
+
+    expect(callOrder).toEqual(['speak', 'gap', 'speak']); // no trailing gap after the last item
+    expect(delayMock).toHaveBeenCalledWith(BRIEFING_GAP_MS, undefined);
+  });
+
+  it('does not gap after the final item', async () => {
+    const state = createInitialAnnouncerState();
+    await speakBriefing(state, [makeCandidate('a', 'POLICE')], formatBriefingAlert);
+    expect(delayMock).not.toHaveBeenCalled();
+  });
+
+  it('marks each successfully spoken alert as announced, for later live-driving dedupe', async () => {
+    const state = createInitialAnnouncerState();
+    const candidates = [makeCandidate('a', 'POLICE'), makeCandidate('b', 'JAM')];
+
+    const result = await speakBriefing(state, candidates, formatBriefingAlert);
+
+    expect(result.announcedIds.has('a')).toBe(true);
+    expect(result.announcedIds.has('b')).toBe(true);
+    expect(result.recent.map((r) => r.alertId)).toEqual(['b', 'a']);
+  });
+
+  it('does not touch the live-driving queue', async () => {
+    const state = createInitialAnnouncerState();
+    const result = await speakBriefing(state, [makeCandidate('a', 'POLICE')], formatBriefingAlert);
+    expect(result.queue).toBe(state.queue);
+  });
+
+  it('reports each item via onItemSpoken as it is spoken', async () => {
+    const onItemSpoken = jest.fn();
+    const state = createInitialAnnouncerState();
+    const candidates = [makeCandidate('a', 'POLICE'), makeCandidate('b', 'JAM')];
+
+    await speakBriefing(state, candidates, formatBriefingAlert, { onItemSpoken });
+
+    expect(onItemSpoken).toHaveBeenCalledTimes(2);
+    expect(onItemSpoken.mock.calls[0][0].alertId).toBe('a');
+    expect(onItemSpoken.mock.calls[1][0].alertId).toBe('b');
+  });
+
+  it('does not mark an alert announced when TTS fails, but continues to the rest of the list', async () => {
+    speakAsync.mockRejectedValueOnce(new Error('tts failed'));
+    const state = createInitialAnnouncerState();
+    const candidates = [makeCandidate('a', 'POLICE'), makeCandidate('b', 'JAM')];
+
+    const result = await speakBriefing(state, candidates, formatBriefingAlert);
+
+    expect(result.announcedIds.has('a')).toBe(false);
+    expect(result.announcedIds.has('b')).toBe(true);
+  });
+
+  it('stops speaking and marks nothing further once the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const state = createInitialAnnouncerState();
+    const candidates = [makeCandidate('a', 'POLICE'), makeCandidate('b', 'JAM')];
+
+    const result = await speakBriefing(state, candidates, formatBriefingAlert, {
+      signal: controller.signal,
+    });
+
+    expect(speakAsync).not.toHaveBeenCalled();
+    expect(result.announcedIds.size).toBe(0);
+  });
+
+  it('cuts off mid-utterance via stopSpeaking when cancelled, and does not mark that item announced', async () => {
+    const controller = new AbortController();
+    // speakAsync "completes" (as it would once Speech.stop() fires
+    // onStopped) right as the abort happens.
+    speakAsync.mockImplementation(async () => {
+      controller.abort();
+    });
+
+    const state = createInitialAnnouncerState();
+    const candidates = [makeCandidate('a', 'POLICE'), makeCandidate('b', 'JAM')];
+
+    const result = await speakBriefing(state, candidates, formatBriefingAlert, {
+      signal: controller.signal,
+    });
+
+    expect(stopSpeaking).toHaveBeenCalled();
+    expect(result.announcedIds.has('a')).toBe(false);
+    expect(result.announcedIds.has('b')).toBe(false); // loop stopped, never reached
+    expect(speakAsync).toHaveBeenCalledTimes(1); // did not proceed to 'b'
+  });
+
+  it('is a no-op for an empty candidate list', async () => {
+    const state = createInitialAnnouncerState();
+    const result = await speakBriefing(state, [], formatBriefingAlert);
+    expect(result).toBe(state);
+    expect(speakAsync).not.toHaveBeenCalled();
   });
 });

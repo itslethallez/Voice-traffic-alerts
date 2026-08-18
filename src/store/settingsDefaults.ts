@@ -20,6 +20,13 @@ export const MIN_ANNOUNCE_DISTANCE_METERS = 500;
 export const MAX_ANNOUNCE_DISTANCE_METERS = 3000;
 export const DEFAULT_ANNOUNCE_DISTANCE_METERS = ANNOUNCE_MAX_DISTANCE_M;
 
+/** Cold-start briefing radius: separate from announceDistanceMeters and
+ * deliberately wider, since a stationary driver wants broad situational
+ * awareness rather than a just-in-time warning. */
+export const MIN_BRIEFING_RADIUS_METERS = 1000;
+export const MAX_BRIEFING_RADIUS_METERS = 15000;
+export const DEFAULT_BRIEFING_RADIUS_METERS = 5000;
+
 /** Matches expo-speech's own 0.0 (muted) - 1.0 (max) range. */
 export const MIN_VOICE_VOLUME = 0;
 export const MAX_VOICE_VOLUME = 1;
@@ -39,6 +46,7 @@ export function clamp(value: number, min: number, max: number): number {
 export interface SettingsValues {
   categoriesEnabled: Record<AlertCategory, boolean>;
   announceDistanceMeters: number;
+  briefingRadiusMeters: number;
   voiceVolume: number;
   voiceRate: number;
   masterMute: boolean;
@@ -53,6 +61,7 @@ export const defaultSettingsValues: SettingsValues = {
     JAM: true,
   },
   announceDistanceMeters: DEFAULT_ANNOUNCE_DISTANCE_METERS,
+  briefingRadiusMeters: DEFAULT_BRIEFING_RADIUS_METERS,
   voiceVolume: DEFAULT_VOICE_VOLUME,
   voiceRate: DEFAULT_VOICE_RATE,
   masterMute: false,

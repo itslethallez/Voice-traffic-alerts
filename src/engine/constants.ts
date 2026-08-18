@@ -38,3 +38,6 @@ export const SEVERITY_ORDER: WazeAlertType[] = [
   'POLICE',
   'JAM',
 ];
+
+/** Cold-start briefing: nearest-first list, capped so a dense area doesn't become a monologue. */
+export const MAX_BRIEFING_ALERTS = 8;

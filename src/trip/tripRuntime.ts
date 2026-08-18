@@ -4,13 +4,30 @@ import { applyFetchResult, initialAlertsCache } from '../engine/cache';
 import { initialMovementState, updateMovementState } from '../engine/movement';
 import { planPoll } from '../engine/pollPlanner';
 import { selectAnnounceableAlerts } from '../engine/selectAlerts';
+import { selectBriefingAlerts } from '../engine/selectBriefingAlerts';
 import { initialSpeedState, isSustainedLowSpeed, updateSpeedState } from '../engine/speedGate';
 import type { AlertsCache, DriverState, MovementState, SpeedState } from '../engine/types';
-import { createInitialAnnouncerState, submitCandidates, tick, type AnnouncerState } from '../speech/announcer';
+import type { WazeBoundingBoxParams } from '../geo/boundingBox';
+import { radiusBoundingBox } from '../geo/radiusBoundingBox';
+import {
+  createInitialAnnouncerState,
+  speakBriefing,
+  submitCandidates,
+  tick,
+  type AnnouncerState,
+} from '../speech/announcer';
+import { delay } from '../speech/delay';
+import { formatBriefingAlert, NO_BRIEFING_ALERTS_MESSAGE } from '../speech/formatAnnouncement';
+import { speakAsync } from '../speech/ttsAdapter';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { computeRateLimitBackoffMs } from './backoff';
+import {
+  BRIEFING_FETCH_RETRY_INTERVAL_MS,
+  BRIEFING_LOADING_BANNER_DELAY_MS,
+  BRIEFING_MAX_FETCH_ATTEMPTS,
+} from './constants';
 
 /**
  * Module-level (not React state) so it's reachable from both the
@@ -43,6 +60,44 @@ export function resetTripRuntime(): void {
 }
 
 const RATE_LIMIT_BANNER_MESSAGE = 'Requests are being limited. Retrying automatically.';
+const BRIEFING_LOADING_BANNER_MESSAGE = 'Getting your briefing…';
+
+/**
+ * The actual fetch/cache/offline-state work, shared by pollIfDue's
+ * cadence-gated normal polling and runBriefing's own retry policy below.
+ * Returns whether the fetch succeeded - true even for a response with
+ * zero alerts, false only on an actual failure - so callers can tell
+ * "succeeded, nothing out there" apart from "didn't get an answer".
+ */
+async function fetchAndApplyAlerts(boundingBox: WazeBoundingBoxParams, nowMs: number): Promise<boolean> {
+  lastPollAttemptAtMs = nowMs;
+
+  try {
+    const alerts = await fetchAlertsForBoundingBox(boundingBox);
+    alertsCache = applyFetchResult(alertsCache, { ok: true, alerts, nowMs });
+    consecutiveRateLimitHits = 0;
+    useTripStore.getState().setOffline(false);
+    if (rateLimitBannerShown) {
+      useTripStore.getState().setBannerMessage(null);
+      rateLimitBannerShown = false;
+    }
+    return true;
+  } catch (error) {
+    alertsCache = applyFetchResult(alertsCache, { ok: false });
+
+    if (error instanceof WazeApiError && error.isRateLimited) {
+      consecutiveRateLimitHits += 1;
+      if (!rateLimitBannerShown) {
+        useTripStore.getState().setBannerMessage(RATE_LIMIT_BANNER_MESSAGE);
+        rateLimitBannerShown = true;
+      }
+      // A rate limit isn't "offline" - the network is fine, keep serving cache quietly otherwise.
+    } else {
+      useTripStore.getState().setOffline(true);
+    }
+    return false;
+  }
+}
 
 async function pollIfDue(driver: DriverState, nowMs: number): Promise<void> {
   movementState = updateMovementState(movementState, driver.position, nowMs);
@@ -58,31 +113,7 @@ async function pollIfDue(driver: DriverState, nowMs: number): Promise<void> {
   const isDue = lastPollAttemptAtMs === null || nowMs - lastPollAttemptAtMs >= effectiveIntervalMs;
   if (!isDue) return;
 
-  lastPollAttemptAtMs = nowMs;
-
-  try {
-    const alerts = await fetchAlertsForBoundingBox(plan.boundingBox);
-    alertsCache = applyFetchResult(alertsCache, { ok: true, alerts, nowMs });
-    consecutiveRateLimitHits = 0;
-    useTripStore.getState().setOffline(false);
-    if (rateLimitBannerShown) {
-      useTripStore.getState().setBannerMessage(null);
-      rateLimitBannerShown = false;
-    }
-  } catch (error) {
-    alertsCache = applyFetchResult(alertsCache, { ok: false });
-
-    if (error instanceof WazeApiError && error.isRateLimited) {
-      consecutiveRateLimitHits += 1;
-      if (!rateLimitBannerShown) {
-        useTripStore.getState().setBannerMessage(RATE_LIMIT_BANNER_MESSAGE);
-        rateLimitBannerShown = true;
-      }
-      // A rate limit isn't "offline" - the network is fine, keep serving cache quietly otherwise.
-    } else {
-      useTripStore.getState().setOffline(true);
-    }
-  }
+  await fetchAndApplyAlerts(plan.boundingBox, nowMs);
 }
 
 /**
@@ -124,4 +155,116 @@ export async function handleDriverUpdate(driver: DriverState, nowMs: number): Pr
   if (result.spoken) {
     useTripStore.getState().pushAnnouncement(result.spoken);
   }
+}
+
+/**
+ * Waits for a usable alerts cache before the briefing can select from it.
+ * An already-populated cache (fetchedAtMs !== null - e.g. a fetch that
+ * completed before this call, however unlikely on a true cold start) is
+ * used immediately with no fetch at all. Otherwise this fetches with its
+ * own short retry policy - independent of pollIfDue's cadence gating and
+ * the multi-minute rate-limit backoff, both far too slow for a driver
+ * waiting on the briefing to start - stopping the moment any attempt
+ * succeeds, including one with zero alerts (a successful fetch, not a
+ * failure). Surfaces BRIEFING_LOADING_BANNER_MESSAGE via the shared
+ * bannerMessage slot if still waiting past BRIEFING_LOADING_BANNER_DELAY_MS,
+ * and clears only that banner (checked by value, so a newer rate-limit,
+ * offline, or background-location banner set in the meantime is left
+ * alone) once done.
+ *
+ * Returns whether a usable cache exists by the end - true even if every
+ * attempt in this call failed, as long as an earlier fetch already left
+ * a cached result (applyFetchResult never clears alerts on failure, only
+ * marks the cache stale), so the briefing can fall back to it.
+ */
+async function waitForBriefingAlerts(
+  boundingBox: WazeBoundingBoxParams,
+  signal: AbortSignal | undefined
+): Promise<boolean> {
+  if (alertsCache.fetchedAtMs !== null) return true;
+
+  let loadingBannerShown = false;
+  const bannerTimer = setTimeout(() => {
+    if (signal?.aborted) return;
+    useTripStore.getState().setBannerMessage(BRIEFING_LOADING_BANNER_MESSAGE);
+    loadingBannerShown = true;
+  }, BRIEFING_LOADING_BANNER_DELAY_MS);
+
+  try {
+    for (let attempt = 0; attempt < BRIEFING_MAX_FETCH_ATTEMPTS; attempt++) {
+      if (signal?.aborted) break;
+
+      const ok = await fetchAndApplyAlerts(boundingBox, Date.now());
+      if (ok) break; // succeeded, even with zero alerts - stop immediately, no more retries
+
+      const isLastAttempt = attempt === BRIEFING_MAX_FETCH_ATTEMPTS - 1;
+      if (!isLastAttempt) {
+        await delay(BRIEFING_FETCH_RETRY_INTERVAL_MS, signal);
+      }
+    }
+  } finally {
+    clearTimeout(bannerTimer);
+    if (loadingBannerShown && useTripStore.getState().bannerMessage === BRIEFING_LOADING_BANNER_MESSAGE) {
+      useTripStore.getState().setBannerMessage(null);
+    }
+  }
+
+  return alertsCache.fetchedAtMs !== null;
+}
+
+export interface RunBriefingOptions {
+  signal?: AbortSignal;
+}
+
+/**
+ * The one-shot cold-start briefing: waits for a usable alerts cache (see
+ * waitForBriefingAlerts) around driver.position - using
+ * settings.briefingRadiusMeters, not the live-driving poll box, since the
+ * briefing radius can be wider than the stationary poll box ever is -
+ * then speaks the nearest qualifying alerts back to back via
+ * speakBriefing. Deliberately does not touch selectAnnounceableAlerts or
+ * tick, which stay live-driving only.
+ *
+ * Respects masterMute the same way handleDriverUpdate does (the cache
+ * still refreshes; only speech is suppressed) and `signal` for
+ * cancellation on unmount/teardown/lifecycle interruption - speakBriefing
+ * and the retry/loading-banner wait above both already honour it.
+ */
+export async function runBriefing(
+  driver: DriverState,
+  nowMs: number,
+  options: RunBriefingOptions = {}
+): Promise<void> {
+  const { signal } = options;
+  const settings = useSettingsStore.getState();
+  const boundingBox = radiusBoundingBox(driver.position, settings.briefingRadiusMeters);
+
+  const hasUsableAlerts = await waitForBriefingAlerts(boundingBox, signal);
+  if (signal?.aborted) return;
+  if (settings.masterMute) return;
+
+  const candidates = hasUsableAlerts
+    ? selectBriefingAlerts(alertsCache.alerts, driver.position, Date.now(), {
+        enabledTypes: enabledTypesFromSettings(settings.categoriesEnabled),
+        radiusMeters: settings.briefingRadiusMeters,
+      })
+    : [];
+
+  const speakOptions = { rate: settings.voiceRate, volume: settings.voiceVolume };
+
+  if (candidates.length === 0) {
+    if (signal?.aborted) return;
+    try {
+      await speakAsync(NO_BRIEFING_ALERTS_MESSAGE, speakOptions);
+    } catch (error) {
+      console.warn('[briefing] failed to speak the empty-briefing message', error);
+    }
+    return;
+  }
+
+  announcerState = await speakBriefing(announcerState, candidates, formatBriefingAlert, {
+    speakOptions,
+    signal,
+    onItemSpoken: (entry) => useTripStore.getState().pushAnnouncement(entry),
+  });
 }

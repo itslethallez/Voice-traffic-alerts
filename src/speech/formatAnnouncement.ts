@@ -50,3 +50,31 @@ export function formatAnnouncement(candidate: AnnounceableAlert): string {
 
   return text;
 }
+
+/** null, undefined, empty or whitespace-only all count as "no street". */
+function normalizeStreet(street: string | null | undefined): string | null {
+  const trimmed = street?.trim();
+  return trimmed ? trimmed : null;
+}
+
+export const NO_BRIEFING_ALERTS_MESSAGE = 'No recent alerts within your briefing area.';
+
+/**
+ * Cold-start briefing wording - always states the age (unlike
+ * formatAnnouncement, which only appends it past the staleness cutoff),
+ * since a briefing is explicitly about "how current is this" situational
+ * awareness. Prefers the street name when the Waze data has one; falls
+ * back to distance when it's null, undefined, or blank.
+ */
+export function formatBriefingAlert(candidate: AnnounceableAlert): string {
+  const label = labelForType(candidate.alert.type);
+  const age = formatAge(candidate.ageMinutes);
+  const street = normalizeStreet(candidate.alert.street);
+
+  if (street) {
+    return `${label} reported on ${street}, ${age} ago.`;
+  }
+
+  const distance = formatDistance(candidate.distanceMeters);
+  return `${label} reported ${distance} away, ${age} ago.`;
+}

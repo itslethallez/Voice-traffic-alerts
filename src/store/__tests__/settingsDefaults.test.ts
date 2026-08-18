@@ -4,7 +4,9 @@ import {
   defaultSettingsValues,
   enabledTypesFromSettings,
   MAX_ANNOUNCE_DISTANCE_METERS,
+  MAX_BRIEFING_RADIUS_METERS,
   MIN_ANNOUNCE_DISTANCE_METERS,
+  MIN_BRIEFING_RADIUS_METERS,
 } from '../settingsDefaults';
 
 describe('defaultSettingsValues', () => {
@@ -25,6 +27,15 @@ describe('defaultSettingsValues', () => {
 
   it('defaults master mute to off', () => {
     expect(defaultSettingsValues.masterMute).toBe(false);
+  });
+
+  it('defaults the briefing radius within the slider range, separate from announce distance', () => {
+    expect(defaultSettingsValues.briefingRadiusMeters).toBeGreaterThanOrEqual(
+      MIN_BRIEFING_RADIUS_METERS
+    );
+    expect(defaultSettingsValues.briefingRadiusMeters).toBeLessThanOrEqual(
+      MAX_BRIEFING_RADIUS_METERS
+    );
   });
 });
 
