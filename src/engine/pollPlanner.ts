@@ -17,14 +17,18 @@ const MAX_BEARING_DIFF_RAD = (ANNOUNCE_MAX_BEARING_DIFF_DEG * Math.PI) / 180;
 /**
  * How far to the side of the heading the box needs to reach so it still
  * encloses every point selectAnnounceableAlerts could accept: an alert up
- * to `aheadM` away and up to ANNOUNCE_MAX_BEARING_DIFF_DEG off-heading can
- * sit `aheadM * sin(maxBearingDiff)` to the side - a fixed ratio of aheadM
- * (as this used before) doesn't track that unless the ratio happens to
- * equal sin(maxBearingDiff), so it's computed from the real geometry
- * instead.
+ * to `announceDistanceMeters` away (the actual per-alert distance cap
+ * selectAnnounceableAlerts checks - not the box's own `aheadM`, which is
+ * floored higher for polling-cadence reasons unrelated to how far an
+ * alert can actually be) and up to ANNOUNCE_MAX_BEARING_DIFF_DEG
+ * off-heading can sit `announceDistanceMeters * sin(maxBearingDiff)` to
+ * the side. Using the floored aheadM here instead would demand more side
+ * coverage than any accepted alert could ever need, growing the box (and
+ * therefore every moving poll's chance of hitting the 200-alert cap and
+ * triggering quadrant splits) for no benefit at the default setting.
  */
-function requiredSideM(aheadM: number): number {
-  return Math.max(MOVING_BOX_SIDE_M, Math.ceil(aheadM * Math.sin(MAX_BEARING_DIFF_RAD)));
+function requiredSideM(announceDistanceMeters: number): number {
+  return Math.max(MOVING_BOX_SIDE_M, Math.ceil(announceDistanceMeters * Math.sin(MAX_BEARING_DIFF_RAD)));
 }
 
 /**
@@ -61,7 +65,7 @@ export function planPoll(
 
   if (isMoving) {
     const aheadM = Math.max(MOVING_BOX_AHEAD_M, announceDistanceMeters);
-    const sideM = requiredSideM(aheadM);
+    const sideM = requiredSideM(announceDistanceMeters);
     return {
       shouldPoll: true,
       intervalMs: MOVING_POLL_INTERVAL_MS,

@@ -15,12 +15,13 @@ import type { DriverState } from '../types';
 
 const ADELAIDE_POSITION = { latitude: -34.9, longitude: 138.6 };
 
-/** Mirrors pollPlanner's own real-geometry calculation - a fixed ratio
- * of aheadM (what the code used to do) doesn't track this unless the
- * ratio happens to equal sin(ANNOUNCE_MAX_BEARING_DIFF_DEG). */
-function expectedSideM(aheadM: number): number {
+/** Mirrors pollPlanner's own real-geometry calculation, keyed off the
+ * actual announceDistanceMeters (the real per-alert distance cap) - not
+ * off the box's own aheadM, which is floored higher for polling-cadence
+ * reasons unrelated to how far an accepted alert can actually be. */
+function expectedSideM(announceDistanceMeters: number): number {
   const rad = (ANNOUNCE_MAX_BEARING_DIFF_DEG * Math.PI) / 180;
-  return Math.max(MOVING_BOX_SIDE_M, Math.ceil(aheadM * Math.sin(rad)));
+  return Math.max(MOVING_BOX_SIDE_M, Math.ceil(announceDistanceMeters * Math.sin(rad)));
 }
 
 describe('planPoll', () => {
@@ -33,9 +34,13 @@ describe('planPoll', () => {
     expect(plan.shouldPoll).toBe(true);
     expect(plan.reason).toBe('moving');
     expect(plan.intervalMs).toBe(MOVING_POLL_INTERVAL_MS);
+    // At the default 2km setting this should land exactly on the
+    // previous fixed box - MOVING_BOX_SIDE_M itself, not some inflated
+    // value derived from the aheadM floor.
     expect(plan.boundingBox).toEqual(
-      boundingBox(ADELAIDE_POSITION, 45, MOVING_BOX_AHEAD_M, expectedSideM(MOVING_BOX_AHEAD_M))
+      boundingBox(ADELAIDE_POSITION, 45, MOVING_BOX_AHEAD_M, MOVING_BOX_SIDE_M)
     );
+    expect(expectedSideM(2000)).toBe(MOVING_BOX_SIDE_M);
   });
 
   it('plans a stationary poll with the radius box when speed is under the stationary threshold', () => {
@@ -78,9 +83,13 @@ describe('planPoll', () => {
 
     const plan = planPoll(driver, movement, 0, 500);
 
+    // ahead is floored at MOVING_BOX_AHEAD_M, but side is derived from
+    // the actual (small) announce distance, not that floor - so this
+    // stays at exactly the original fixed box, same as the default case.
     expect(plan.boundingBox).toEqual(
-      boundingBox(ADELAIDE_POSITION, 45, MOVING_BOX_AHEAD_M, expectedSideM(MOVING_BOX_AHEAD_M))
+      boundingBox(ADELAIDE_POSITION, 45, MOVING_BOX_AHEAD_M, MOVING_BOX_SIDE_M)
     );
+    expect(expectedSideM(500)).toBe(MOVING_BOX_SIDE_M);
   });
 
   it('the moving box actually contains an alert at the full bearing tolerance and the configured announce distance', () => {
