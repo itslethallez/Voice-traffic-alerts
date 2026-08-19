@@ -18,6 +18,12 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.itslethallez.voicetrafficalerts',
+      // No non-exempt encryption (no custom crypto beyond standard HTTPS)
+      // - declaring this here skips the manual App Store Connect prompt
+      // on every build.
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+      },
     },
     android: {
       package: 'com.itslethallez.voicetrafficalerts',
