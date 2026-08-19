@@ -37,10 +37,5 @@
     "typecheck": "tsc --noEmit",
     "test": "jest"
   },
-  "private": true,
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "unrs-resolver"
-    ]
-  }
+  "private": true
 }
