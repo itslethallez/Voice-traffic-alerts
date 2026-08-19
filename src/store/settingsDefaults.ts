@@ -11,20 +11,20 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
   'JAM',
 ];
 
-/** "Announcement distance slider, 500m to 3km." Only the upper bound is
+/** "Announcement distance slider, 500m to 20km." Only the upper bound is
  * user-configurable - the 300m lower bound stays fixed (announcing
  * something 300m away or closer is a physics/safety floor, not a
  * preference). Defaults to the engine's own pinned max (2000m) for
  * continuity with Step 3/4's default behaviour. */
 export const MIN_ANNOUNCE_DISTANCE_METERS = 500;
-export const MAX_ANNOUNCE_DISTANCE_METERS = 3000;
+export const MAX_ANNOUNCE_DISTANCE_METERS = 20000;
 export const DEFAULT_ANNOUNCE_DISTANCE_METERS = ANNOUNCE_MAX_DISTANCE_M;
 
 /** Cold-start briefing radius: separate from announceDistanceMeters and
  * deliberately wider, since a stationary driver wants broad situational
  * awareness rather than a just-in-time warning. */
 export const MIN_BRIEFING_RADIUS_METERS = 1000;
-export const MAX_BRIEFING_RADIUS_METERS = 15000;
+export const MAX_BRIEFING_RADIUS_METERS = 20000;
 export const DEFAULT_BRIEFING_RADIUS_METERS = 5000;
 
 /** Matches expo-speech's own 0.0 (muted) - 1.0 (max) range. */
