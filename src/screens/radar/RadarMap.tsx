@@ -52,10 +52,19 @@ export function RadarMap() {
     <Mapbox.MapView
       style={styles.root}
       styleURL={Mapbox.StyleURL.Dark}
-      logoEnabled={false}
-      attributionEnabled={false}
       compassEnabled={false}
       scaleBarEnabled={false}
+      // Mapbox's ToS require the logo + attribution control on any map
+      // using their data/styling - leave both at their (enabled) default.
+      //
+      // The camera below is fully driver-controlled (recentres on every
+      // position update, ~3s), so manual pan/zoom/rotate gestures would
+      // just get yanked back on the next update instead of doing
+      // anything - disable them rather than let the map fight the user.
+      scrollEnabled={false}
+      zoomEnabled={false}
+      pitchEnabled={false}
+      rotateEnabled={false}
     >
       <Mapbox.Camera
         centerCoordinate={
