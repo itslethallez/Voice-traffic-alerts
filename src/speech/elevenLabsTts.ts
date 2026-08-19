@@ -75,11 +75,32 @@ let activeAbortController: AbortController | null = null;
  * final playbackStatusUpdate event (e.g. after pause()+remove()) that
  * would otherwise be the only thing settling the promise. */
 let activeResolve: (() => void) | null = null;
+let activeTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Safety net for the whole fetch+playback round trip. A driving-safety
+ * announcement is a short sentence - a couple of seconds of audio plus a
+ * fast Flash-model fetch - so a request still outstanding this long is
+ * stuck, not just slow: a fetch with no server response (no timeout of
+ * its own otherwise), or a playbackStatusUpdate that never arrives.
+ * Without this, ttsAdapter's on-device fallback only triggers on an
+ * explicit rejection, so a hang here would silently block every later
+ * announcement forever - tick() awaits this promise before dequeuing the
+ * next alert.
+ */
+const OVERALL_TIMEOUT_MS = 20_000;
 
 function releaseActivePlayer(): void {
   if (activePlayer) {
     activePlayer.remove();
     activePlayer = null;
+  }
+}
+
+function clearActiveTimeout(): void {
+  if (activeTimeoutId !== null) {
+    clearTimeout(activeTimeoutId);
+    activeTimeoutId = null;
   }
 }
 
@@ -102,13 +123,25 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
     activeResolve = resolve;
 
     const settleResolve = () => {
+      clearActiveTimeout();
       if (activeResolve === resolve) activeResolve = null;
       resolve();
     };
     const settleReject = (error: Error) => {
+      clearActiveTimeout();
       if (activeResolve === resolve) activeResolve = null;
       reject(error);
     };
+
+    activeTimeoutId = setTimeout(() => {
+      if (!isCurrent()) return;
+      abortController.abort();
+      if (activePlayer) {
+        activePlayer.pause();
+      }
+      releaseActivePlayer();
+      settleReject(new Error('ElevenLabs TTS timed out'));
+    }, OVERALL_TIMEOUT_MS);
 
     fetchAudioDataUri(text, abortController.signal)
       .then((dataUri) => {
@@ -159,6 +192,7 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
  * that does still land afterward is a no-op. */
 export function stopElevenLabsSpeech(): void {
   currentUtteranceId += 1;
+  clearActiveTimeout();
   activeAbortController?.abort();
   activeAbortController = null;
   if (activePlayer) {

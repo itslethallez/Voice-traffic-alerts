@@ -170,6 +170,44 @@ describe('speakWithElevenLabsAsync', () => {
     expect(createAudioPlayer).not.toHaveBeenCalled();
   });
 
+  it('rejects (falling back to the device voice) when the fetch hangs past the overall timeout', async () => {
+    jest.useFakeTimers();
+    try {
+      (globalThis.fetch as jest.Mock).mockReturnValue(new Promise(() => {})); // never resolves
+
+      const promise = speakWithElevenLabsAsync('hello');
+      const expectation = expect(promise).rejects.toThrow('ElevenLabs TTS timed out');
+      await jest.advanceTimersByTimeAsync(20_000);
+      await expectation;
+
+      expect(createAudioPlayer).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('rejects (falling back to the device voice) when playback never reports didJustFinish', async () => {
+    jest.useFakeTimers();
+    try {
+      (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
+
+      const promise = speakWithElevenLabsAsync('hello');
+      const expectation = expect(promise).rejects.toThrow('ElevenLabs TTS timed out');
+      // Let the fetch .then() microtask create the player before the clock advances.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(20_000);
+      await expectation;
+
+      expect(mockPlayer.play).toHaveBeenCalledTimes(1);
+      expect(mockPlayer.pause).toHaveBeenCalledTimes(1);
+      expect(mockPlayer.remove).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('a stale utterance stopped mid-flight does not resolve a newer one early', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
