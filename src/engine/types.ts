@@ -13,6 +13,8 @@ export interface AnnounceableAlert {
   bearingDeg: number;
   bearingDiffDeg: number;
   ageMinutes: number;
+  /** Driver's heading at selection time - used for "northbound"/"eastbound" wording. 0 (meaningless) for briefing candidates, which have no driver heading. */
+  driverHeadingDeg: number;
 }
 
 export interface MovementState {

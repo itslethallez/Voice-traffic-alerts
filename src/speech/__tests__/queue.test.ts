@@ -24,7 +24,7 @@ function makeCandidate(id: string, type: WazeAlertType, distanceMeters = 500): A
     comments: [],
     num_comments: 0,
   };
-  return { alert, distanceMeters, bearingDeg: 0, bearingDiffDeg: 0, ageMinutes: 0 };
+  return { alert, distanceMeters, bearingDeg: 0, bearingDiffDeg: 0, ageMinutes: 0, driverHeadingDeg: 0 };
 }
 
 describe('enqueue', () => {

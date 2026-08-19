@@ -53,7 +53,14 @@ export function selectAnnounceableAlerts(
     const ageMinutes = (nowMs - Date.parse(alert.publish_datetime_utc)) / 60_000;
     if (!isFreshEnoughToAnnounce(ageMinutes)) continue;
 
-    candidates.push({ alert, distanceMeters, bearingDeg, bearingDiffDeg, ageMinutes });
+    candidates.push({
+      alert,
+      distanceMeters,
+      bearingDeg,
+      bearingDiffDeg,
+      ageMinutes,
+      driverHeadingDeg: driver.headingDeg,
+    });
   }
 
   return sortBySeverity(candidates);

@@ -41,7 +41,14 @@ export function selectBriefingAlerts(
     const ageMinutes = (nowMs - Date.parse(alert.publish_datetime_utc)) / 60_000;
     if (!isFreshEnoughToAnnounce(ageMinutes)) continue;
 
-    candidates.push({ alert, distanceMeters, bearingDeg: 0, bearingDiffDeg: 0, ageMinutes });
+    candidates.push({
+      alert,
+      distanceMeters,
+      bearingDeg: 0,
+      bearingDiffDeg: 0,
+      ageMinutes,
+      driverHeadingDeg: 0,
+    });
   }
 
   candidates.sort((a, b) => {

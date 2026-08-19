@@ -3,7 +3,11 @@ import { formatAnnouncement, formatBriefingAlert, formatDistance, NO_BRIEFING_AL
 import type { AnnounceableAlert } from '../../engine/types';
 
 function makeCandidate(
-  overrides: Partial<AnnounceableAlert> & { type?: WazeAlert['type']; street?: string | null } = {}
+  overrides: Partial<AnnounceableAlert> & {
+    type?: WazeAlert['type'];
+    street?: string | null;
+    city?: string | null;
+  } = {}
 ): AnnounceableAlert {
   const alert: WazeAlert = {
     alert_id: 'wm-test',
@@ -14,7 +18,7 @@ function makeCandidate(
     image: null,
     publish_datetime_utc: '2026-01-01T00:00:00.000Z',
     country: 'AU',
-    city: 'Adelaide',
+    city: overrides.city !== undefined ? (overrides.city ?? '') : 'Adelaide',
     street: overrides.street !== undefined ? overrides.street : 'North Terrace',
     latitude: -34.9,
     longitude: 138.6,
@@ -31,6 +35,7 @@ function makeCandidate(
     bearingDeg: overrides.bearingDeg ?? 0,
     bearingDiffDeg: overrides.bearingDiffDeg ?? 0,
     ageMinutes: overrides.ageMinutes ?? 3,
+    driverHeadingDeg: overrides.driverHeadingDeg ?? 0,
   };
 }
 
@@ -52,38 +57,89 @@ describe('formatDistance', () => {
 });
 
 describe('formatAnnouncement', () => {
-  it('matches the spec example for a fresh police report', () => {
-    const candidate = makeCandidate({ type: 'POLICE', distanceMeters: 800, ageMinutes: 3 });
+  it('speaks the street, suburb and direction of travel for a fresh police report', () => {
+    const candidate = makeCandidate({
+      type: 'POLICE',
+      street: 'North Terrace',
+      city: 'Adelaide',
+      distanceMeters: 800,
+      ageMinutes: 3,
+      driverHeadingDeg: 0,
+    });
+    expect(formatAnnouncement(candidate)).toBe(
+      'Police reported on North Terrace, Adelaide, northbound, 800 metres ahead.'
+    );
+  });
+
+  it('labels an accident report as "Crash"', () => {
+    const candidate = makeCandidate({
+      type: 'ACCIDENT',
+      street: 'North Terrace',
+      city: 'Adelaide',
+      distanceMeters: 1400,
+      ageMinutes: 3,
+      driverHeadingDeg: 0,
+    });
+    expect(formatAnnouncement(candidate)).toBe(
+      'Crash reported on North Terrace, Adelaide, northbound, 1.4 kilometres ahead.'
+    );
+  });
+
+  it('never speaks a bare route/highway number as the street', () => {
+    const candidate = makeCandidate({ street: 'US-101 N', city: 'Oakland' });
+    expect(formatAnnouncement(candidate)).toBe(
+      'Police reported in Oakland, northbound, 800 metres ahead.'
+    );
+  });
+
+  it('omits other route-number shapes too (interstate, state route, short code)', () => {
+    for (const routeNumber of ['I-95', 'SR-408', 'A1', '101']) {
+      const candidate = makeCandidate({ street: routeNumber, city: 'Oakland' });
+      expect(formatAnnouncement(candidate)).not.toContain(routeNumber);
+      expect(formatAnnouncement(candidate)).toContain('in Oakland');
+    }
+  });
+
+  it('speaks an ordinary named street normally, even one that starts with a number', () => {
+    const candidate = makeCandidate({ street: '5th Avenue', city: 'Oakland' });
+    expect(formatAnnouncement(candidate)).toContain('on 5th Avenue, Oakland');
+  });
+
+  it('falls back to just the suburb when there is no usable street', () => {
+    const candidate = makeCandidate({ street: null, city: 'Adelaide', driverHeadingDeg: 90 });
+    expect(formatAnnouncement(candidate)).toBe(
+      'Police reported in Adelaide, eastbound, 800 metres ahead.'
+    );
+  });
+
+  it('falls back to the bare distance wording when there is neither street nor suburb', () => {
+    const candidate = makeCandidate({ street: null, city: null, distanceMeters: 800 });
     expect(formatAnnouncement(candidate)).toBe('Police reported, 800 metres ahead.');
   });
 
-  it('matches the spec example for a fresh accident report, spoken as "Crash"', () => {
-    const candidate = makeCandidate({ type: 'ACCIDENT', distanceMeters: 1400, ageMinutes: 3 });
-    expect(formatAnnouncement(candidate)).toBe('Crash reported, 1.4 kilometres ahead.');
-  });
-
-  it('labels the other alert types', () => {
-    expect(formatAnnouncement(makeCandidate({ type: 'HAZARD' }))).toContain('Hazard reported');
-    expect(formatAnnouncement(makeCandidate({ type: 'ROAD_CLOSED' }))).toContain(
-      'Road closed reported'
-    );
-    expect(formatAnnouncement(makeCandidate({ type: 'JAM' }))).toContain('Traffic jam reported');
+  it('quantizes the driver heading to the nearest of 4 cardinal directions', () => {
+    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 0 }))).toContain('northbound');
+    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 90 }))).toContain('eastbound');
+    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 180 }))).toContain('southbound');
+    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 270 }))).toContain('westbound');
+    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 40 }))).toContain('northbound');
+    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 50 }))).toContain('eastbound');
   });
 
   it('does not append an age note at exactly 10 minutes old (exclusive boundary)', () => {
-    const candidate = makeCandidate({ ageMinutes: 10 });
+    const candidate = makeCandidate({ street: null, city: null, ageMinutes: 10 });
     expect(formatAnnouncement(candidate)).toBe('Police reported, 800 metres ahead.');
   });
 
   it('appends the age note just past 10 minutes old', () => {
-    const candidate = makeCandidate({ ageMinutes: 12 });
+    const candidate = makeCandidate({ street: null, city: null, ageMinutes: 12 });
     expect(formatAnnouncement(candidate)).toBe(
       'Police reported, 800 metres ahead. Reported 12 minutes ago.'
     );
   });
 
   it('rounds the appended age to the nearest whole minute', () => {
-    const candidate = makeCandidate({ ageMinutes: 10.6 });
+    const candidate = makeCandidate({ street: null, city: null, ageMinutes: 10.6 });
     expect(formatAnnouncement(candidate)).toBe(
       'Police reported, 800 metres ahead. Reported 11 minutes ago.'
     );
@@ -91,19 +147,27 @@ describe('formatAnnouncement', () => {
 });
 
 describe('formatBriefingAlert', () => {
-  it('uses the street when present', () => {
+  it('uses the street and suburb when present, and never appends a direction', () => {
     const candidate = makeCandidate({
       type: 'POLICE',
       street: 'Anzac Highway',
+      city: 'Adelaide',
       ageMinutes: 12,
     });
-    expect(formatBriefingAlert(candidate)).toBe('Police reported on Anzac Highway, 12 minutes ago.');
+    expect(formatBriefingAlert(candidate)).toBe(
+      'Police reported on Anzac Highway, Adelaide, 12 minutes ago.'
+    );
   });
 
-  it('falls back to distance when the street is null', () => {
+  it('never speaks a bare route number - falls back to the suburb', () => {
+    const candidate = makeCandidate({ street: 'US-101 N', city: 'Oakland', ageMinutes: 12 });
+    expect(formatBriefingAlert(candidate)).toBe('Police reported in Oakland, 12 minutes ago.');
+  });
+
+  it('falls back to distance when there is neither street nor suburb', () => {
     const candidate = makeCandidate({
-      type: 'POLICE',
       street: null,
+      city: null,
       distanceMeters: 1400,
       ageMinutes: 12,
     });
@@ -112,38 +176,44 @@ describe('formatBriefingAlert', () => {
     );
   });
 
-  it('falls back to distance when the street is an empty string', () => {
-    const candidate = makeCandidate({ street: '', distanceMeters: 800, ageMinutes: 3 });
-    expect(formatBriefingAlert(candidate)).toBe('Police reported 800 metres away, 3 minutes ago.');
+  it('falls back to the suburb when the street is an empty string', () => {
+    const candidate = makeCandidate({ street: '', city: 'Adelaide', ageMinutes: 3 });
+    expect(formatBriefingAlert(candidate)).toBe('Police reported in Adelaide, 3 minutes ago.');
   });
 
-  it('falls back to distance when the street is whitespace-only', () => {
-    const candidate = makeCandidate({ street: '   ', distanceMeters: 800, ageMinutes: 3 });
-    expect(formatBriefingAlert(candidate)).toBe('Police reported 800 metres away, 3 minutes ago.');
+  it('falls back to the suburb when the street is whitespace-only', () => {
+    const candidate = makeCandidate({ street: '   ', city: 'Adelaide', ageMinutes: 3 });
+    expect(formatBriefingAlert(candidate)).toBe('Police reported in Adelaide, 3 minutes ago.');
   });
 
   it('trims surrounding whitespace from a real street name', () => {
-    const candidate = makeCandidate({ street: '  Anzac Highway  ', ageMinutes: 12 });
-    expect(formatBriefingAlert(candidate)).toBe('Police reported on Anzac Highway, 12 minutes ago.');
+    const candidate = makeCandidate({ street: '  Anzac Highway  ', city: 'Adelaide', ageMinutes: 12 });
+    expect(formatBriefingAlert(candidate)).toBe(
+      'Police reported on Anzac Highway, Adelaide, 12 minutes ago.'
+    );
   });
 
   it('always states the age, unlike formatAnnouncement, even under the staleness cutoff', () => {
-    const candidate = makeCandidate({ street: 'North Terrace', ageMinutes: 3 });
-    expect(formatBriefingAlert(candidate)).toBe('Police reported on North Terrace, 3 minutes ago.');
+    const candidate = makeCandidate({ street: 'North Terrace', city: 'Adelaide', ageMinutes: 3 });
+    expect(formatBriefingAlert(candidate)).toBe(
+      'Police reported on North Terrace, Adelaide, 3 minutes ago.'
+    );
   });
 
   it('rounds age to the nearest whole minute, singular at 1', () => {
-    const candidate = makeCandidate({ street: 'North Terrace', ageMinutes: 0.6 });
-    expect(formatBriefingAlert(candidate)).toBe('Police reported on North Terrace, 1 minute ago.');
+    const candidate = makeCandidate({ street: 'North Terrace', city: 'Adelaide', ageMinutes: 0.6 });
+    expect(formatBriefingAlert(candidate)).toBe(
+      'Police reported on North Terrace, Adelaide, 1 minute ago.'
+    );
   });
 
   it('labels the other alert types', () => {
-    expect(formatBriefingAlert(makeCandidate({ type: 'ACCIDENT', street: 'A St' }))).toContain(
-      'Crash reported on'
-    );
-    expect(formatBriefingAlert(makeCandidate({ type: 'JAM', street: 'A St' }))).toContain(
-      'Traffic jam reported on'
-    );
+    expect(
+      formatBriefingAlert(makeCandidate({ type: 'ACCIDENT', street: 'A St', city: 'Town' }))
+    ).toContain('Crash reported on');
+    expect(
+      formatBriefingAlert(makeCandidate({ type: 'JAM', street: 'A St', city: 'Town' }))
+    ).toContain('Traffic jam reported on');
   });
 });
 

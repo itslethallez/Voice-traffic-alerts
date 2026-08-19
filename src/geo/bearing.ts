@@ -31,3 +31,18 @@ export function bearingDifference(headingDeg: number, alertBearingDeg: number): 
   const diff = Math.abs(headingDeg - alertBearingDeg) % 360;
   return diff > 180 ? 360 - diff : diff;
 }
+
+const COMPASS_DIRECTIONS = ['north', 'east', 'south', 'west'] as const;
+export type CompassDirection = (typeof COMPASS_DIRECTIONS)[number];
+
+/**
+ * Quantizes a heading to the nearest of the 4 cardinal directions, for
+ * "-bound" announcement wording (e.g. "northbound"). A finer-grained
+ * compass ("northeast") would read awkwardly out loud - drivers know
+ * roughly which of 4 directions they're heading, not 8 or 16.
+ */
+export function compassDirection(headingDeg: number): CompassDirection {
+  const normalized = ((headingDeg % 360) + 360) % 360;
+  const index = Math.round(normalized / 90) % 4;
+  return COMPASS_DIRECTIONS[index];
+}
