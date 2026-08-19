@@ -1,3 +1,4 @@
+import { ANNOUNCE_MAX_BEARING_DIFF_DEG } from '../geo/announceWindow';
 import { boundingBox } from '../geo/boundingBox';
 import { radiusBoundingBox } from '../geo/radiusBoundingBox';
 import {
@@ -11,9 +12,20 @@ import {
 import { isPausedForNoMovement } from './movement';
 import type { DriverState, MovementState, PollPlan } from './types';
 
-/** side/ahead stays proportional to MOVING_BOX_AHEAD_M/MOVING_BOX_SIDE_M's
- * original ratio when the box grows to cover a wider announce distance. */
-const MOVING_BOX_SIDE_RATIO = MOVING_BOX_SIDE_M / MOVING_BOX_AHEAD_M;
+const MAX_BEARING_DIFF_RAD = (ANNOUNCE_MAX_BEARING_DIFF_DEG * Math.PI) / 180;
+
+/**
+ * How far to the side of the heading the box needs to reach so it still
+ * encloses every point selectAnnounceableAlerts could accept: an alert up
+ * to `aheadM` away and up to ANNOUNCE_MAX_BEARING_DIFF_DEG off-heading can
+ * sit `aheadM * sin(maxBearingDiff)` to the side - a fixed ratio of aheadM
+ * (as this used before) doesn't track that unless the ratio happens to
+ * equal sin(maxBearingDiff), so it's computed from the real geometry
+ * instead.
+ */
+function requiredSideM(aheadM: number): number {
+  return Math.max(MOVING_BOX_SIDE_M, Math.ceil(aheadM * Math.sin(MAX_BEARING_DIFF_RAD)));
+}
 
 /**
  * Pure decision function for a single polling tick: whether to poll at
@@ -49,7 +61,7 @@ export function planPoll(
 
   if (isMoving) {
     const aheadM = Math.max(MOVING_BOX_AHEAD_M, announceDistanceMeters);
-    const sideM = Math.round(aheadM * MOVING_BOX_SIDE_RATIO);
+    const sideM = requiredSideM(aheadM);
     return {
       shouldPoll: true,
       intervalMs: MOVING_POLL_INTERVAL_MS,
