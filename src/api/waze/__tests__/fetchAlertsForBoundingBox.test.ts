@@ -95,4 +95,36 @@ describe('fetchAlertsForBoundingBox', () => {
     const sharedCount = result.filter((a) => a.alert_id === 'shared').length;
     expect(sharedCount).toBe(1);
   });
+
+  it('still returns the full-box alerts and the quadrants that succeeded when one quadrant fails', async () => {
+    const fullBoxAlerts = Array.from({ length: 200 }, (_, i) => makeAlert(`full-${i}`));
+    const quadrants = splitBoundingBoxIntoQuadrants(BOX);
+    const failingQuadrant = JSON.stringify(quadrants[0]);
+
+    fetchWazeAlerts.mockImplementation(async (box: unknown) => {
+      if (JSON.stringify(box) === JSON.stringify(BOX)) return makeResponse(fullBoxAlerts);
+      if (JSON.stringify(box) === failingQuadrant) throw new Error('network down');
+      return makeResponse([makeAlert(`ok-${JSON.stringify(box)}`)]);
+    });
+
+    const result = await fetchAlertsForBoundingBox(BOX);
+
+    // The 200 from the full-box call must survive a quadrant failure, not be discarded.
+    for (const alert of fullBoxAlerts) {
+      expect(result.some((a) => a.alert_id === alert.alert_id)).toBe(true);
+    }
+    // The 3 quadrants that succeeded should also be present.
+    expect(result.length).toBeGreaterThan(fullBoxAlerts.length);
+  });
+
+  it('does not reject just because a single quadrant call rejects', async () => {
+    const fullBoxAlerts = Array.from({ length: 200 }, (_, i) => makeAlert(`full-${i}`));
+
+    fetchWazeAlerts.mockImplementation(async (box: unknown) => {
+      if (JSON.stringify(box) === JSON.stringify(BOX)) return makeResponse(fullBoxAlerts);
+      throw new Error('every quadrant fails');
+    });
+
+    await expect(fetchAlertsForBoundingBox(BOX)).resolves.toEqual(fullBoxAlerts);
+  });
 });

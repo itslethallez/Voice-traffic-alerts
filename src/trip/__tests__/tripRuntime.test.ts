@@ -181,6 +181,54 @@ describe('handleDriverUpdate', () => {
     expect(speakAsync).not.toHaveBeenCalled();
     expect(pushAnnouncement).not.toHaveBeenCalled();
   });
+
+  it('does not clear a newer banner that replaced the rate-limit banner', async () => {
+    const now = Date.now();
+    fetchAlertsForBoundingBox.mockRejectedValueOnce(new WazeApiError('rate limited', 429));
+    await handleDriverUpdate(driver, now);
+    expect(tripBannerMessage).toBe('Requests are being limited. Retrying automatically.');
+
+    // Something else (e.g. the background-location banner) takes the
+    // shared slot before the rate limit clears.
+    setBannerMessage('Some other banner');
+
+    fetchAlertsForBoundingBox.mockResolvedValueOnce([]);
+    await handleDriverUpdate(driver, now + RATE_LIMIT_INITIAL_BACKOFF_MS);
+
+    expect(tripBannerMessage).toBe('Some other banner');
+  });
+
+  it('serializes overlapping updates so a slow first call fully finishes before a second one begins', async () => {
+    const now = Date.now();
+    let resolveFirstFetch: (alerts: ReturnType<typeof buildMockAlerts>) => void = () => {};
+    const firstFetchGate = new Promise<ReturnType<typeof buildMockAlerts>>((resolve) => {
+      resolveFirstFetch = resolve;
+    });
+
+    fetchAlertsForBoundingBox
+      .mockImplementationOnce(() => firstFetchGate)
+      .mockResolvedValueOnce(buildMockAlerts(now + MOVING_POLL_INTERVAL_MS));
+
+    // Simulates the foreground watch and the background task each
+    // delivering a fix without waiting on each other.
+    const first = handleDriverUpdate(driver, now);
+    const second = handleDriverUpdate(driver, now + MOVING_POLL_INTERVAL_MS);
+
+    // Let already-resolved microtasks drain. The first call should be
+    // stuck on the gate; without serialization the second call would
+    // already have reached its own fetch by now (its nowMs is far
+    // enough past `now` to be due on its own), since nothing would be
+    // holding it back.
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(1);
+
+    resolveFirstFetch(buildMockAlerts(now));
+    await Promise.all([first, second]);
+
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('runBriefing', () => {

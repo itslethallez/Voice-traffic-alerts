@@ -45,7 +45,13 @@ export interface AnnouncerTickResult {
  *
  * A TTS failure never throws out of here: the queue is still unblocked
  * (isSpeaking cleared) so the next alert can be announced on the next
- * tick, matching "never crash the loop".
+ * tick, matching "never crash the loop". The alert is deliberately NOT
+ * added to announcedIds/recent on failure - the driver never heard it,
+ * so it shouldn't be dedupe'd as spoken or shown in the UI as if it was.
+ * Since dequeueNext already removed it from the pending queue, leaving it
+ * out of announcedIds means the next selectAnnounceableAlerts() call
+ * naturally reconsiders it as a fresh candidate (as long as it's still
+ * otherwise eligible) rather than requiring separate retry bookkeeping.
  */
 export async function tick(
   state: AnnouncerState,
@@ -58,26 +64,27 @@ export async function tick(
   }
 
   const text = formatAnnouncement(next);
-  const recentEntry: RecentAnnouncement = {
-    alertId: next.alert.alert_id,
-    text,
-    announcedAtMs: nowMs,
-  };
-
-  const announcedIds = new Set(state.announcedIds);
-  announcedIds.add(next.alert.alert_id);
-  const recent = [recentEntry, ...state.recent].slice(0, MAX_RECENT_ANNOUNCEMENTS);
 
   let queue = dequeuedQueueState;
+  let spoken: RecentAnnouncement | null = null;
   try {
     await speakAsync(text, speakOptions);
+    spoken = { alertId: next.alert.alert_id, text, announcedAtMs: nowMs };
   } catch (error) {
     console.warn(`[speech] TTS failed for ${next.alert.alert_id}`, error);
   } finally {
     queue = markSpeechFinished(queue);
   }
 
-  return { state: { queue, announcedIds, recent }, spoken: recentEntry };
+  if (!spoken) {
+    return { state: { ...state, queue }, spoken: null };
+  }
+
+  const announcedIds = new Set(state.announcedIds);
+  announcedIds.add(next.alert.alert_id);
+  const recent = [spoken, ...state.recent].slice(0, MAX_RECENT_ANNOUNCEMENTS);
+
+  return { state: { queue, announcedIds, recent }, spoken };
 }
 
 export interface SpeakBriefingOptions {

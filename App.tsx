@@ -11,6 +11,7 @@ import {
 import { colors } from './src/theme/colors';
 import { DriveScreen } from './src/screens/DriveScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { useDriveLoop } from './src/screens/useDriveLoop';
 
 type Screen = 'drive' | 'settings';
 
@@ -22,6 +23,14 @@ export default function App() {
     Archivo_900Black,
   });
   const [screen, setScreen] = useState<Screen>('drive');
+
+  // Called here, not inside DriveScreen: App never unmounts while the app
+  // is open, but DriveScreen does (swapped out for SettingsScreen). If
+  // this lived in DriveScreen, opening Settings mid-drive would unmount
+  // and remount the whole location/briefing/announcement lifecycle -
+  // wiping dedupe and cache state and re-running the cold-start briefing
+  // every time the driver checks a setting.
+  useDriveLoop();
 
   if (!fontsLoaded) {
     return <View style={styles.loading} />;

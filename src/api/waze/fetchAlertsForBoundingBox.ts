@@ -14,6 +14,12 @@ const ALERTS_PER_CALL_CAP = 200;
  * silently dropping whatever didn't fit in the first response. Only one
  * level of splitting, matching the spec ("split into four quadrants"),
  * not a recursive tiling if a quadrant itself hits the cap.
+ *
+ * The four quadrant calls are best-effort on top of the already-successful
+ * full-box response: if one quadrant fails (network blip, rate limit) the
+ * others' alerts - and the original 200 - still get merged and returned,
+ * rather than the whole call rejecting and discarding data already in
+ * hand. Only rejects if every call, including the initial one, fails.
  */
 export async function fetchAlertsForBoundingBox(box: WazeBoundingBoxParams): Promise<WazeAlert[]> {
   const response = await fetchWazeAlerts(box, { maxAlerts: ALERTS_PER_CALL_CAP });
@@ -22,12 +28,18 @@ export async function fetchAlertsForBoundingBox(box: WazeBoundingBoxParams): Pro
   }
 
   const quadrants = splitBoundingBoxIntoQuadrants(box);
-  const quadrantResponses = await Promise.all(
+  const quadrantResults = await Promise.allSettled(
     quadrants.map((quadrant) => fetchWazeAlerts(quadrant, { maxAlerts: ALERTS_PER_CALL_CAP }))
   );
 
-  return mergeAlertsById([
-    response.data.alerts,
-    ...quadrantResponses.map((quadrantResponse) => quadrantResponse.data.alerts),
-  ]);
+  const quadrantAlertLists: WazeAlert[][] = [];
+  for (const result of quadrantResults) {
+    if (result.status === 'fulfilled') {
+      quadrantAlertLists.push(result.value.data.alerts);
+    } else {
+      console.warn('[waze] a quadrant request failed, continuing with the rest', result.reason);
+    }
+  }
+
+  return mergeAlertsById([response.data.alerts, ...quadrantAlertLists]);
 }

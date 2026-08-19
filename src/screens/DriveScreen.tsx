@@ -6,7 +6,6 @@ import { fontFamily } from '../theme/typography';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { formatRelativeTime } from './formatRelativeTime';
-import { useDriveLoop } from './useDriveLoop';
 
 /** Most recent announcement first, each older one fading further. */
 const ANNOUNCEMENT_OPACITY = [1, 0.6, 0.35];
@@ -15,8 +14,8 @@ interface DriveScreenProps {
   onOpenSettings?: () => void;
 }
 
+// useDriveLoop() is called from App.tsx, not here - see the comment there.
 export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
-  useDriveLoop();
 
   const masterMute = useSettingsStore((state) => state.masterMute);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);

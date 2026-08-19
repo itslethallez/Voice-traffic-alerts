@@ -102,14 +102,17 @@ describe('announcer', () => {
     expect(state.recent.map((r) => r.alertId)).toEqual(['d', 'c', 'b']);
   });
 
-  it('unblocks the queue even when TTS fails, without throwing', async () => {
+  it('unblocks the queue even when TTS fails, without throwing, and does not mark the alert as spoken', async () => {
     speakAsync.mockRejectedValueOnce(new Error('tts failed'));
     let state = createInitialAnnouncerState();
     state = submitCandidates(state, [makeCandidate('a', 'POLICE')]);
 
     const result = await tick(state, 0);
 
-    expect(result.spoken?.alertId).toBe('a');
+    // The driver never heard it - not reported as spoken, not dedupe'd.
+    expect(result.spoken).toBeNull();
+    expect(result.state.announcedIds.has('a')).toBe(false);
+    expect(result.state.recent).toEqual([]);
     expect(result.state.queue.isSpeaking).toBe(false);
   });
 });

@@ -78,7 +78,13 @@ async function fetchAndApplyAlerts(boundingBox: WazeBoundingBoxParams, nowMs: nu
     consecutiveRateLimitHits = 0;
     useTripStore.getState().setOffline(false);
     if (rateLimitBannerShown) {
-      useTripStore.getState().setBannerMessage(null);
+      // Only clear it if it's still showing the rate-limit text - the
+      // banner is a single slot shared with e.g. the background-location
+      // notice, and that may have been set after this one and shouldn't
+      // be wiped by this unrelated recovery.
+      if (useTripStore.getState().bannerMessage === RATE_LIMIT_BANNER_MESSAGE) {
+        useTripStore.getState().setBannerMessage(null);
+      }
       rateLimitBannerShown = false;
     }
     return true;
@@ -117,13 +123,37 @@ async function pollIfDue(driver: DriverState, nowMs: number): Promise<void> {
 }
 
 /**
+ * Serializes handleDriverUpdate() calls. Once handed off to 'live'
+ * (see useDriveLoop.ts), the foreground watchPositionAsync callback and
+ * the background TaskManager task are both active at once and both call
+ * handleDriverUpdate directly with no coordination between them - without
+ * this, two overlapping calls could interleave their reads/writes of the
+ * module-level announcerState/alertsCache/pollState (dequeue the same
+ * alert twice, stomp each other's cache update, fire two polls at once).
+ * Chaining every call through this promise forces them to run one at a
+ * time, in call order, regardless of which source triggered them.
+ */
+let updateChain: Promise<void> = Promise.resolve();
+
+export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<void> {
+  const run = updateChain.then(() => handleDriverUpdateSerialized(driver, nowMs));
+  // Swallow here so a rejected update doesn't poison the chain for
+  // whatever call comes after it - handleDriverUpdateSerialized already
+  // catches its own fetch/speech failures, so a rejection reaching this
+  // point would be an unexpected bug, not routine unhappy-path behaviour.
+  updateChain = run.catch(() => {});
+  return run;
+}
+
+/**
  * The single place a new driver position turns into "maybe fetch fresh
  * alerts, maybe speak one". Reads live settings and pushes to the trip
  * store itself (both are plain module-level stores, not React context,
  * so this works identically whether called from a hook's callback or a
- * background task with no React tree mounted at all).
+ * background task with no React tree mounted at all). Only ever called
+ * through handleDriverUpdate() above, which serializes it.
  */
-export async function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<void> {
+async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number): Promise<void> {
   await pollIfDue(driver, nowMs);
 
   speedState = updateSpeedState(speedState, driver.speedKmh, nowMs);
