@@ -17,8 +17,10 @@ module.exports = {
     userInterfaceStyle: 'light',
     ios: {
       supportsTablet: true,
+      bundleIdentifier: 'com.itslethallez.voicetrafficalerts',
     },
     android: {
+      package: 'com.itslethallez.voicetrafficalerts',
       adaptiveIcon: {
         backgroundColor: '#E6F4FE',
         foregroundImage: './assets/android-icon-foreground.png',
@@ -59,5 +61,10 @@ module.exports = {
       // now deprecated by @rnmapbox/maps itself.
       '@rnmapbox/maps',
     ],
+    extra: {
+      eas: {
+        projectId: '7f55f15f-fe4a-4c06-936a-34131e8a5025',
+      },
+    },
   },
 };
