@@ -127,9 +127,9 @@ async function fetchAndApplyAlerts(boundingBox: WazeBoundingBoxParams, nowMs: nu
   }
 }
 
-async function pollIfDue(driver: DriverState, nowMs: number): Promise<void> {
+async function pollIfDue(driver: DriverState, nowMs: number, announceDistanceMeters: number): Promise<void> {
   movementState = updateMovementState(movementState, driver.position, nowMs);
-  const plan = planPoll(driver, movementState, nowMs);
+  const plan = planPoll(driver, movementState, nowMs, announceDistanceMeters);
 
   if (!plan.shouldPoll || !plan.boundingBox) return;
 
@@ -179,11 +179,11 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   // Radar UI mirror (Step 11) - read-only, doesn't affect any decision below.
   useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg);
 
-  await pollIfDue(driver, nowMs);
+  const settings = useSettingsStore.getState();
+  await pollIfDue(driver, nowMs, settings.announceDistanceMeters);
 
   speedState = updateSpeedState(speedState, driver.speedKmh, nowMs);
 
-  const settings = useSettingsStore.getState();
   // "User is a passenger or on a train. Not solvable, but do not announce
   // below 15 km/h sustained." - data still stays fresh (pollIfDue above
   // ran regardless), only the speaking is suppressed.
