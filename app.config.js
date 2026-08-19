@@ -1,11 +1,11 @@
 /**
- * app.config.js instead of app.json so the Mapbox SDK download token (a
- * build-time-only secret, needed to fetch the native Mapbox Maps SDK
- * during a prebuild/dev-client build) can come from the environment
- * instead of being committed. It's read from process.env directly (no
- * EXPO_PUBLIC_ prefix) so it's never inlined into the JS bundle - Expo
- * CLI loads .env into process.env before evaluating this file for every
- * relevant command (start, export, prebuild).
+ * app.config.js instead of app.json for the Mapbox SDK download token -
+ * see the RNMAPBOX_MAPS_DOWNLOAD_TOKEN note below. Nothing here reads it
+ * directly (Android's Gradle scripts and iOS's Podfile both pull it
+ * straight from the environment themselves via ENV[...]/getenv(...)) but
+ * app.config.js is still what makes Expo CLI load .env into process.env
+ * - and therefore into every child build process it spawns - for every
+ * relevant command (start, export, prebuild, run:android/ios).
  */
 module.exports = {
   expo: {
@@ -52,12 +52,12 @@ module.exports = {
           isAndroidForegroundServiceEnabled: true,
         },
       ],
-      [
-        '@rnmapbox/maps',
-        {
-          RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN,
-        },
-      ],
+      // No plugin config needed for the download token - both platforms'
+      // native build tooling read RNMAPBOX_MAPS_DOWNLOAD_TOKEN straight
+      // out of the environment (see the comment above); passing it
+      // through the old RNMapboxMapsDownloadToken plugin prop instead is
+      // now deprecated by @rnmapbox/maps itself.
+      '@rnmapbox/maps',
     ],
   },
 };
