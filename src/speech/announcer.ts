@@ -77,7 +77,14 @@ export async function tick(
   }
 
   if (!spoken) {
-    return { state: { ...state, queue }, spoken: null };
+    // dequeueNext already advanced lastAnnouncedAtMs to nowMs on the
+    // assumption the alert would be spoken. It wasn't, so restore the
+    // pre-dequeue gap timer - a failed attempt must not throttle the next
+    // (possibly different) alert for the full MIN_ANNOUNCEMENT_GAP_MS.
+    return {
+      state: { ...state, queue: { ...queue, lastAnnouncedAtMs: state.queue.lastAnnouncedAtMs } },
+      spoken: null,
+    };
   }
 
   const announcedIds = new Set(state.announcedIds);

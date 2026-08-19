@@ -115,6 +115,25 @@ describe('announcer', () => {
     expect(result.state.recent).toEqual([]);
     expect(result.state.queue.isSpeaking).toBe(false);
   });
+
+  it('does not advance the announcement gap timer on a TTS failure, so a fresh alert is not throttled', async () => {
+    speakAsync.mockRejectedValueOnce(new Error('tts failed'));
+    let state = createInitialAnnouncerState();
+    state = submitCandidates(state, [makeCandidate('a', 'POLICE')]);
+
+    const now = 10_000;
+    const failed = await tick(state, now);
+    expect(failed.spoken).toBeNull();
+
+    // Immediately retry with a different candidate. dequeueNext had
+    // already advanced lastAnnouncedAtMs to `now` on the assumption 'a'
+    // would be spoken - if that wasn't restored on failure, this would be
+    // wrongly throttled for the full MIN_ANNOUNCEMENT_GAP_MS even though
+    // nothing was actually announced.
+    const retryState = submitCandidates(failed.state, [makeCandidate('b', 'JAM')]);
+    const retry = await tick(retryState, now + 1);
+    expect(retry.spoken?.alertId).toBe('b');
+  });
 });
 
 describe('speakBriefing', () => {

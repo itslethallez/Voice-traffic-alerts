@@ -1,10 +1,22 @@
 import type { WazeBoundingBoxParams } from '../../geo/boundingBox';
 import { splitBoundingBoxIntoQuadrants } from '../../geo/quadrants';
-import { fetchWazeAlerts } from './client';
+import { WazeApiError, fetchWazeAlerts } from './client';
 import { mergeAlertsById } from './mergeAlerts';
 import type { WazeAlert } from './types';
 
 const ALERTS_PER_CALL_CAP = 200;
+
+export interface BoundingBoxFetchResult {
+  alerts: WazeAlert[];
+  /**
+   * True if at least one quadrant request came back 429 rate-limited.
+   * The call as a whole still "succeeds" (the original 200 plus whatever
+   * quadrants did return are merged and returned) but the caller needs
+   * this to keep treating the API as rate-limited for backoff purposes,
+   * rather than seeing a full alerts list and assuming everything is clear.
+   */
+  quadrantRateLimited: boolean;
+}
 
 /**
  * A single call is capped at 200 alerts. Returning exactly the cap is
@@ -21,10 +33,12 @@ const ALERTS_PER_CALL_CAP = 200;
  * rather than the whole call rejecting and discarding data already in
  * hand. Only rejects if every call, including the initial one, fails.
  */
-export async function fetchAlertsForBoundingBox(box: WazeBoundingBoxParams): Promise<WazeAlert[]> {
+export async function fetchAlertsForBoundingBox(
+  box: WazeBoundingBoxParams
+): Promise<BoundingBoxFetchResult> {
   const response = await fetchWazeAlerts(box, { maxAlerts: ALERTS_PER_CALL_CAP });
   if (response.data.alerts.length < ALERTS_PER_CALL_CAP) {
-    return response.data.alerts;
+    return { alerts: response.data.alerts, quadrantRateLimited: false };
   }
 
   const quadrants = splitBoundingBoxIntoQuadrants(box);
@@ -33,13 +47,20 @@ export async function fetchAlertsForBoundingBox(box: WazeBoundingBoxParams): Pro
   );
 
   const quadrantAlertLists: WazeAlert[][] = [];
+  let quadrantRateLimited = false;
   for (const result of quadrantResults) {
     if (result.status === 'fulfilled') {
       quadrantAlertLists.push(result.value.data.alerts);
     } else {
       console.warn('[waze] a quadrant request failed, continuing with the rest', result.reason);
+      if (result.reason instanceof WazeApiError && result.reason.isRateLimited) {
+        quadrantRateLimited = true;
+      }
     }
   }
 
-  return mergeAlertsById([response.data.alerts, ...quadrantAlertLists]);
+  return {
+    alerts: mergeAlertsById([response.data.alerts, ...quadrantAlertLists]),
+    quadrantRateLimited,
+  };
 }

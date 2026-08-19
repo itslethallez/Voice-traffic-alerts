@@ -57,6 +57,10 @@ export function resetTripRuntime(): void {
   lastPollAttemptAtMs = null;
   consecutiveRateLimitHits = 0;
   rateLimitBannerShown = false;
+  // Also start a fresh serialization chain - otherwise a call already
+  // queued behind the old chain (from before this reset) would still run
+  // afterwards and write into the just-reset state.
+  updateChain = Promise.resolve();
 }
 
 const RATE_LIMIT_BANNER_MESSAGE = 'Requests are being limited. Retrying automatically.';
@@ -73,19 +77,33 @@ async function fetchAndApplyAlerts(boundingBox: WazeBoundingBoxParams, nowMs: nu
   lastPollAttemptAtMs = nowMs;
 
   try {
-    const alerts = await fetchAlertsForBoundingBox(boundingBox);
+    const { alerts, quadrantRateLimited } = await fetchAlertsForBoundingBox(boundingBox);
     alertsCache = applyFetchResult(alertsCache, { ok: true, alerts, nowMs });
-    consecutiveRateLimitHits = 0;
     useTripStore.getState().setOffline(false);
-    if (rateLimitBannerShown) {
-      // Only clear it if it's still showing the rate-limit text - the
-      // banner is a single slot shared with e.g. the background-location
-      // notice, and that may have been set after this one and shouldn't
-      // be wiped by this unrelated recovery.
-      if (useTripStore.getState().bannerMessage === RATE_LIMIT_BANNER_MESSAGE) {
-        useTripStore.getState().setBannerMessage(null);
+
+    if (quadrantRateLimited) {
+      // A quadrant came back 429 even though the call as a whole returned
+      // usable data (the original 200 plus whatever other quadrants
+      // succeeded) - still count this toward the backoff so a sustained
+      // rate limit keeps slowing polling down, instead of looking like a
+      // clean fetch and resetting straight back to zero.
+      consecutiveRateLimitHits += 1;
+      if (!rateLimitBannerShown) {
+        useTripStore.getState().setBannerMessage(RATE_LIMIT_BANNER_MESSAGE);
+        rateLimitBannerShown = true;
       }
-      rateLimitBannerShown = false;
+    } else {
+      consecutiveRateLimitHits = 0;
+      if (rateLimitBannerShown) {
+        // Only clear it if it's still showing the rate-limit text - the
+        // banner is a single slot shared with e.g. the background-location
+        // notice, and that may have been set after this one and shouldn't
+        // be wiped by this unrelated recovery.
+        if (useTripStore.getState().bannerMessage === RATE_LIMIT_BANNER_MESSAGE) {
+          useTripStore.getState().setBannerMessage(null);
+        }
+        rateLimitBannerShown = false;
+      }
     }
     return true;
   } catch (error) {

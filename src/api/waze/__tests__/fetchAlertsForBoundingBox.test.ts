@@ -1,11 +1,16 @@
 import type { WazeAlert, WazeAlertsResponse } from '../types';
 import type { WazeBoundingBoxParams } from '../../../geo/boundingBox';
+import { WazeApiError } from '../client';
 
 const fetchWazeAlerts = jest.fn<Promise<WazeAlertsResponse>, unknown[]>();
 
-jest.mock('../client', () => ({
-  fetchWazeAlerts: (...args: unknown[]) => fetchWazeAlerts(...args),
-}));
+jest.mock('../client', () => {
+  const actual = jest.requireActual('../client');
+  return {
+    ...actual,
+    fetchWazeAlerts: (...args: unknown[]) => fetchWazeAlerts(...args),
+  };
+});
 
 import { fetchAlertsForBoundingBox } from '../fetchAlertsForBoundingBox';
 import { splitBoundingBoxIntoQuadrants } from '../../../geo/quadrants';
@@ -56,7 +61,8 @@ describe('fetchAlertsForBoundingBox', () => {
     const result = await fetchAlertsForBoundingBox(BOX);
 
     expect(fetchWazeAlerts).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(alerts);
+    expect(result.alerts).toEqual(alerts);
+    expect(result.quadrantRateLimited).toBe(false);
   });
 
   it('splits into four quadrants and merges when the response hits the 200 cap', async () => {
@@ -76,10 +82,11 @@ describe('fetchAlertsForBoundingBox', () => {
 
     // 1 initial call + 4 quadrant calls
     expect(fetchWazeAlerts).toHaveBeenCalledTimes(5);
-    const ids = result.map((a) => a.alert_id).sort();
+    const ids = result.alerts.map((a) => a.alert_id).sort();
     expect(ids).toEqual(
       [...fullBoxAlerts.map((a) => a.alert_id), ...[...quadrantAlertsByBox.values()].map((a) => a.alert_id)].sort()
     );
+    expect(result.quadrantRateLimited).toBe(false);
   });
 
   it('dedupes an alert returned by both the full-box call and a quadrant call', async () => {
@@ -92,7 +99,7 @@ describe('fetchAlertsForBoundingBox', () => {
     });
 
     const result = await fetchAlertsForBoundingBox(BOX);
-    const sharedCount = result.filter((a) => a.alert_id === 'shared').length;
+    const sharedCount = result.alerts.filter((a) => a.alert_id === 'shared').length;
     expect(sharedCount).toBe(1);
   });
 
@@ -111,10 +118,12 @@ describe('fetchAlertsForBoundingBox', () => {
 
     // The 200 from the full-box call must survive a quadrant failure, not be discarded.
     for (const alert of fullBoxAlerts) {
-      expect(result.some((a) => a.alert_id === alert.alert_id)).toBe(true);
+      expect(result.alerts.some((a) => a.alert_id === alert.alert_id)).toBe(true);
     }
     // The 3 quadrants that succeeded should also be present.
-    expect(result.length).toBeGreaterThan(fullBoxAlerts.length);
+    expect(result.alerts.length).toBeGreaterThan(fullBoxAlerts.length);
+    // A generic network failure isn't a rate limit.
+    expect(result.quadrantRateLimited).toBe(false);
   });
 
   it('does not reject just because a single quadrant call rejects', async () => {
@@ -125,6 +134,30 @@ describe('fetchAlertsForBoundingBox', () => {
       throw new Error('every quadrant fails');
     });
 
-    await expect(fetchAlertsForBoundingBox(BOX)).resolves.toEqual(fullBoxAlerts);
+    await expect(fetchAlertsForBoundingBox(BOX)).resolves.toEqual({
+      alerts: fullBoxAlerts,
+      quadrantRateLimited: false,
+    });
+  });
+
+  it('flags quadrantRateLimited when a quadrant comes back 429, without dropping the data that did arrive', async () => {
+    const fullBoxAlerts = Array.from({ length: 200 }, (_, i) => makeAlert(`full-${i}`));
+    const quadrants = splitBoundingBoxIntoQuadrants(BOX);
+    const rateLimitedQuadrant = JSON.stringify(quadrants[0]);
+
+    fetchWazeAlerts.mockImplementation(async (box: unknown) => {
+      if (JSON.stringify(box) === JSON.stringify(BOX)) return makeResponse(fullBoxAlerts);
+      if (JSON.stringify(box) === rateLimitedQuadrant) {
+        throw new WazeApiError('Waze API request failed with status 429', 429);
+      }
+      return makeResponse([makeAlert(`ok-${JSON.stringify(box)}`)]);
+    });
+
+    const result = await fetchAlertsForBoundingBox(BOX);
+
+    expect(result.quadrantRateLimited).toBe(true);
+    for (const alert of fullBoxAlerts) {
+      expect(result.alerts.some((a) => a.alert_id === alert.alert_id)).toBe(true);
+    }
   });
 });

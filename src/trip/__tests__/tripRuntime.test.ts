@@ -41,6 +41,10 @@ jest.mock('../../speech/ttsAdapter', () => ({
 }));
 
 const fetchAlertsForBoundingBox = jest.fn();
+/** Wraps a plain alerts array as the { alerts, quadrantRateLimited } shape fetchAlertsForBoundingBox actually returns. */
+function ok(alerts: unknown[]): { alerts: unknown[]; quadrantRateLimited: boolean } {
+  return { alerts, quadrantRateLimited: false };
+}
 jest.mock('../../api/waze/fetchAlertsForBoundingBox', () => ({
   fetchAlertsForBoundingBox: (...args: unknown[]) => fetchAlertsForBoundingBox(...args),
 }));
@@ -70,13 +74,13 @@ describe('handleDriverUpdate', () => {
   });
 
   it('polls immediately on the first update', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue([]);
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
     await handleDriverUpdate(driver, Date.now());
     expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(1);
   });
 
   it('does not poll again before the moving interval has elapsed', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue([]);
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
     const now = Date.now();
     await handleDriverUpdate(driver, now);
     await handleDriverUpdate(driver, now + 1000);
@@ -84,7 +88,7 @@ describe('handleDriverUpdate', () => {
   });
 
   it('polls again once the moving interval has elapsed', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue([]);
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
     const now = Date.now();
     await handleDriverUpdate(driver, now);
     await handleDriverUpdate(driver, now + MOVING_POLL_INTERVAL_MS);
@@ -93,7 +97,7 @@ describe('handleDriverUpdate', () => {
 
   it('announces the highest-severity alert from freshly-fetched alerts', async () => {
     const now = Date.now();
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(now));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(now)));
     await handleDriverUpdate(driver, now);
     expect(pushAnnouncement).toHaveBeenCalledTimes(1);
     expect(pushAnnouncement.mock.calls[0][0].alertId).toBe('wm-012');
@@ -101,7 +105,7 @@ describe('handleDriverUpdate', () => {
 
   it('keeps serving cached alerts and marks offline on a network failure', async () => {
     const now = Date.now();
-    fetchAlertsForBoundingBox.mockResolvedValueOnce(buildMockAlerts(now));
+    fetchAlertsForBoundingBox.mockResolvedValueOnce(ok(buildMockAlerts(now)));
     await handleDriverUpdate(driver, now); // seeds the cache, announces wm-012
 
     fetchAlertsForBoundingBox.mockRejectedValueOnce(new WazeApiError('network down', null));
@@ -133,15 +137,36 @@ describe('handleDriverUpdate', () => {
     await handleDriverUpdate(driver, now);
     expect(setBannerMessage).toHaveBeenCalledWith('Requests are being limited. Retrying automatically.');
 
-    fetchAlertsForBoundingBox.mockResolvedValueOnce([]);
+    fetchAlertsForBoundingBox.mockResolvedValueOnce(ok([]));
     await handleDriverUpdate(driver, now + RATE_LIMIT_INITIAL_BACKOFF_MS);
     expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
     expect(setBannerMessage).toHaveBeenCalledWith(null);
   });
 
+  it('keeps counting toward the backoff when a quadrant comes back 429, even though the merged fetch "succeeds"', async () => {
+    const now = Date.now();
+    // Both attempts return usable data (the call as a whole succeeds) but
+    // flag that a quadrant was rate-limited - this must still count
+    // against the backoff, not reset it to zero like a clean fetch would.
+    fetchAlertsForBoundingBox.mockResolvedValue({ alerts: [], quadrantRateLimited: true });
+
+    await handleDriverUpdate(driver, now);
+    expect(setBannerMessage).toHaveBeenCalledWith('Requests are being limited. Retrying automatically.');
+
+    await handleDriverUpdate(driver, now + RATE_LIMIT_INITIAL_BACKOFF_MS);
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
+
+    // Second consecutive hit doubles the backoff to 120s - a poll only
+    // 60s after the second attempt must not fire yet. If the quadrant
+    // 429 had wrongly reset consecutiveRateLimitHits to 0, this next call
+    // would be "due" under the normal moving cadence instead and poll again.
+    await handleDriverUpdate(driver, now + RATE_LIMIT_INITIAL_BACKOFF_MS * 2);
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
+  });
+
   it('respects a category filter from settings', async () => {
     const now = Date.now();
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(now));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(now)));
     settingsState.categoriesEnabled = Object.fromEntries(
       ALERT_CATEGORIES.map((c) => [c, c === 'JAM'])
     ) as typeof settingsState.categoriesEnabled;
@@ -156,14 +181,14 @@ describe('handleDriverUpdate', () => {
     // only the speech gate should react to sustained low speed.
     const lowSpeedDriver: DriverState = { ...driver, speedKmh: 10 };
     const now = Date.now();
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(now));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(now)));
 
     await handleDriverUpdate(lowSpeedDriver, now);
     expect(pushAnnouncement).toHaveBeenCalledTimes(1); // not yet "sustained" on the very first low-speed sample
 
     pushAnnouncement.mockClear();
     const laterNow = now + SUSTAINED_LOW_SPEED_WINDOW_MS;
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(laterNow));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(laterNow)));
     await handleDriverUpdate(lowSpeedDriver, laterNow);
 
     expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2); // still polling
@@ -173,7 +198,7 @@ describe('handleDriverUpdate', () => {
   it('still polls (keeps data fresh) but does not announce when master mute is on', async () => {
     settingsState.masterMute = true;
     const now = Date.now();
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(now));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(now)));
 
     await handleDriverUpdate(driver, now);
 
@@ -192,7 +217,7 @@ describe('handleDriverUpdate', () => {
     // shared slot before the rate limit clears.
     setBannerMessage('Some other banner');
 
-    fetchAlertsForBoundingBox.mockResolvedValueOnce([]);
+    fetchAlertsForBoundingBox.mockResolvedValueOnce(ok([]));
     await handleDriverUpdate(driver, now + RATE_LIMIT_INITIAL_BACKOFF_MS);
 
     expect(tripBannerMessage).toBe('Some other banner');
@@ -200,14 +225,14 @@ describe('handleDriverUpdate', () => {
 
   it('serializes overlapping updates so a slow first call fully finishes before a second one begins', async () => {
     const now = Date.now();
-    let resolveFirstFetch: (alerts: ReturnType<typeof buildMockAlerts>) => void = () => {};
-    const firstFetchGate = new Promise<ReturnType<typeof buildMockAlerts>>((resolve) => {
+    let resolveFirstFetch: (result: ReturnType<typeof ok>) => void = () => {};
+    const firstFetchGate = new Promise<ReturnType<typeof ok>>((resolve) => {
       resolveFirstFetch = resolve;
     });
 
     fetchAlertsForBoundingBox
       .mockImplementationOnce(() => firstFetchGate)
-      .mockResolvedValueOnce(buildMockAlerts(now + MOVING_POLL_INTERVAL_MS));
+      .mockResolvedValueOnce(ok(buildMockAlerts(now + MOVING_POLL_INTERVAL_MS)));
 
     // Simulates the foreground watch and the background task each
     // delivering a fix without waiting on each other.
@@ -224,10 +249,40 @@ describe('handleDriverUpdate', () => {
     }
     expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(1);
 
-    resolveFirstFetch(buildMockAlerts(now));
+    resolveFirstFetch(ok(buildMockAlerts(now)));
     await Promise.all([first, second]);
 
     expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not leave a fresh update stuck behind one still queued from before a reset', async () => {
+    const now = Date.now();
+    let resolveStaleFetch: (result: ReturnType<typeof ok>) => void = () => {};
+    const staleFetchGate = new Promise<ReturnType<typeof ok>>((resolve) => {
+      resolveStaleFetch = resolve;
+    });
+
+    fetchAlertsForBoundingBox
+      .mockImplementationOnce(() => staleFetchGate)
+      .mockResolvedValueOnce(ok([]));
+
+    // Kick off an update but never let its fetch resolve yet - simulates
+    // a call still queued on the serialization chain (e.g. a slow
+    // in-flight fetch) right as a new trip starts and resets the runtime.
+    const stale = handleDriverUpdate(driver, now);
+
+    resetTripRuntime();
+
+    // A fresh update issued after the reset must run its own fetch right
+    // away, not sit blocked behind the still-pending stale one.
+    const fresh = handleDriverUpdate(driver, now + MOVING_POLL_INTERVAL_MS);
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
+
+    resolveStaleFetch(ok([]));
+    await Promise.all([stale, fresh]);
   });
 });
 
@@ -258,7 +313,7 @@ describe('runBriefing', () => {
   const GAP_ADVANCE_MS = BRIEFING_GAP_MS * MAX_BRIEFING_ALERTS;
 
   it('uses a previously populated cache immediately, without fetching again', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(Date.now()));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
     await handleDriverUpdate(driver, Date.now()); // seeds the cache
     fetchAlertsForBoundingBox.mockClear();
 
@@ -270,7 +325,7 @@ describe('runBriefing', () => {
   });
 
   it('does not retry after a successful fetch, even one with zero alerts', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue([]);
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
     await runBriefing(driver, Date.now());
     expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(1);
   });
@@ -334,7 +389,7 @@ describe('runBriefing', () => {
   });
 
   it('speaks the explicit no-alerts message when the cache has data but nothing qualifies', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(Date.now()));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
     settingsState.categoriesEnabled = Object.fromEntries(
       ALERT_CATEGORIES.map((c) => [c, false])
     ) as typeof settingsState.categoriesEnabled;
@@ -346,7 +401,7 @@ describe('runBriefing', () => {
   });
 
   it('is filtered by the configured briefing radius and capped at MAX_BRIEFING_ALERTS', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(Date.now()));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
     settingsState.briefingRadiusMeters = 2000;
 
     const promise = runBriefing(driver, Date.now());
@@ -358,7 +413,7 @@ describe('runBriefing', () => {
 
   it('does not speak when master mute is on, but still refreshes the cache', async () => {
     settingsState.masterMute = true;
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(Date.now()));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
 
     await runBriefing(driver, Date.now());
 
@@ -368,7 +423,7 @@ describe('runBriefing', () => {
 
   it('marks briefed alerts as announced so live driving does not repeat them', async () => {
     const now = Date.now();
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(now));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(now)));
     settingsState.briefingRadiusMeters = 5000; // wide enough to cover the whole fixture
 
     const briefingPromise = runBriefing(driver, now);
@@ -390,7 +445,7 @@ describe('runBriefing', () => {
   });
 
   it('stops promptly and speaks nothing when the signal is already aborted', async () => {
-    fetchAlertsForBoundingBox.mockResolvedValue(buildMockAlerts(Date.now()));
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
     const controller = new AbortController();
     controller.abort();
 
