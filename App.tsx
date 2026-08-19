@@ -9,11 +9,11 @@ import {
   Archivo_900Black,
 } from '@expo-google-fonts/archivo';
 import { colors } from './src/theme/colors';
+import { BottomNav, type NavTab } from './src/navigation/BottomNav';
 import { DriveScreen } from './src/screens/DriveScreen';
+import { HistoryScreen } from './src/screens/HistoryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { useDriveLoop } from './src/screens/useDriveLoop';
-
-type Screen = 'drive' | 'settings';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -22,14 +22,14 @@ export default function App() {
     Archivo_700Bold,
     Archivo_900Black,
   });
-  const [screen, setScreen] = useState<Screen>('drive');
+  const [tab, setTab] = useState<NavTab>('radio');
 
   // Called here, not inside DriveScreen: App never unmounts while the app
-  // is open, but DriveScreen does (swapped out for SettingsScreen). If
-  // this lived in DriveScreen, opening Settings mid-drive would unmount
-  // and remount the whole location/briefing/announcement lifecycle -
-  // wiping dedupe and cache state and re-running the cold-start briefing
-  // every time the driver checks a setting.
+  // is open, but DriveScreen does (swapped out when another tab is
+  // active). If this lived in DriveScreen, switching tabs mid-drive would
+  // unmount and remount the whole location/briefing/announcement
+  // lifecycle - wiping dedupe and cache state and re-running the
+  // cold-start briefing every time the driver checks History or Settings.
   useDriveLoop();
 
   if (!fontsLoaded) {
@@ -38,11 +38,12 @@ export default function App() {
 
   return (
     <View style={styles.root}>
-      {screen === 'drive' ? (
-        <DriveScreen onOpenSettings={() => setScreen('settings')} />
-      ) : (
-        <SettingsScreen onClose={() => setScreen('drive')} />
-      )}
+      <View style={styles.content}>
+        {tab === 'radio' ? <DriveScreen onOpenSettings={() => setTab('settings')} /> : null}
+        {tab === 'history' ? <HistoryScreen /> : null}
+        {tab === 'settings' ? <SettingsScreen onClose={() => setTab('radio')} /> : null}
+      </View>
+      <BottomNav active={tab} onChange={setTab} />
       <StatusBar style="light" />
     </View>
   );
@@ -50,6 +51,10 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
     flex: 1,
   },
   loading: {

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { formatRelativeTime } from './formatRelativeTime';
+import { RadarMap } from './radar/RadarMap';
 
 /** Most recent announcement first, each older one fading further. */
 const ANNOUNCEMENT_OPACITY = [1, 0.6, 0.35];
@@ -35,11 +35,10 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
 
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={[colors.backgroundAccent, colors.background]}
-        style={StyleSheet.absoluteFill}
-      />
-      <SafeAreaView style={styles.safeArea}>
+      <View style={StyleSheet.absoluteFill}>
+        <RadarMap />
+      </View>
+      <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
         <Pressable
           onPress={onOpenSettings}
           hitSlop={16}
@@ -56,17 +55,19 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
           </View>
         ) : null}
 
-        <View style={styles.centerContent}>
+        <View style={styles.statusPill} pointerEvents="none">
           {locationError ? (
             <>
-              <Text style={styles.statusText}>Location needed</Text>
+              <Text style={styles.statusPillText}>Location needed</Text>
               <Text style={styles.explanationText}>{locationError}</Text>
             </>
           ) : (
-            <Text style={styles.statusText}>{statusLabel(status)}</Text>
+            <Text style={styles.statusPillText}>{statusLabel(status)}</Text>
           )}
+        </View>
 
-          <View style={styles.announcementsList}>
+        <View style={styles.bottomOverlay} pointerEvents="box-none">
+          <View style={styles.announcementsList} pointerEvents="none">
             {recentAnnouncements.map((announcement, index) => (
               <Text
                 key={`${announcement.alertId}-${announcement.announcedAtMs}`}
@@ -79,19 +80,19 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
               </Text>
             ))}
           </View>
-        </View>
 
-        <Pressable
-          onPress={toggleMasterMute}
-          style={({ pressed }) => [
-            styles.muteButton,
-            { backgroundColor: pressed ? colors.muteButtonActive : colors.muteButtonIdle },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={masterMute ? 'Unmute alerts' : 'Mute alerts'}
-        >
-          <Text style={styles.muteButtonText}>{masterMute ? 'Unmute' : 'Mute'}</Text>
-        </Pressable>
+          <Pressable
+            onPress={toggleMasterMute}
+            style={({ pressed }) => [
+              styles.muteButton,
+              { backgroundColor: pressed ? colors.muteButtonActive : colors.muteButtonIdle },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={masterMute ? 'Unmute alerts' : 'Mute alerts'}
+          >
+            <Text style={styles.muteButtonText}>{masterMute ? 'Unmute' : 'Mute'}</Text>
+          </Pressable>
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -104,6 +105,7 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    justifyContent: 'space-between',
   },
   settingsButton: {
     position: 'absolute',
@@ -111,6 +113,8 @@ const styles = StyleSheet.create({
     right: 16,
     zIndex: 1,
     padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(10, 10, 12, 0.55)',
   },
   settingsIcon: {
     fontSize: 28,
@@ -130,40 +134,48 @@ const styles = StyleSheet.create({
     color: colors.warning,
     textAlign: 'center',
   },
-  centerContent: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
+  /** A compact status badge over the map, replacing the old full-screen
+   * centered text now that the radar map is the primary visual. */
+  statusPill: {
+    alignSelf: 'center',
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    backgroundColor: 'rgba(10, 10, 12, 0.55)',
+    maxWidth: '80%',
   },
-  statusText: {
-    fontFamily: fontFamily.black,
-    fontSize: 64,
+  statusPillText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 20,
     color: colors.ink,
     textAlign: 'center',
   },
   explanationText: {
-    marginTop: 16,
+    marginTop: 8,
     fontFamily: fontFamily.regular,
-    fontSize: 24,
-    lineHeight: 32,
+    fontSize: 14,
+    lineHeight: 20,
     color: colors.inkMuted,
     textAlign: 'center',
   },
+  bottomOverlay: {
+    paddingHorizontal: 32,
+  },
   announcementsList: {
-    marginTop: 40,
-    width: '100%',
-    gap: 16,
+    marginBottom: 24,
+    gap: 12,
   },
   announcementText: {
     fontFamily: fontFamily.medium,
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 18,
+    lineHeight: 24,
     color: colors.ink,
     textAlign: 'center',
+    textShadowColor: 'rgba(10, 10, 12, 0.85)',
+    textShadowRadius: 8,
   },
   muteButton: {
-    marginHorizontal: 32,
     marginBottom: 32,
     minHeight: 96,
     borderRadius: 48,

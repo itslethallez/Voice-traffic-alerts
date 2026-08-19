@@ -10,6 +10,8 @@ import { BRIEFING_FETCH_RETRY_INTERVAL_MS, BRIEFING_LOADING_BANNER_DELAY_MS, BRI
 
 const pushAnnouncement = jest.fn();
 const setOffline = jest.fn();
+const setDriverPosition = jest.fn();
+const setVisibleAlerts = jest.fn();
 let tripBannerMessage: string | null = null;
 const setBannerMessage = jest.fn((message: string | null) => {
   tripBannerMessage = message;
@@ -26,6 +28,8 @@ jest.mock('../../store/useTripStore', () => ({
       pushAnnouncement,
       setOffline,
       setBannerMessage,
+      setDriverPosition,
+      setVisibleAlerts,
       get bannerMessage() {
         return tripBannerMessage;
       },
@@ -63,6 +67,8 @@ describe('handleDriverUpdate', () => {
     pushAnnouncement.mockClear();
     setOffline.mockClear();
     setBannerMessage.mockClear();
+    setDriverPosition.mockClear();
+    setVisibleAlerts.mockClear();
     speakAsync.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();
@@ -101,6 +107,17 @@ describe('handleDriverUpdate', () => {
     await handleDriverUpdate(driver, now);
     expect(pushAnnouncement).toHaveBeenCalledTimes(1);
     expect(pushAnnouncement.mock.calls[0][0].alertId).toBe('wm-012');
+  });
+
+  it('mirrors the driver position and freshly-fetched alerts into the trip store for the radar UI', async () => {
+    const now = Date.now();
+    const mockAlerts = buildMockAlerts(now);
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(mockAlerts));
+
+    await handleDriverUpdate(driver, now);
+
+    expect(setDriverPosition).toHaveBeenCalledWith(driver.position, driver.headingDeg);
+    expect(setVisibleAlerts).toHaveBeenCalledWith(mockAlerts);
   });
 
   it('keeps serving cached alerts and marks offline on a network failure', async () => {
@@ -284,6 +301,17 @@ describe('handleDriverUpdate', () => {
     resolveStaleFetch(ok([]));
     await Promise.all([stale, fresh]);
   });
+
+  it('resetTripRuntime clears the radar UI alerts mirror so a new trip does not briefly show stale markers', async () => {
+    fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
+    await handleDriverUpdate(driver, Date.now());
+    expect(setVisibleAlerts).toHaveBeenCalledWith(expect.arrayContaining([expect.anything()]));
+
+    setVisibleAlerts.mockClear();
+    resetTripRuntime();
+
+    expect(setVisibleAlerts).toHaveBeenCalledWith([]);
+  });
 });
 
 describe('runBriefing', () => {
@@ -292,6 +320,8 @@ describe('runBriefing', () => {
     pushAnnouncement.mockClear();
     setOffline.mockClear();
     setBannerMessage.mockClear();
+    setDriverPosition.mockClear();
+    setVisibleAlerts.mockClear();
     speakAsync.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();
@@ -453,5 +483,19 @@ describe('runBriefing', () => {
 
     expect(fetchAlertsForBoundingBox).not.toHaveBeenCalled();
     expect(speakAsync).not.toHaveBeenCalled();
+  });
+
+  it('mirrors the driver position into the trip store immediately, before the briefing fetch resolves', async () => {
+    fetchAlertsForBoundingBox.mockRejectedValue(new WazeApiError('network down', null));
+
+    const promise = runBriefing(driver, Date.now());
+    // Not awaiting the fetch retries at all - the mirror should already
+    // have happened by the time the very first await inside runBriefing yields.
+    expect(setDriverPosition).toHaveBeenCalledWith(driver.position, driver.headingDeg);
+
+    await jest.advanceTimersByTimeAsync(
+      BRIEFING_FETCH_RETRY_INTERVAL_MS * (BRIEFING_MAX_FETCH_ATTEMPTS - 1) + 100
+    );
+    await promise;
   });
 });

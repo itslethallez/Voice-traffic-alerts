@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import type { WazeAlert } from '../api/waze/types';
+import type { GeoPoint } from '../geo/types';
 import type { RecentAnnouncement } from '../speech/types';
 
 export type TripStatus = 'listening' | 'muted' | 'offline';
@@ -21,10 +23,22 @@ interface TripStoreState {
   bannerMessage: string | null;
   locationError: string | null;
   recentAnnouncements: RecentAnnouncement[];
+  /**
+   * Read-only mirror of trip/tripRuntime.ts's module-level driver
+   * position/heading and alerts cache (Step 11) - purely for the radar
+   * UI to render from. tripRuntime.ts writes these alongside its own
+   * bookkeeping; nothing reads them back to make filtering/speech
+   * decisions, so this can't feed back into or change that logic.
+   */
+  driverPosition: GeoPoint | null;
+  driverHeadingDeg: number;
+  visibleAlerts: WazeAlert[];
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
   setOffline: (offline: boolean) => void;
   setBannerMessage: (message: string | null) => void;
   setLocationError: (message: string | null) => void;
+  setDriverPosition: (position: GeoPoint, headingDeg: number) => void;
+  setVisibleAlerts: (alerts: WazeAlert[]) => void;
 }
 
 export const useTripStore = create<TripStoreState>((set) => ({
@@ -32,6 +46,9 @@ export const useTripStore = create<TripStoreState>((set) => ({
   bannerMessage: null,
   locationError: null,
   recentAnnouncements: [],
+  driverPosition: null,
+  driverHeadingDeg: 0,
+  visibleAlerts: [],
   pushAnnouncement: (announcement) =>
     set((state) => ({
       recentAnnouncements: [announcement, ...state.recentAnnouncements].slice(
@@ -42,6 +59,9 @@ export const useTripStore = create<TripStoreState>((set) => ({
   setOffline: (offline) => set({ isOffline: offline }),
   setBannerMessage: (message) => set({ bannerMessage: message }),
   setLocationError: (message) => set({ locationError: message }),
+  setDriverPosition: (position, headingDeg) =>
+    set({ driverPosition: position, driverHeadingDeg: headingDeg }),
+  setVisibleAlerts: (alerts) => set({ visibleAlerts: alerts }),
 }));
 
 export function statusFor(state: { masterMute: boolean; isOffline: boolean }): TripStatus {

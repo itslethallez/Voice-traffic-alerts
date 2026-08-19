@@ -61,6 +61,9 @@ export function resetTripRuntime(): void {
   // queued behind the old chain (from before this reset) would still run
   // afterwards and write into the just-reset state.
   updateChain = Promise.resolve();
+  // Radar UI mirror (Step 11) - drop the previous trip's alerts so a
+  // fresh trip doesn't briefly show stale markers before the first fetch.
+  useTripStore.getState().setVisibleAlerts([]);
 }
 
 const RATE_LIMIT_BANNER_MESSAGE = 'Requests are being limited. Retrying automatically.';
@@ -80,6 +83,7 @@ async function fetchAndApplyAlerts(boundingBox: WazeBoundingBoxParams, nowMs: nu
     const { alerts, quadrantRateLimited } = await fetchAlertsForBoundingBox(boundingBox);
     alertsCache = applyFetchResult(alertsCache, { ok: true, alerts, nowMs });
     useTripStore.getState().setOffline(false);
+    useTripStore.getState().setVisibleAlerts(alertsCache.alerts);
 
     if (quadrantRateLimited) {
       // A quadrant came back 429 even though the call as a whole returned
@@ -172,6 +176,9 @@ export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<
  * through handleDriverUpdate() above, which serializes it.
  */
 async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number): Promise<void> {
+  // Radar UI mirror (Step 11) - read-only, doesn't affect any decision below.
+  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg);
+
   await pollIfDue(driver, nowMs);
 
   speedState = updateSpeedState(speedState, driver.speedKmh, nowMs);
@@ -286,6 +293,10 @@ export async function runBriefing(
   const { signal } = options;
   const settings = useSettingsStore.getState();
   const boundingBox = radiusBoundingBox(driver.position, settings.briefingRadiusMeters);
+
+  // Radar UI mirror (Step 11) - so the map has a driver position to
+  // center on right away, before the first handleDriverUpdate() call.
+  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg);
 
   const hasUsableAlerts = await waitForBriefingAlerts(boundingBox, signal);
   if (signal?.aborted) return;
