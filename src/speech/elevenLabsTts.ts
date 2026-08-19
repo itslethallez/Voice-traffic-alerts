@@ -122,18 +122,11 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
   return new Promise((resolve, reject) => {
     activeResolve = resolve;
 
-    const settleResolve = () => {
-      clearActiveTimeout();
-      if (activeResolve === resolve) activeResolve = null;
-      resolve();
-    };
-    const settleReject = (error: Error) => {
-      clearActiveTimeout();
-      if (activeResolve === resolve) activeResolve = null;
-      reject(error);
-    };
-
-    activeTimeoutId = setTimeout(() => {
+    // This call's own timer, cleared directly (never via the shared
+    // activeTimeoutId, which a newer utterance may have already
+    // overwritten with its own watchdog by the time a stale settle runs -
+    // see the activeTimeoutId-clearing guard below).
+    const timeoutId = setTimeout(() => {
       if (!isCurrent()) return;
       // Bump the id, same as stopElevenLabsSpeech - without this, a fetch
       // that was hung but eventually resolves after this timeout has
@@ -148,6 +141,20 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
       releaseActivePlayer();
       settleReject(new Error('ElevenLabs TTS timed out'));
     }, OVERALL_TIMEOUT_MS);
+    activeTimeoutId = timeoutId;
+
+    const settleResolve = () => {
+      clearTimeout(timeoutId);
+      if (activeTimeoutId === timeoutId) activeTimeoutId = null;
+      if (activeResolve === resolve) activeResolve = null;
+      resolve();
+    };
+    const settleReject = (error: Error) => {
+      clearTimeout(timeoutId);
+      if (activeTimeoutId === timeoutId) activeTimeoutId = null;
+      if (activeResolve === resolve) activeResolve = null;
+      reject(error);
+    };
 
     fetchAudioDataUri(text, abortController.signal)
       .then((dataUri) => {

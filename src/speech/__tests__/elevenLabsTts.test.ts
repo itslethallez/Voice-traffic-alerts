@@ -238,6 +238,45 @@ describe('speakWithElevenLabsAsync', () => {
     }
   });
 
+  it('a stale timeout settle does not wipe a newer utterance\'s own watchdog', async () => {
+    jest.useFakeTimers();
+    try {
+      const fetchMock = globalThis.fetch as jest.Mock;
+      let resolveFirstFetch: (value: Response) => void = () => {};
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirstFetch = resolve;
+          })
+      );
+      fetchMock.mockImplementationOnce(() => new Promise(() => {})); // second utterance hangs too
+
+      const first = speakWithElevenLabsAsync('first');
+      const firstExpectation = expect(first).rejects.toThrow('ElevenLabs TTS timed out');
+      await jest.advanceTimersByTimeAsync(20_000); // first's own watchdog fires
+      await firstExpectation;
+
+      const second = speakWithElevenLabsAsync('second');
+      const secondExpectation = expect(second).rejects.toThrow('ElevenLabs TTS timed out');
+
+      // The first request was hung, not dead - it "arrives" now, well
+      // after its own timeout already rejected, and while the second
+      // utterance's own watchdog is still running. A shared (not
+      // per-utterance) timer slot would let this stale settle wipe the
+      // second utterance's watchdog instead of just its own.
+      resolveFirstFetch(makeFetchResponse(true));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // The second utterance's own watchdog must still be armed.
+      await jest.advanceTimersByTimeAsync(20_000);
+      await secondExpectation;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('a stale utterance stopped mid-flight does not resolve a newer one early', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
