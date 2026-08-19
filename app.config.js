@@ -38,6 +38,16 @@ module.exports = {
     web: {
       favicon: './assets/favicon.png',
     },
+    // eas.json's build profiles reference an update channel, which needs
+    // expo-updates installed and these two fields - eas-cli tried to
+    // write them itself (via `eas update:configure`) and hit the same
+    // "can't write to dynamic config" wall as the projectId below.
+    updates: {
+      url: 'https://u.expo.dev/7f55f15f-fe4a-4c06-936a-34131e8a5025',
+    },
+    runtimeVersion: {
+      policy: 'appVersion',
+    },
     plugins: [
       [
         'expo-audio',
