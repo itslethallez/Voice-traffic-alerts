@@ -135,6 +135,12 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
 
     activeTimeoutId = setTimeout(() => {
       if (!isCurrent()) return;
+      // Bump the id, same as stopElevenLabsSpeech - without this, a fetch
+      // that was hung but eventually resolves after this timeout has
+      // already rejected (and ttsAdapter has already started the device
+      // fallback) would still pass isCurrent() and go on to create a
+      // player and play, overlapping the fallback voice.
+      currentUtteranceId += 1;
       abortController.abort();
       if (activePlayer) {
         activePlayer.pause();

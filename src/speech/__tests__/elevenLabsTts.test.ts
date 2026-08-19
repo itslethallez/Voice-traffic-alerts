@@ -208,6 +208,36 @@ describe('speakWithElevenLabsAsync', () => {
     }
   });
 
+  it('invalidates the utterance on timeout, so a hung fetch that resolves late never creates a player', async () => {
+    jest.useFakeTimers();
+    try {
+      let resolveFetch: (value: Response) => void = () => {};
+      (globalThis.fetch as jest.Mock).mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        })
+      );
+
+      const promise = speakWithElevenLabsAsync('hello');
+      const expectation = expect(promise).rejects.toThrow('ElevenLabs TTS timed out');
+      await jest.advanceTimersByTimeAsync(20_000);
+      await expectation;
+
+      // The fetch was hung, not actually dead - it "arrives" after the
+      // timeout already rejected and ttsAdapter has already started the
+      // device fallback. It must not go on to create/play a player, which
+      // would overlap the fallback voice.
+      resolveFetch(makeFetchResponse(true));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(createAudioPlayer).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('a stale utterance stopped mid-flight does not resolve a newer one early', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
