@@ -2,19 +2,26 @@ type StatusListener = (status: { error: string | null; didJustFinish: boolean })
 
 interface MockPlayer {
   volume: number;
-  playbackRate: number;
   play: jest.Mock;
   pause: jest.Mock;
   remove: jest.Mock;
   addListener: jest.Mock;
+  setPlaybackRate: jest.Mock;
   emitStatus: (status: { error?: string | null; didJustFinish?: boolean }) => void;
 }
 
+/**
+ * No plain `playbackRate` property - the real native player only exposes
+ * a getter for it (assigning throws "Cannot assign to property
+ * 'playbackRate' which has only a getter" on-device, despite what the
+ * type declarations claim). setPlaybackRate() is the real, working API,
+ * so that's what the mock exposes too - matching a plain settable
+ * property here would have hidden the exact bug this shape caught.
+ */
 function createMockPlayer(): MockPlayer {
   let listener: StatusListener | null = null;
   const player: MockPlayer = {
     volume: 1,
-    playbackRate: 1,
     play: jest.fn(),
     pause: jest.fn(),
     remove: jest.fn(),
@@ -22,6 +29,7 @@ function createMockPlayer(): MockPlayer {
       listener = cb;
       return { remove: jest.fn() };
     }),
+    setPlaybackRate: jest.fn(),
     emitStatus: (status) => {
       listener?.({ error: null, didJustFinish: false, ...status });
     },
@@ -101,7 +109,7 @@ describe('speakWithElevenLabsAsync', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(mockPlayer.volume).toBe(0.6);
-    expect(mockPlayer.playbackRate).toBe(1.4);
+    expect(mockPlayer.setPlaybackRate).toHaveBeenCalledWith(1.4);
     mockPlayer.emitStatus({ didJustFinish: true });
     await promise;
   });

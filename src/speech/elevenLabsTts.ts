@@ -179,7 +179,12 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
         activePlayer = player;
         player.volume = options.volume ?? 1;
         if (options.rate !== undefined) {
-          player.playbackRate = options.rate;
+          // Not `player.playbackRate = options.rate` - on-device, that
+          // throws "Cannot assign to property 'playbackRate' which has
+          // only a getter" despite the type declarations documenting it
+          // as a plain settable property. setPlaybackRate() is the real,
+          // working native API for this.
+          player.setPlaybackRate(options.rate);
         }
 
         const subscription = player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
