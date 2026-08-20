@@ -49,6 +49,10 @@ module.exports = {
       policy: 'appVersion',
     },
     plugins: [
+      // expo-asset is a required peer dependency of expo-audio (expo
+      // doctor flags a missing one as a real crash risk outside Expo Go)
+      // - no config of its own, just needs to be present as a plugin.
+      'expo-asset',
       [
         'expo-audio',
         {
