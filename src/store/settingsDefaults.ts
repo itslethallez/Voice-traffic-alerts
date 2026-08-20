@@ -1,5 +1,4 @@
 import type { WazeAlertType } from '../api/waze/types';
-import { ANNOUNCE_MAX_DISTANCE_M } from '../geo/announceWindow';
 
 export type AlertCategory = 'POLICE' | 'ACCIDENT' | 'HAZARD' | 'ROAD_CLOSED' | 'JAM';
 
@@ -14,11 +13,13 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
 /** "Announcement distance slider, 500m to 20km." Only the upper bound is
  * user-configurable - the 300m lower bound stays fixed (announcing
  * something 300m away or closer is a physics/safety floor, not a
- * preference). Defaults to the engine's own pinned max (2000m) for
- * continuity with Step 3/4's default behaviour. */
+ * preference). Default is 5km - independent of engine/announceWindow.ts's
+ * own ANNOUNCE_MAX_DISTANCE_M, which is just that module's fallback for
+ * callers that don't pass explicit settings (tripRuntime.ts, the live
+ * path, always does), not something a fresh install actually uses. */
 export const MIN_ANNOUNCE_DISTANCE_METERS = 500;
 export const MAX_ANNOUNCE_DISTANCE_METERS = 20000;
-export const DEFAULT_ANNOUNCE_DISTANCE_METERS = ANNOUNCE_MAX_DISTANCE_M;
+export const DEFAULT_ANNOUNCE_DISTANCE_METERS = 5000;
 
 /** Cold-start briefing radius: separate from announceDistanceMeters and
  * deliberately wider, since a stationary driver wants broad situational
