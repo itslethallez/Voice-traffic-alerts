@@ -71,9 +71,18 @@ describe('announcer', () => {
 
     expect(speakAsync).toHaveBeenCalledTimes(1);
     expect(result.spoken?.alertId).toBe('accident');
-    expect(result.state.announcedIds.has('accident')).toBe(true);
+    expect(result.state.announcedDistances.get('accident')).toBe(500); // makeCandidate's default distanceMeters
     expect(result.state.recent[0].alertId).toBe('accident');
     expect(result.state.queue.isSpeaking).toBe(false);
+  });
+
+  it('records the distance an alert was announced at, for the proximity-reminder dedupe', async () => {
+    let state = createInitialAnnouncerState();
+    state = submitCandidates(state, [makeCandidate('a', 'POLICE', 1800)]);
+
+    const result = await tick(state, 0);
+
+    expect(result.state.announcedDistances.get('a')).toBe(1800);
   });
 
   it('withholds the next announcement until the minimum gap has elapsed', async () => {
@@ -111,7 +120,7 @@ describe('announcer', () => {
 
     // The driver never heard it - not reported as spoken, not dedupe'd.
     expect(result.spoken).toBeNull();
-    expect(result.state.announcedIds.has('a')).toBe(false);
+    expect(result.state.announcedDistances.has('a')).toBe(false);
     expect(result.state.recent).toEqual([]);
     expect(result.state.queue.isSpeaking).toBe(false);
   });
@@ -188,8 +197,8 @@ describe('speakBriefing', () => {
 
     const result = await speakBriefing(state, candidates, formatBriefingAlert);
 
-    expect(result.announcedIds.has('a')).toBe(true);
-    expect(result.announcedIds.has('b')).toBe(true);
+    expect(result.announcedDistances.has('a')).toBe(true);
+    expect(result.announcedDistances.has('b')).toBe(true);
     expect(result.recent.map((r) => r.alertId)).toEqual(['b', 'a']);
   });
 
@@ -218,8 +227,8 @@ describe('speakBriefing', () => {
 
     const result = await speakBriefing(state, candidates, formatBriefingAlert);
 
-    expect(result.announcedIds.has('a')).toBe(false);
-    expect(result.announcedIds.has('b')).toBe(true);
+    expect(result.announcedDistances.has('a')).toBe(false);
+    expect(result.announcedDistances.has('b')).toBe(true);
   });
 
   it('stops speaking and marks nothing further once the signal is already aborted', async () => {
@@ -233,7 +242,7 @@ describe('speakBriefing', () => {
     });
 
     expect(speakAsync).not.toHaveBeenCalled();
-    expect(result.announcedIds.size).toBe(0);
+    expect(result.announcedDistances.size).toBe(0);
   });
 
   it('cuts off mid-utterance via stopSpeaking when cancelled, and does not mark that item announced', async () => {
@@ -252,8 +261,8 @@ describe('speakBriefing', () => {
     });
 
     expect(stopSpeaking).toHaveBeenCalled();
-    expect(result.announcedIds.has('a')).toBe(false);
-    expect(result.announcedIds.has('b')).toBe(false); // loop stopped, never reached
+    expect(result.announcedDistances.has('a')).toBe(false);
+    expect(result.announcedDistances.has('b')).toBe(false); // loop stopped, never reached
     expect(speakAsync).toHaveBeenCalledTimes(1); // did not proceed to 'b'
   });
 

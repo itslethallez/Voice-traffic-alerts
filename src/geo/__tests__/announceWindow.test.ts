@@ -6,6 +6,8 @@ import {
   isBearingAnnounceable,
   isDistanceAnnounceable,
   isFreshEnoughToAnnounce,
+  isMeaningfullyCloser,
+  REMINDER_MIN_CLOSER_METERS,
 } from '../announceWindow';
 
 // These pin the exact boundary behaviour so Step 4's filtering engine
@@ -61,5 +63,21 @@ describe('isFreshEnoughToAnnounce', () => {
   it('is true for a fresh report and false for a stale one', () => {
     expect(isFreshEnoughToAnnounce(0)).toBe(true);
     expect(isFreshEnoughToAnnounce(60)).toBe(false);
+  });
+});
+
+describe('isMeaningfullyCloser', () => {
+  it('is inclusive at exactly REMINDER_MIN_CLOSER_METERS closer', () => {
+    expect(isMeaningfullyCloser(1000, 1000 + REMINDER_MIN_CLOSER_METERS)).toBe(true);
+    expect(isMeaningfullyCloser(1000.001, 1000 + REMINDER_MIN_CLOSER_METERS)).toBe(false);
+  });
+
+  it('is false when the distance is unchanged or further away', () => {
+    expect(isMeaningfullyCloser(1000, 1000)).toBe(false);
+    expect(isMeaningfullyCloser(1200, 1000)).toBe(false);
+  });
+
+  it('is false for a marginal improvement under the threshold', () => {
+    expect(isMeaningfullyCloser(950, 1000)).toBe(false);
   });
 });

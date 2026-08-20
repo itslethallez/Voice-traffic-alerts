@@ -463,7 +463,7 @@ describe('runBriefing', () => {
     expect(briefedIds.size).toBeGreaterThan(0);
     pushAnnouncement.mockClear();
 
-    // selectAnnounceableAlerts's existing announcedIds dedupe should
+    // selectAnnounceableAlerts's existing announcedDistances dedupe should
     // exclude anything the briefing already covered - no separate
     // dedupe logic needed here.
     await handleDriverUpdate(driver, now + MOVING_POLL_INTERVAL_MS);

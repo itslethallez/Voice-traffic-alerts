@@ -10,8 +10,13 @@ export const MAX_RECENT_ANNOUNCEMENTS = 3;
 
 export interface AnnouncerState {
   queue: AnnouncementQueueState;
-  /** Dedupe set to feed back into selectAnnounceableAlerts() as alreadyAnnouncedIds. */
-  announcedIds: Set<string>;
+  /**
+   * Feeds back into selectAnnounceableAlerts() as announcedDistances -
+   * maps an already-announced alert id to the distance it was announced
+   * at, so a later call can tell "already covered" apart from "worth a
+   * proximity reminder now that the driver is meaningfully closer".
+   */
+  announcedDistances: Map<string, number>;
   /** Most recent first, capped at MAX_RECENT_ANNOUNCEMENTS - what the Drive screen shows. */
   recent: RecentAnnouncement[];
 }
@@ -19,7 +24,7 @@ export interface AnnouncerState {
 export function createInitialAnnouncerState(): AnnouncerState {
   return {
     queue: initialAnnouncementQueueState,
-    announcedIds: new Set(),
+    announcedDistances: new Map(),
     recent: [],
   };
 }
@@ -46,12 +51,13 @@ export interface AnnouncerTickResult {
  * A TTS failure never throws out of here: the queue is still unblocked
  * (isSpeaking cleared) so the next alert can be announced on the next
  * tick, matching "never crash the loop". The alert is deliberately NOT
- * added to announcedIds/recent on failure - the driver never heard it,
- * so it shouldn't be dedupe'd as spoken or shown in the UI as if it was.
- * Since dequeueNext already removed it from the pending queue, leaving it
- * out of announcedIds means the next selectAnnounceableAlerts() call
- * naturally reconsiders it as a fresh candidate (as long as it's still
- * otherwise eligible) rather than requiring separate retry bookkeeping.
+ * added to announcedDistances/recent on failure - the driver never heard
+ * it, so it shouldn't be dedupe'd as spoken or shown in the UI as if it
+ * was. Since dequeueNext already removed it from the pending queue,
+ * leaving it out of announcedDistances means the next
+ * selectAnnounceableAlerts() call naturally reconsiders it as a fresh
+ * candidate (as long as it's still otherwise eligible) rather than
+ * requiring separate retry bookkeeping.
  */
 export async function tick(
   state: AnnouncerState,
@@ -87,11 +93,11 @@ export async function tick(
     };
   }
 
-  const announcedIds = new Set(state.announcedIds);
-  announcedIds.add(next.alert.alert_id);
+  const announcedDistances = new Map(state.announcedDistances);
+  announcedDistances.set(next.alert.alert_id, next.distanceMeters);
   const recent = [spoken, ...state.recent].slice(0, MAX_RECENT_ANNOUNCEMENTS);
 
-  return { state: { queue, announcedIds, recent }, spoken };
+  return { state: { queue, announcedDistances, recent }, spoken };
 }
 
 export interface SpeakBriefingOptions {
@@ -99,7 +105,7 @@ export interface SpeakBriefingOptions {
   /** Defaults to BRIEFING_GAP_MS - overridable for tests. */
   gapMs?: number;
   signal?: AbortSignal;
-  /** Called once per item, right after it's added to announcedIds/recent. */
+  /** Called once per item, right after it's added to announcedDistances/recent. */
   onItemSpoken?: (entry: RecentAnnouncement) => void;
 }
 
@@ -110,18 +116,19 @@ export interface SpeakBriefingOptions {
  * and paces itself with a short gap (BRIEFING_GAP_MS) rather than the
  * queue's 20s MIN_ANNOUNCEMENT_GAP_MS. Still reuses speakAsync - the same
  * TTS adapter and audio-ducking session live driving uses - and the same
- * AnnouncerState announcedIds/recent bookkeeping tick() writes, so
+ * AnnouncerState announcedDistances/recent bookkeeping tick() writes, so
  * selectAnnounceableAlerts's existing dedupe naturally skips anything
  * spoken here once live driving takes over; this never touches
  * `state.queue`, so it can't interfere with tick()'s own queue.
  *
- * An item is marked announced (added to announcedIds/recent) only once
- * its utterance completes naturally. If `signal` aborts mid-utterance,
- * the in-flight speech is cut short via stopSpeaking() rather than left
- * to finish, and that item - along with anything after it - is left off
- * announcedIds/recent. A thrown/rejected speakAsync is treated the same
- * way (not marked announced) but does not stop the rest of the list, to
- * match tick()'s "never crash the loop" behaviour.
+ * An item is marked announced (added to announcedDistances/recent) only
+ * once its utterance completes naturally. If `signal` aborts
+ * mid-utterance, the in-flight speech is cut short via stopSpeaking()
+ * rather than left to finish, and that item - along with anything after
+ * it - is left off announcedDistances/recent. A thrown/rejected
+ * speakAsync is treated the same way (not marked announced) but does not
+ * stop the rest of the list, to match tick()'s "never crash the loop"
+ * behaviour.
  */
 export async function speakBriefing(
   state: AnnouncerState,
@@ -159,11 +166,11 @@ export async function speakBriefing(
           announcedAtMs: Date.now(),
           candidate,
         };
-        const announcedIds = new Set(current.announcedIds);
-        announcedIds.add(candidate.alert.alert_id);
+        const announcedDistances = new Map(current.announcedDistances);
+        announcedDistances.set(candidate.alert.alert_id, candidate.distanceMeters);
         current = {
           ...current,
-          announcedIds,
+          announcedDistances,
           recent: [entry, ...current.recent].slice(0, MAX_RECENT_ANNOUNCEMENTS),
         };
         onItemSpoken?.(entry);

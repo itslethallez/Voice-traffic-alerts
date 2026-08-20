@@ -192,7 +192,7 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   const candidates = selectAnnounceableAlerts(
     alertsCache.alerts,
     driver,
-    announcerState.announcedIds,
+    announcerState.announcedDistances,
     nowMs,
     {
       enabledTypes: enabledTypesFromSettings(settings.categoriesEnabled),

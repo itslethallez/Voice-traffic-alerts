@@ -6,6 +6,7 @@ import {
   isBearingAnnounceable,
   isDistanceAnnounceable,
   isFreshEnoughToAnnounce,
+  isMeaningfullyCloser,
 } from '../geo/announceWindow';
 import { sortBySeverity } from './severity';
 import type { AnnounceableAlert, DriverState } from './types';
@@ -24,26 +25,37 @@ export const defaultAnnounceSettings: AnnounceSettings = {
 /**
  * The four rules from the spec, applied together: distance 300m-2000m
  * (2000m is the default upper bound; Step 7's distance slider can raise
- * or lower it via `settings`), bearing within 45 degrees of heading, not
- * already announced this trip, report under 30 minutes old - plus an
- * optional category filter from Settings. Result is sorted by severity
- * (see severity.ts), highest priority first.
+ * or lower it via `settings`), bearing within 45 degrees of heading,
+ * report under 30 minutes old - plus an optional category filter from
+ * Settings. An alert already announced this trip is skipped unless the
+ * driver has since gotten meaningfully closer to it (see
+ * isMeaningfullyCloser), in which case it qualifies again as a proximity
+ * reminder. Result is sorted by severity (see severity.ts), highest
+ * priority first.
  */
 export function selectAnnounceableAlerts(
   alerts: WazeAlert[],
   driver: DriverState,
-  alreadyAnnouncedIds: ReadonlySet<string>,
+  announcedDistances: ReadonlyMap<string, number>,
   nowMs: number,
   settings: AnnounceSettings = defaultAnnounceSettings
 ): AnnounceableAlert[] {
   const candidates: AnnounceableAlert[] = [];
 
   for (const alert of alerts) {
-    if (alreadyAnnouncedIds.has(alert.alert_id)) continue;
     if (settings.enabledTypes && !settings.enabledTypes.has(alert.type)) continue;
 
     const alertPosition = { latitude: alert.latitude, longitude: alert.longitude };
     const distanceMeters = haversineDistance(driver.position, alertPosition);
+
+    const lastAnnouncedDistanceMeters = announcedDistances.get(alert.alert_id);
+    if (
+      lastAnnouncedDistanceMeters !== undefined &&
+      !isMeaningfullyCloser(distanceMeters, lastAnnouncedDistanceMeters)
+    ) {
+      continue;
+    }
+
     if (!isDistanceAnnounceable(distanceMeters, settings.maxDistanceMeters)) continue;
 
     const bearingDeg = bearingBetween(driver.position, alertPosition);

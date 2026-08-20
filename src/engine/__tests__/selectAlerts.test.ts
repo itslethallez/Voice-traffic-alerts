@@ -36,13 +36,13 @@ describe('selectAnnounceableAlerts', () => {
   };
 
   it('selects exactly the alerts that pass distance, bearing and staleness', () => {
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now);
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now);
     const ids = result.map((r) => r.alert.alert_id).sort();
     expect(ids).toEqual([...QUALIFYING_IDS].sort());
   });
 
   it('excludes alerts too close, too far, to the side, behind, or stale', () => {
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now);
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now);
     const ids = new Set(result.map((r) => r.alert.alert_id));
     for (const excludedId of EXCLUDED_IDS) {
       expect(ids.has(excludedId)).toBe(false);
@@ -55,7 +55,7 @@ describe('selectAnnounceableAlerts', () => {
     // no geo round-trip involved. Placing a fixture alert at an exact
     // boundary is floating-point-fragile (destinationPoint -> haversine
     // is not bit-exact), so this fixture uses "just inside" instead.
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now);
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now);
     const ids = new Set(result.map((r) => r.alert.alert_id));
     expect(ids.has('wm-012')).toBe(true); // 301m
     expect(ids.has('wm-011')).toBe(true); // 1999m
@@ -63,22 +63,45 @@ describe('selectAnnounceableAlerts', () => {
   });
 
   it('excludes an alert just past a boundary: 46deg bearing, 31min old', () => {
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now);
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now);
     const ids = new Set(result.map((r) => r.alert.alert_id));
     expect(ids.has('wm-014')).toBe(false); // 46 degrees
     expect(ids.has('wm-017')).toBe(false); // 31 minutes old
   });
 
-  it('dedupes on alert id already announced this trip', () => {
-    const alreadyAnnounced = new Set(['wm-001', 'wm-002']);
+  it('dedupes on alert id already announced this trip, at the same distance', () => {
+    // wm-001 @800m, wm-002 @1400m - announced at their actual distance, so
+    // there's been no progress since and neither should re-qualify.
+    const alreadyAnnounced = new Map([
+      ['wm-001', 800],
+      ['wm-002', 1400],
+    ]);
     const result = selectAnnounceableAlerts(alerts, driver, alreadyAnnounced, now);
     const ids = result.map((r) => r.alert.alert_id);
     expect(ids).not.toContain('wm-001');
     expect(ids).not.toContain('wm-002');
   });
 
+  it('re-qualifies an already-announced alert once the driver is meaningfully closer (proximity reminder)', () => {
+    // wm-002 is actually ~1400m away but was last announced at 2400m - a
+    // 1000m+ improvement, so it should be offered again.
+    const alreadyAnnounced = new Map([['wm-002', 2400]]);
+    const result = selectAnnounceableAlerts(alerts, driver, alreadyAnnounced, now);
+    const ids = result.map((r) => r.alert.alert_id);
+    expect(ids).toContain('wm-002');
+  });
+
+  it('does not re-announce an already-announced alert for only a marginal distance improvement', () => {
+    // wm-002 is actually ~1400m away, last announced at 1500m - only ~100m
+    // closer, well under the 1000m reminder threshold.
+    const alreadyAnnounced = new Map([['wm-002', 1500]]);
+    const result = selectAnnounceableAlerts(alerts, driver, alreadyAnnounced, now);
+    const ids = result.map((r) => r.alert.alert_id);
+    expect(ids).not.toContain('wm-002');
+  });
+
   it('sorts qualifying alerts by severity, then by ascending distance within a severity', () => {
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now);
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now);
     const ids = result.map((r) => r.alert.alert_id);
 
     // ACCIDENT (wm-012 @300, wm-002 @1400), ROAD_CLOSED (wm-019 @1700, wm-004 @1900),
@@ -101,7 +124,7 @@ describe('selectAnnounceableAlerts', () => {
   });
 
   it('respects a Settings-provided category filter', () => {
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now, {
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now, {
       enabledTypes: new Set(['HAZARD']),
       maxDistanceMeters: 2000,
     });
@@ -111,7 +134,7 @@ describe('selectAnnounceableAlerts', () => {
   });
 
   it('respects a Settings-provided announcement distance (narrower than the 2000m default)', () => {
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now, {
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now, {
       maxDistanceMeters: 1000,
     });
     const ids = result.map((r) => r.alert.alert_id).sort();
@@ -122,7 +145,7 @@ describe('selectAnnounceableAlerts', () => {
   });
 
   it('respects a Settings-provided announcement distance wider than the 2000m default', () => {
-    const result = selectAnnounceableAlerts(alerts, driver, new Set(), now, {
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now, {
       maxDistanceMeters: 3000,
     });
     const ids = new Set(result.map((r) => r.alert.alert_id));
