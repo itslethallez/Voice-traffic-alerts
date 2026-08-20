@@ -14,6 +14,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { formatDistance } from '../speech/formatAnnouncement';
+import { BuildInfoCard } from './BuildInfoCard';
 
 const CATEGORY_LABELS: Record<AlertCategory, string> = {
   POLICE: 'Police',
@@ -151,6 +152,9 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
               />
             </View>
           </View>
+
+          <Text style={styles.sectionTitle}>Build</Text>
+          <BuildInfoCard />
         </ScrollView>
       </SafeAreaView>
     </View>
