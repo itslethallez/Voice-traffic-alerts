@@ -111,8 +111,20 @@ function clearActiveTimeout(): void {
  * only on a genuine failure (network/API error, player error) - the
  * caller (ttsAdapter.ts) falls back to the on-device voice when that
  * happens, so a network hiccup never means the driver hears nothing.
+ *
+ * Self-preempting: calling this while a previous call is still in flight
+ * (fetching or playing) - e.g. the Nearby Transmission card's replay
+ * button firing while the live announcer queue is mid-utterance, or vice
+ * versa - stops that previous call first, exactly as if stopSpeaking()
+ * had been called on it (its promise resolves, not hangs). Without this,
+ * a second concurrent caller would just bump currentUtteranceId out from
+ * under the first one without settling it, leaving the first call's
+ * awaiter (tick(), with isSpeaking stuck true) blocked forever - the
+ * live announcement queue could never recover, since nothing else here
+ * calls that first call's resolve.
  */
 export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakOptions = {}): Promise<void> {
+  stopElevenLabsSpeech();
   const utteranceId = ++currentUtteranceId;
   const isCurrent = () => utteranceId === currentUtteranceId;
 

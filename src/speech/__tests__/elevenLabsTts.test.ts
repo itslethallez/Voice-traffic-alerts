@@ -208,6 +208,31 @@ describe('speakWithElevenLabsAsync', () => {
     }
   });
 
+  it('preempts (resolves, not hangs) an in-flight call when a second one starts with no explicit stop', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
+
+    // No stopElevenLabsSpeech() call in between - this is the shape of a
+    // UI replay button racing the live announcer queue, which has no
+    // reason to know about (or call stop on behalf of) the other caller.
+    const first = speakWithElevenLabsAsync('first');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = speakWithElevenLabsAsync('second');
+
+    await expect(first).resolves.toBeUndefined();
+    expect(mockPlayer.pause).toHaveBeenCalledTimes(1);
+    expect(mockPlayer.remove).toHaveBeenCalledTimes(1);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    mockPlayer.emitStatus({ didJustFinish: true });
+
+    await expect(second).resolves.toBeUndefined();
+  });
+
   it('invalidates the utterance on timeout, so a hung fetch that resolves late never creates a player', async () => {
     jest.useFakeTimers();
     try {
