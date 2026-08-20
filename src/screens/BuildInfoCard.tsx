@@ -1,8 +1,28 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import * as Updates from 'expo-updates';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
+
+/**
+ * expo-updates' native module has been a moving target this whole
+ * project (added to the app config partway through this codebase's
+ * history - see the "Add expo-updates" commit), so whichever binary is
+ * actually installed at any given moment might predate it being linked.
+ * A static `import * as Updates from 'expo-updates'` reads native-bridged
+ * constants at module-evaluation time, so on a binary without the native
+ * module, that throw would take down the whole Settings screen with it -
+ * same risk RadarMap.tsx already guards against for @rnmapbox/maps.
+ * Loading it lazily behind a try/catch keeps that throw local and
+ * catchable instead.
+ */
+type UpdatesModule = typeof import('expo-updates');
+let Updates: UpdatesModule | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  Updates = require('expo-updates') as UpdatesModule;
+} catch {
+  Updates = null;
+}
 
 type CheckState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'ready' | 'error';
 
@@ -17,6 +37,17 @@ type CheckState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'ready' | '
 export function BuildInfoCard() {
   const [state, setState] = useState<CheckState>('idle');
   const [message, setMessage] = useState<string | null>(null);
+
+  if (!Updates) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.status}>
+          Build info unavailable - this binary doesn't have expo-updates linked. Rebuilding (not
+          just an OTA push) should fix this.
+        </Text>
+      </View>
+    );
+  }
 
   const handleCheckForUpdate = async () => {
     if (!Updates.isEnabled) {
