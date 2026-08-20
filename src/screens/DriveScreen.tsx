@@ -94,11 +94,15 @@ export function DriveScreen() {
               <NearbyTransmissionCard announcement={latestAnnouncement} nowMs={now} />
             </View>
           ) : null}
-
-          <View style={styles.reportSection}>
-            <ReportDial />
-          </View>
         </ScrollView>
+
+        {/* Deliberately outside the ScrollView above: a ScrollView's pan
+         * responder can steal a touch mid-hold from a Pressable nested
+         * inside it, which is exactly fatal for a hold-to-confirm gesture
+         * like this one - so this stays a fixed, non-scrolling section. */}
+        <View style={styles.reportSection}>
+          <ReportDial />
+        </View>
       </SafeAreaView>
     </View>
   );
