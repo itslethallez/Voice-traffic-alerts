@@ -10,20 +10,34 @@ export const initialAnnouncementQueueState: AnnouncementQueueState = {
 };
 
 /**
- * Merges newly-qualifying candidates into the pending list (skipping ones
- * already pending) and re-sorts by severity, so a higher-priority alert
- * that shows up mid-queue jumps ahead of lower-priority ones still
- * waiting.
+ * Merges newly-qualifying candidates into the pending list and re-sorts by
+ * severity, so a higher-priority alert that shows up mid-queue jumps ahead
+ * of lower-priority ones still waiting.
+ *
+ * An id already pending is refreshed in place (distance/bearing/age
+ * replaced with this call's values) rather than left untouched - an alert
+ * can sit pending for a while (behind something else speaking, or the
+ * MIN_ANNOUNCEMENT_GAP_MS gap), and selectAnnounceableAlerts() keeps
+ * re-offering it on every driver update for as long as it's still
+ * eligible, each time with a distance closer to reality than the last.
+ * Without this, the eventually-spoken text (formatAnnouncement reads
+ * distanceMeters directly) and the distance recorded as "announced at"
+ * would both be however far away the alert was when it first joined the
+ * queue, not when the driver actually heard it.
  */
 export function enqueue(
   state: AnnouncementQueueState,
   candidates: AnnounceableAlert[]
 ): AnnouncementQueueState {
-  const pendingIds = new Set(state.pending.map((c) => c.alert.alert_id));
-  const newOnes = candidates.filter((c) => !pendingIds.has(c.alert.alert_id));
-  if (newOnes.length === 0) return state;
+  if (candidates.length === 0) return state;
 
-  return { ...state, pending: sortBySeverity([...state.pending, ...newOnes]) };
+  const pendingIds = new Set(state.pending.map((c) => c.alert.alert_id));
+  const candidateById = new Map(candidates.map((c) => [c.alert.alert_id, c]));
+
+  const refreshedPending = state.pending.map((c) => candidateById.get(c.alert.alert_id) ?? c);
+  const newOnes = candidates.filter((c) => !pendingIds.has(c.alert.alert_id));
+
+  return { ...state, pending: sortBySeverity([...refreshedPending, ...newOnes]) };
 }
 
 export interface DequeueResult {

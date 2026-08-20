@@ -76,6 +76,29 @@ describe('announcer', () => {
     expect(result.state.queue.isSpeaking).toBe(false);
   });
 
+  it('records the distance as of speaking, not the stale distance from when the alert first joined the queue', async () => {
+    // Regression test: 'a' is queued behind a higher-severity alert while
+    // 1900m out, then a later driver update resubmits it much closer
+    // before it's actually dequeued and spoken. Without queue.ts's
+    // enqueue() refreshing already-pending candidates, this would record
+    // the original 1900m - stale enough that the very next tick would
+    // read the real (now-closer) distance as a 1000m+ improvement and
+    // fire a spurious reminder for an alert just announced.
+    let state = createInitialAnnouncerState();
+    state = submitCandidates(state, [
+      makeCandidate('blocker', 'ACCIDENT', 300),
+      makeCandidate('a', 'POLICE', 1900),
+    ]);
+    const first = await tick(state, 0);
+    expect(first.spoken?.alertId).toBe('blocker');
+
+    const resubmitted = submitCandidates(first.state, [makeCandidate('a', 'POLICE', 700)]);
+    const second = await tick(resubmitted, MIN_ANNOUNCEMENT_GAP_MS);
+
+    expect(second.spoken?.alertId).toBe('a');
+    expect(second.state.announcedDistances.get('a')).toBe(700);
+  });
+
   it('records the distance an alert was announced at, for the proximity-reminder dedupe', async () => {
     let state = createInitialAnnouncerState();
     state = submitCandidates(state, [makeCandidate('a', 'POLICE', 1800)]);

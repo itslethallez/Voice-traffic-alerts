@@ -42,6 +42,30 @@ describe('enqueue', () => {
     expect(second.pending).toHaveLength(1);
   });
 
+  it('refreshes an already-pending candidate with this call\'s data instead of keeping the stale one', () => {
+    // A candidate can sit pending for a while (behind other speech, or the
+    // MIN_ANNOUNCEMENT_GAP_MS gap) while the driver keeps closing the
+    // distance - each re-submission should update it, not be ignored, or
+    // both the eventually-spoken text and the recorded announced-distance
+    // would reflect however far away it was when first queued.
+    const first = enqueue(initialAnnouncementQueueState, [makeCandidate('police', 'POLICE', 1900)]);
+    const second = enqueue(first, [makeCandidate('police', 'POLICE', 900)]);
+    expect(second.pending).toHaveLength(1);
+    expect(second.pending[0].distanceMeters).toBe(900);
+  });
+
+  it('leaves a pending candidate untouched when it is not resubmitted', () => {
+    const first = enqueue(initialAnnouncementQueueState, [
+      makeCandidate('police', 'POLICE', 1900),
+      makeCandidate('jam', 'JAM', 500),
+    ]);
+    // Only 'jam' qualifies this time (e.g. 'police' briefly fell outside
+    // the bearing/distance window) - 'police' should keep its last known data.
+    const second = enqueue(first, [makeCandidate('jam', 'JAM', 300)]);
+    const police = second.pending.find((c) => c.alert.alert_id === 'police');
+    expect(police?.distanceMeters).toBe(1900);
+  });
+
   it('a higher-severity alert arriving later jumps ahead of one already pending', () => {
     const first = enqueue(initialAnnouncementQueueState, [makeCandidate('jam', 'JAM')]);
     const second = enqueue(first, [makeCandidate('accident', 'ACCIDENT')]);
