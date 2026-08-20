@@ -9,4 +9,10 @@ export const colors = {
   warning: '#E8B04B',
   muteButtonIdle: '#1C1C24',
   muteButtonActive: '#2A2A38',
+  /** The Report-dial's lime accent (Step 11b) - deliberately far from
+   * `accent`'s blue (driver/police) and `warning`'s amber (hazards/jams)
+   * so the one control the driver actively presses reads as visually
+   * distinct from anything the app itself is reporting. */
+  report: '#C6FF3D',
+  reportDim: 'rgba(198, 255, 61, 0.18)',
 } as const;

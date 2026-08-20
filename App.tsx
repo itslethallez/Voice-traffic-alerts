@@ -39,7 +39,7 @@ export default function App() {
   return (
     <View style={styles.root}>
       <View style={styles.content}>
-        {tab === 'radio' ? <DriveScreen onOpenSettings={() => setTab('settings')} /> : null}
+        {tab === 'radio' ? <DriveScreen /> : null}
         {tab === 'history' ? <HistoryScreen /> : null}
         {tab === 'settings' ? <SettingsScreen onClose={() => setTab('radio')} /> : null}
       </View>

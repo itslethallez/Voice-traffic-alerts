@@ -1,5 +1,12 @@
 import type { WazeAlert } from '../../api/waze/types';
-import { formatAnnouncement, formatBriefingAlert, formatDistance, NO_BRIEFING_ALERTS_MESSAGE } from '../formatAnnouncement';
+import {
+  announcementLocation,
+  formatAnnouncement,
+  formatBriefingAlert,
+  formatDistance,
+  labelForType,
+  NO_BRIEFING_ALERTS_MESSAGE,
+} from '../formatAnnouncement';
 import type { AnnounceableAlert } from '../../engine/types';
 
 function makeCandidate(
@@ -220,5 +227,45 @@ describe('formatBriefingAlert', () => {
 describe('NO_BRIEFING_ALERTS_MESSAGE', () => {
   it('is the exact spoken message for an empty briefing', () => {
     expect(NO_BRIEFING_ALERTS_MESSAGE).toBe('No recent alerts within your briefing area.');
+  });
+});
+
+describe('labelForType', () => {
+  it('labels each known type, and falls back to "Alert" for an unknown one', () => {
+    expect(labelForType('POLICE')).toBe('Police');
+    expect(labelForType('ACCIDENT')).toBe('Crash');
+    expect(labelForType('HAZARD')).toBe('Hazard');
+    expect(labelForType('ROAD_CLOSED')).toBe('Road closed');
+    expect(labelForType('JAM')).toBe('Traffic jam');
+    expect(labelForType('SOMETHING_UNKNOWN')).toBe('Alert');
+  });
+});
+
+describe('announcementLocation', () => {
+  it('returns the street, suburb and quantized direction for an ordinary street', () => {
+    const candidate = makeCandidate({ street: 'North Terrace', city: 'Adelaide', driverHeadingDeg: 0 });
+    expect(announcementLocation(candidate)).toEqual({
+      street: 'North Terrace',
+      city: 'Adelaide',
+      direction: 'north',
+    });
+  });
+
+  it('never returns a bare route number as the street - matches formatAnnouncement', () => {
+    const candidate = makeCandidate({ street: 'US-101 N', city: 'Oakland', driverHeadingDeg: 90 });
+    expect(announcementLocation(candidate)).toEqual({
+      street: null,
+      city: 'Oakland',
+      direction: 'east',
+    });
+  });
+
+  it('returns null city when there is none, independent of the street', () => {
+    const candidate = makeCandidate({ street: 'North Terrace', city: null, driverHeadingDeg: 180 });
+    expect(announcementLocation(candidate)).toEqual({
+      street: 'North Terrace',
+      city: null,
+      direction: 'south',
+    });
   });
 });

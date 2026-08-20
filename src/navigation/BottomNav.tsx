@@ -11,8 +11,8 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { key: 'radio', label: 'Radio', icon: '📡' },
-  { key: 'history', label: 'History', icon: '🕘' },
+  { key: 'radio', label: 'Radio', icon: '⏺' },
+  { key: 'history', label: 'History', icon: '⚡' },
   { key: 'settings', label: 'Settings', icon: '⚙' },
 ];
 

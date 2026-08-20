@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../theme/colors';
-import { fontFamily } from '../theme/typography';
+import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { formatRelativeTime } from './formatRelativeTime';
+import { colors } from '../theme/colors';
+import { fontFamily } from '../theme/typography';
+import { NearbyTransmissionCard } from './radar/NearbyTransmissionCard';
 import { RadarMap } from './radar/RadarMap';
+import { ReportDial } from './radar/ReportDial';
 
-/** Most recent announcement first, each older one fading further. */
-const ANNOUNCEMENT_OPACITY = [1, 0.6, 0.35];
+/** Dot colour for the header's status line - lime for "actively
+ * listening" (matches the Report dial's accent, reads as "go"), amber for
+ * offline (a real degraded-mode warning), faint for muted (intentional,
+ * not a problem). */
+const STATUS_DOT_COLOR: Record<ReturnType<typeof statusFor>, string> = {
+  listening: colors.report,
+  offline: colors.warning,
+  muted: colors.inkFaint,
+};
 
-interface DriveScreenProps {
-  onOpenSettings?: () => void;
-}
-
-// useDriveLoop() is called from App.tsx, not here - see the comment there.
-export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
-
+export function DriveScreen() {
   const masterMute = useSettingsStore((state) => state.masterMute);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
 
@@ -24,6 +26,7 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
   const bannerMessage = useTripStore((state) => state.bannerMessage);
   const locationError = useTripStore((state) => state.locationError);
   const recentAnnouncements = useTripStore((state) => state.recentAnnouncements);
+  const driverPosition = useTripStore((state) => state.driverPosition);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -32,22 +35,34 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
   }, []);
 
   const status = statusFor({ masterMute, isOffline });
+  const latestAnnouncement = recentAnnouncements[0] ?? null;
 
   return (
     <View style={styles.root}>
-      <View style={StyleSheet.absoluteFill}>
-        <RadarMap />
-      </View>
-      <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
-        <Pressable
-          onPress={onOpenSettings}
-          hitSlop={16}
-          style={styles.settingsButton}
-          accessibilityRole="button"
-          accessibilityLabel="Open settings"
-        >
-          <Text style={styles.settingsIcon}>{'⚙'}</Text>
-        </Pressable>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <View style={styles.brandBadge}>
+            <Text style={styles.brandBadgeText}>S</Text>
+          </View>
+          <View style={styles.brandTextBlock}>
+            <Text style={styles.brandTitle}>SHOTGUN</Text>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, { backgroundColor: STATUS_DOT_COLOR[status] }]} />
+              <Text style={styles.statusText}>
+                {status === 'listening' ? 'LISTENING NEARBY' : statusLabel(status).toUpperCase()}
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={toggleMasterMute}
+            hitSlop={12}
+            style={styles.muteButton}
+            accessibilityRole="button"
+            accessibilityLabel={masterMute ? 'Unmute alerts' : 'Mute alerts'}
+          >
+            <Text style={styles.muteIcon}>{masterMute ? '🔇' : '🔊'}</Text>
+          </Pressable>
+        </View>
 
         {bannerMessage ? (
           <View style={styles.banner}>
@@ -55,44 +70,35 @@ export function DriveScreen({ onOpenSettings }: DriveScreenProps) {
           </View>
         ) : null}
 
-        <View style={styles.statusPill} pointerEvents="none">
+        <View style={styles.mapArea}>
+          <RadarMap />
+        </View>
+
+        <ScrollView style={styles.lowerScroll} contentContainerStyle={styles.lowerContent}>
           {locationError ? (
-            <>
-              <Text style={styles.statusPillText}>Location needed</Text>
-              <Text style={styles.explanationText}>{locationError}</Text>
-            </>
+            <View style={[styles.gpsPill, styles.gpsPillError]}>
+              <Text style={styles.gpsPillText}>LOCATION NEEDED</Text>
+              <Text style={styles.gpsPillExplanation}>{locationError}</Text>
+            </View>
           ) : (
-            <Text style={styles.statusPillText}>{statusLabel(status)}</Text>
-          )}
-        </View>
-
-        <View style={styles.bottomOverlay} pointerEvents="box-none">
-          <View style={styles.announcementsList} pointerEvents="none">
-            {recentAnnouncements.map((announcement, index) => (
-              <Text
-                key={`${announcement.alertId}-${announcement.announcedAtMs}`}
-                style={[
-                  styles.announcementText,
-                  { opacity: ANNOUNCEMENT_OPACITY[index] ?? ANNOUNCEMENT_OPACITY.at(-1) },
-                ]}
-              >
-                {announcement.text} {formatRelativeTime(announcement.announcedAtMs, now)}
+            <View style={styles.gpsPill}>
+              <View style={[styles.gpsDot, { backgroundColor: driverPosition ? colors.report : colors.inkFaint }]} />
+              <Text style={styles.gpsPillText}>
+                {driverPosition ? 'GPS ACTIVE · LOCATION ATTACHED TO REPORTS' : 'ACQUIRING GPS…'}
               </Text>
-            ))}
-          </View>
+            </View>
+          )}
 
-          <Pressable
-            onPress={toggleMasterMute}
-            style={({ pressed }) => [
-              styles.muteButton,
-              { backgroundColor: pressed ? colors.muteButtonActive : colors.muteButtonIdle },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={masterMute ? 'Unmute alerts' : 'Mute alerts'}
-          >
-            <Text style={styles.muteButtonText}>{masterMute ? 'Unmute' : 'Mute'}</Text>
-          </Pressable>
-        </View>
+          {latestAnnouncement ? (
+            <View style={styles.card}>
+              <NearbyTransmissionCard announcement={latestAnnouncement} nowMs={now} />
+            </View>
+          ) : null}
+
+          <View style={styles.reportSection}>
+            <ReportDial />
+          </View>
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -105,24 +111,65 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    justifyContent: 'space-between',
   },
-  settingsButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 1,
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(10, 10, 12, 0.55)',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  settingsIcon: {
-    fontSize: 28,
+  brandBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.report,
+    marginRight: 12,
+  },
+  brandBadgeText: {
+    fontFamily: fontFamily.black,
+    fontSize: 20,
+    color: colors.background,
+  },
+  brandTextBlock: {
+    flex: 1,
+  },
+  brandTitle: {
+    fontFamily: fontFamily.black,
+    fontSize: 18,
+    letterSpacing: 2,
+    color: colors.ink,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  statusText: {
+    fontFamily: fontFamily.medium,
+    fontSize: 11,
+    letterSpacing: 1,
     color: colors.inkMuted,
   },
+  muteButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundAccent,
+  },
+  muteIcon: {
+    fontSize: 18,
+  },
   banner: {
-    marginTop: 16,
-    marginHorizontal: 24,
+    marginTop: 4,
+    marginHorizontal: 20,
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 12,
@@ -134,57 +181,63 @@ const styles = StyleSheet.create({
     color: colors.warning,
     textAlign: 'center',
   },
-  /** A compact status badge over the map, replacing the old full-screen
-   * centered text now that the radar map is the primary visual. */
-  statusPill: {
-    alignSelf: 'center',
-    marginTop: 16,
-    paddingVertical: 8,
+  mapArea: {
+    flex: 1.1,
+    marginTop: 12,
+    marginHorizontal: 20,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: colors.backgroundAccent,
+  },
+  lowerScroll: {
+    flex: 1,
+  },
+  lowerContent: {
     paddingHorizontal: 20,
-    borderRadius: 20,
-    backgroundColor: 'rgba(10, 10, 12, 0.55)',
-    maxWidth: '80%',
+    paddingTop: 16,
+    paddingBottom: 24,
+    gap: 16,
   },
-  statusPillText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 20,
-    color: colors.ink,
-    textAlign: 'center',
-  },
-  explanationText: {
-    marginTop: 8,
-    fontFamily: fontFamily.regular,
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.inkMuted,
-    textAlign: 'center',
-  },
-  bottomOverlay: {
-    paddingHorizontal: 32,
-  },
-  announcementsList: {
-    marginBottom: 24,
-    gap: 12,
-  },
-  announcementText: {
-    fontFamily: fontFamily.medium,
-    fontSize: 18,
-    lineHeight: 24,
-    color: colors.ink,
-    textAlign: 'center',
-    textShadowColor: 'rgba(10, 10, 12, 0.85)',
-    textShadowRadius: 8,
-  },
-  muteButton: {
-    marginBottom: 32,
-    minHeight: 96,
-    borderRadius: 48,
+  gpsPill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: colors.backgroundAccent,
   },
-  muteButtonText: {
+  gpsPillError: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    alignSelf: 'stretch',
+  },
+  gpsDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 8,
+  },
+  gpsPillText: {
     fontFamily: fontFamily.bold,
-    fontSize: 28,
-    color: colors.ink,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: colors.inkMuted,
+  },
+  gpsPillExplanation: {
+    marginTop: 6,
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.inkMuted,
+  },
+  card: {
+    // Wrapper kept separate from NearbyTransmissionCard's own styles so
+    // this file owns inter-section spacing (the `gap` on lowerContent),
+    // not the card component itself.
+  },
+  reportSection: {
+    marginTop: 4,
+    paddingBottom: 8,
   },
 });

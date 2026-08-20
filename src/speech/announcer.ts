@@ -69,7 +69,7 @@ export async function tick(
   let spoken: RecentAnnouncement | null = null;
   try {
     await speakAsync(text, speakOptions);
-    spoken = { alertId: next.alert.alert_id, text, announcedAtMs: nowMs };
+    spoken = { alertId: next.alert.alert_id, text, announcedAtMs: nowMs, candidate: next };
   } catch (error) {
     console.warn(`[speech] TTS failed for ${next.alert.alert_id}`, error);
   } finally {
@@ -157,6 +157,7 @@ export async function speakBriefing(
           alertId: candidate.alert.alert_id,
           text,
           announcedAtMs: Date.now(),
+          candidate,
         };
         const announcedIds = new Set(current.announcedIds);
         announcedIds.add(candidate.alert.alert_id);

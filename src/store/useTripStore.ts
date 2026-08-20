@@ -8,6 +8,19 @@ export type TripStatus = 'listening' | 'muted' | 'offline';
 const MAX_RECENT_ANNOUNCEMENTS = 3;
 
 /**
+ * A driver-initiated "Report what you see" (Step 11b's hold-to-confirm
+ * dial) - local-only. There is no Waze write API in this integration (the
+ * Waze client here only ever reads alerts-and-jams), so this cannot be
+ * submitted anywhere; it just becomes a local trip record the driver can
+ * see in History, the same way a spoken announcement does.
+ */
+export interface ManualReport {
+  id: string;
+  createdAtMs: number;
+  position: GeoPoint | null;
+}
+
+/**
  * Ephemeral trip state - resets on relaunch. Master mute lives in
  * useSettingsStore.ts instead (Step 7): it's a persisted preference, not
  * trip state, and the Drive screen's mute button and the Settings
@@ -33,7 +46,9 @@ interface TripStoreState {
   driverPosition: GeoPoint | null;
   driverHeadingDeg: number;
   visibleAlerts: WazeAlert[];
+  manualReports: ManualReport[];
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
+  pushManualReport: () => void;
   setOffline: (offline: boolean) => void;
   setBannerMessage: (message: string | null) => void;
   setLocationError: (message: string | null) => void;
@@ -41,7 +56,7 @@ interface TripStoreState {
   setVisibleAlerts: (alerts: WazeAlert[]) => void;
 }
 
-export const useTripStore = create<TripStoreState>((set) => ({
+export const useTripStore = create<TripStoreState>((set, get) => ({
   isOffline: false,
   bannerMessage: null,
   locationError: null,
@@ -49,12 +64,24 @@ export const useTripStore = create<TripStoreState>((set) => ({
   driverPosition: null,
   driverHeadingDeg: 0,
   visibleAlerts: [],
+  manualReports: [],
   pushAnnouncement: (announcement) =>
     set((state) => ({
       recentAnnouncements: [announcement, ...state.recentAnnouncements].slice(
         0,
         MAX_RECENT_ANNOUNCEMENTS
       ),
+    })),
+  pushManualReport: () =>
+    set((state) => ({
+      manualReports: [
+        {
+          id: `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+          createdAtMs: Date.now(),
+          position: get().driverPosition,
+        },
+        ...state.manualReports,
+      ],
     })),
   setOffline: (offline) => set({ isOffline: offline }),
   setBannerMessage: (message) => set({ bannerMessage: message }),

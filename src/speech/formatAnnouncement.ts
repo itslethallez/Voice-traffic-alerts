@@ -1,6 +1,6 @@
 import type { WazeAlertType } from '../api/waze/types';
 import type { AnnounceableAlert } from '../engine/types';
-import { compassDirection } from '../geo/bearing';
+import { compassDirection, type CompassDirection } from '../geo/bearing';
 import { STALE_ANNOUNCEMENT_AGE_MINUTES } from './constants';
 
 /**
@@ -16,7 +16,9 @@ const ANNOUNCEMENT_LABELS: Partial<Record<string, string>> = {
   JAM: 'Traffic jam',
 };
 
-function labelForType(type: WazeAlertType): string {
+/** Exported for the radar UI's Nearby Transmission card (Step 11b), which
+ * needs the same spoken label without duplicating this table. */
+export function labelForType(type: WazeAlertType): string {
   return ANNOUNCEMENT_LABELS[type] ?? 'Alert';
 }
 
@@ -98,6 +100,28 @@ export function formatAnnouncement(candidate: AnnounceableAlert): string {
   }
 
   return text;
+}
+
+export interface AnnouncementLocation {
+  /** Never a bare route number - see spokenStreet. */
+  street: string | null;
+  city: string | null;
+  direction: CompassDirection;
+}
+
+/**
+ * The structured pieces formatAnnouncement()'s sentence is built from -
+ * exported for the radar UI's Nearby Transmission card (Step 11b), which
+ * wants street/suburb/direction as separate fields to lay out rather than
+ * one spoken sentence, without re-implementing spokenStreet's route-number
+ * detection or compassDirection's quantizing itself.
+ */
+export function announcementLocation(candidate: AnnounceableAlert): AnnouncementLocation {
+  return {
+    street: spokenStreet(candidate.alert.street),
+    city: normalizeCity(candidate.alert.city),
+    direction: compassDirection(candidate.driverHeadingDeg),
+  };
 }
 
 export const NO_BRIEFING_ALERTS_MESSAGE = 'No recent alerts within your briefing area.';
