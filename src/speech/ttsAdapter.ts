@@ -23,6 +23,22 @@ function speakWithDeviceAsync(text: string, options: SpeakOptions = {}): Promise
 }
 
 /**
+ * The most recent reason ElevenLabs fell back to the on-device voice, or
+ * null if the last attempt succeeded (or none has happened yet).
+ * speakAsync()'s whole point is to never let a TTS failure reach the
+ * caller - the driver always hears something - but that same design
+ * makes the failure itself invisible to anyone debugging why the voice
+ * doesn't sound like ElevenLabs. This is a lightweight escape hatch: the
+ * UI (DriveScreen) polls it to show the exact error on-screen, without
+ * ttsAdapter/elevenLabsTts needing to know about the store or UI layer.
+ */
+let lastElevenLabsError: string | null = null;
+
+export function getLastElevenLabsError(): string | null {
+  return lastElevenLabsError;
+}
+
+/**
  * Speaks via ElevenLabs first, falling back to the on-device voice if the
  * request or playback fails - offline, an ElevenLabs outage, a missing
  * key, a rate limit. This is a driving-safety feature: a network hiccup
@@ -33,7 +49,9 @@ function speakWithDeviceAsync(text: string, options: SpeakOptions = {}): Promise
 export async function speakAsync(text: string, options: SpeakOptions = {}): Promise<void> {
   try {
     await speakWithElevenLabsAsync(text, options);
+    lastElevenLabsError = null;
   } catch (error) {
+    lastElevenLabsError = error instanceof Error ? error.message : String(error);
     console.warn('[speech] ElevenLabs TTS failed, falling back to the on-device voice', error);
     await speakWithDeviceAsync(text, options);
   }

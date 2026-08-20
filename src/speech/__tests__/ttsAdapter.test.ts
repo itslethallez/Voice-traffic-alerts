@@ -23,7 +23,7 @@ jest.mock('../elevenLabsTts', () => ({
   stopElevenLabsSpeech: () => stopElevenLabsSpeech(),
 }));
 
-import { speakAsync, stopSpeaking } from '../ttsAdapter';
+import { getLastElevenLabsError, speakAsync, stopSpeaking } from '../ttsAdapter';
 
 describe('speakAsync', () => {
   beforeEach(() => {
@@ -74,6 +74,29 @@ describe('speakAsync', () => {
     speak.mockImplementation((_text, options) => options?.onError?.(deviceError));
 
     await expect(speakAsync('hello')).rejects.toThrow('device tts failed too');
+  });
+});
+
+describe('getLastElevenLabsError', () => {
+  it('records the failure message when ElevenLabs falls back to the device voice', async () => {
+    speakWithElevenLabsAsync.mockRejectedValue(new Error('ElevenLabs TTS request failed with status 401'));
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+
+    await speakAsync('hello');
+
+    expect(getLastElevenLabsError()).toBe('ElevenLabs TTS request failed with status 401');
+  });
+
+  it('clears back to null once a later call succeeds', async () => {
+    speakWithElevenLabsAsync.mockRejectedValueOnce(new Error('ElevenLabs TTS request failed with status 401'));
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+    await speakAsync('hello');
+    expect(getLastElevenLabsError()).not.toBeNull();
+
+    speakWithElevenLabsAsync.mockResolvedValueOnce(undefined);
+    await speakAsync('hello again');
+
+    expect(getLastElevenLabsError()).toBeNull();
   });
 });
 

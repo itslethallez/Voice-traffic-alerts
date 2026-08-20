@@ -3,6 +3,7 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { colors } from '../theme/colors';
+import { getLastElevenLabsError } from '../speech/ttsAdapter';
 import { fontFamily } from '../theme/typography';
 import { NearbyTransmissionCard } from './radar/NearbyTransmissionCard';
 import { RadarMap } from './radar/RadarMap';
@@ -29,8 +30,20 @@ export function DriveScreen() {
   const driverPosition = useTripStore((state) => state.driverPosition);
 
   const [now, setNow] = useState(() => Date.now());
+  // Polled rather than pushed through the store: ttsAdapter.ts
+  // deliberately has no store dependency, so this is the seam where the
+  // UI reaches in to surface a failure that speakAsync() otherwise
+  // swallows on purpose (a TTS failure must never reach the caller - see
+  // ttsAdapter.ts's own comment). TEMPORARY - remove once ElevenLabs
+  // voice is confirmed working end-to-end; this is here to surface the
+  // exact failure reason on-device while the ElevenLabs integration is
+  // still misbehaving in ways nobody can see the cause of otherwise.
+  const [elevenLabsError, setElevenLabsError] = useState<string | null>(null);
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      setElevenLabsError(getLastElevenLabsError());
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -67,6 +80,12 @@ export function DriveScreen() {
         {bannerMessage ? (
           <View style={styles.banner}>
             <Text style={styles.bannerText}>{bannerMessage}</Text>
+          </View>
+        ) : null}
+
+        {elevenLabsError ? (
+          <View style={styles.debugBanner}>
+            <Text style={styles.debugBannerText}>Voice fallback: {elevenLabsError}</Text>
           </View>
         ) : null}
 
@@ -183,6 +202,20 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.medium,
     fontSize: 14,
     color: colors.warning,
+    textAlign: 'center',
+  },
+  debugBanner: {
+    marginTop: 4,
+    marginHorizontal: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(232, 93, 93, 0.15)',
+  },
+  debugBannerText: {
+    fontFamily: fontFamily.medium,
+    fontSize: 11,
+    color: '#E85D5D',
     textAlign: 'center',
   },
   mapArea: {
