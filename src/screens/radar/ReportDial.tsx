@@ -110,8 +110,15 @@ export function ReportDial() {
       // mount time) is checked live so a recording still in progress gets
       // stopped and saved instead of silently discarded, and the audio
       // session gets put back in ducking mode instead of stuck recording.
+      //
+      // Skipped while isBusyRef is set: that means startRecording() or
+      // finishRecording() is already mid-flight (e.g. the driver tapped
+      // stop, or the 30s cap fired, right as they navigated away) - those
+      // promises keep running after unmount regardless (they're not tied
+      // to the component tree) and will save the report themselves once
+      // they settle, so saving here too would create a duplicate entry.
       const status = recorder.getStatus();
-      if (status.isRecording) {
+      if (status.isRecording && !isBusyRef.current) {
         const durationMs = status.durationMillis;
         recorder
           .stop()
