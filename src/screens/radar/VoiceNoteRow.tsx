@@ -23,6 +23,14 @@ export function VoiceNoteRow({ uri, durationMs }: VoiceNoteRowProps) {
   const handlePress = () => {
     if (status.playing) {
       player.pause();
+      return;
+    }
+    // expo-audio leaves the player parked at the end once playback
+    // finishes, rather than resetting position - play() from there is a
+    // silent no-op, so a finished clip needs an explicit seek back to the
+    // start before it can be replayed.
+    if (status.duration > 0 && status.currentTime >= status.duration) {
+      player.seekTo(0).then(() => player.play());
     } else {
       player.play();
     }
