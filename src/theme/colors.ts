@@ -15,4 +15,9 @@ export const colors = {
    * distinct from anything the app itself is reporting. */
   report: '#C6FF3D',
   reportDim: 'rgba(198, 255, 61, 0.18)',
+  /** Police radar marker's flashing lights (Step 12 #24) - deliberately
+   * saturated, unlike the muted `accent` blue used for the marker's static
+   * meta color, so the flash reads as an emergency-light effect. */
+  policeLightBlue: '#3D6BFF',
+  policeLightRed: '#FF3D3D',
 } as const;

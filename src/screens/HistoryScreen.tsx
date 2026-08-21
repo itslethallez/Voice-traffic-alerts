@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import type { VoiceNote } from '../store/useTripStore';
 import { useTripStore } from '../store/useTripStore';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { formatRelativeTime } from './formatRelativeTime';
+import { VoiceNoteRow } from './radar/VoiceNoteRow';
 
 type HistoryRow =
   | { kind: 'announcement'; id: string; atMs: number; text: string }
-  | { kind: 'manualReport'; id: string; atMs: number };
+  | { kind: 'manualReport'; id: string; atMs: number; voiceNote: VoiceNote | null };
 
 /**
  * Step 11 stub - lists this trip's announcements and manual reports
@@ -36,6 +38,7 @@ export function HistoryScreen() {
       kind: 'manualReport',
       id: report.id,
       atMs: report.createdAtMs,
+      voiceNote: report.voiceNote,
     }));
     return [...announcementRows, ...manualReportRows].sort((a, b) => b.atMs - a.atMs);
   }, [recentAnnouncements, manualReports]);
@@ -57,6 +60,9 @@ export function HistoryScreen() {
                   {row.kind === 'manualReport' ? 'You reported something nearby' : row.text}
                 </Text>
                 <Text style={styles.rowTime}>{formatRelativeTime(row.atMs, now)}</Text>
+                {row.kind === 'manualReport' && row.voiceNote ? (
+                  <VoiceNoteRow uri={row.voiceNote.uri} durationMs={row.voiceNote.durationMs} />
+                ) : null}
               </View>
             ))}
           </View>

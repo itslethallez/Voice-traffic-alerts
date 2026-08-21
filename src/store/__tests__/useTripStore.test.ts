@@ -25,6 +25,21 @@ describe('pushManualReport', () => {
     expect(useTripStore.getState().manualReports[0].position).toBeNull();
   });
 
+  it('records a null voiceNote when none is passed', () => {
+    useTripStore.getState().pushManualReport();
+
+    expect(useTripStore.getState().manualReports[0].voiceNote).toBeNull();
+  });
+
+  it('attaches the voiceNote when one is passed', () => {
+    useTripStore.getState().pushManualReport({ uri: 'file:///report.m4a', durationMs: 4200 });
+
+    expect(useTripStore.getState().manualReports[0].voiceNote).toEqual({
+      uri: 'file:///report.m4a',
+      durationMs: 4200,
+    });
+  });
+
   it('prepends (newest first) and gives each report a distinct id', () => {
     useTripStore.getState().pushManualReport();
     useTripStore.getState().pushManualReport();

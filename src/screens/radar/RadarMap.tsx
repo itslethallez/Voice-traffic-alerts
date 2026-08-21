@@ -3,13 +3,16 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
 import { haversineDistance } from '../../geo/distance';
+import { zoomForRingRadius } from '../../geo/mercatorZoom';
 import { formatDistance } from '../../speech/formatAnnouncement';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { colors } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
+import { ALERT_PIN_BORDER_WIDTH, ALERT_PIN_SIZE } from './alertPinSize';
 import { formatCompactDistance } from './formatCompactDistance';
+import { PoliceLightsPin } from './PoliceLightsPin';
 import { PulseRings } from './PulseRings';
 
 /**
@@ -36,17 +39,29 @@ try {
   Mapbox = null;
 }
 
+/** Used only until the first GPS fix arrives, when there's no latitude yet
+ * to compute a to-scale zoom from - matches the existing "no center
+ * coordinate until driverPosition exists" fallback below. */
 const DEFAULT_ZOOM = 15;
-/** Purely decorative - a fixed-size ring standing in for "how far out
- * you'll hear about something", labeled with the real announceDistanceMeters
- * setting. Mapbox doesn't make it cheap to size a screen-space circle to
- * an exact real-world radius at an arbitrary zoom/latitude, and the
- * mockup's own ring reads as UI chrome rather than a precise map
- * measurement - so this keeps the honest part (the number) real and the
- * decorative part (the ring) simple. */
+/** Fixed screen size for the awareness ring; the map's Camera zoomLevel is
+ * chosen (via zoomForRingRadius) so this fixed-size ring actually
+ * represents announceDistanceMeters of real-world ground distance at the
+ * driver's current latitude - not just a decorative circle labeled with
+ * the number. */
 const AWARENESS_RING_SIZE = 260;
+/** Fixed zoom for a focused alert (Step 12 #25) - close enough to read the
+ * marker clearly, not derived from announceDistanceMeters since a focused
+ * view isn't about the driver's awareness radius. */
+const FOCUSED_ALERT_ZOOM = 16;
 
-export function RadarMap() {
+interface RadarMapProps {
+  /** Set by the Drive screen's nearby-alerts slider (Step 12 #25) when the
+   * driver taps a card - the camera centers on this alert instead of
+   * following the driver for a few seconds, then the caller clears it. */
+  focusedAlert?: WazeAlert | null;
+}
+
+export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
@@ -82,10 +97,20 @@ export function RadarMap() {
       >
         <Mapbox.Camera
           centerCoordinate={
-            driverPosition ? [driverPosition.longitude, driverPosition.latitude] : undefined
+            focusedAlert
+              ? [focusedAlert.longitude, focusedAlert.latitude]
+              : driverPosition
+                ? [driverPosition.longitude, driverPosition.latitude]
+                : undefined
           }
-          heading={driverHeadingDeg}
-          zoomLevel={DEFAULT_ZOOM}
+          heading={focusedAlert ? 0 : driverHeadingDeg}
+          zoomLevel={
+            focusedAlert
+              ? FOCUSED_ALERT_ZOOM
+              : driverPosition
+                ? zoomForRingRadius(announceDistanceMeters, AWARENESS_RING_SIZE / 2, driverPosition.latitude)
+                : DEFAULT_ZOOM
+          }
           animationMode="easeTo"
           animationDuration={600}
         />
@@ -110,17 +135,21 @@ export function RadarMap() {
         ))}
       </Mapbox.MapView>
 
-      <View style={styles.awarenessRing} pointerEvents="none">
-        <View style={styles.awarenessLabel}>
-          <Text style={styles.awarenessLabelText}>
-            {formatDistance(announceDistanceMeters).toUpperCase()} AWARENESS
-          </Text>
-        </View>
-      </View>
+      {focusedAlert ? null : (
+        <>
+          <View style={styles.awarenessRing} pointerEvents="none">
+            <View style={styles.awarenessLabel}>
+              <Text style={styles.awarenessLabelText}>
+                {formatDistance(announceDistanceMeters).toUpperCase()} AWARENESS
+              </Text>
+            </View>
+          </View>
 
-      <View style={styles.radiusBadge} pointerEvents="none">
-        <Text style={styles.radiusBadgeText}>{formatDistance(announceDistanceMeters)}</Text>
-      </View>
+          <View style={styles.radiusBadge} pointerEvents="none">
+            <Text style={styles.radiusBadgeText}>{formatDistance(announceDistanceMeters)}</Text>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -143,9 +172,13 @@ function AlertMarker({
 
   return (
     <View style={styles.alertMarker}>
-      <View style={[styles.alertPin, { borderColor: meta.color }]}>
-        <Text style={styles.alertEmoji}>{meta.emoji}</Text>
-      </View>
+      {alert.type === 'POLICE' ? (
+        <PoliceLightsPin emoji={meta.emoji} />
+      ) : (
+        <View style={[styles.alertPin, { borderColor: meta.color }]}>
+          <Text style={styles.alertEmoji}>{meta.emoji}</Text>
+        </View>
+      )}
       {distanceMeters !== null ? (
         <View style={styles.alertDistanceChip}>
           <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters)}</Text>
@@ -230,13 +263,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   alertPin: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: ALERT_PIN_SIZE,
+    height: ALERT_PIN_SIZE,
+    borderRadius: ALERT_PIN_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.backgroundAccent,
-    borderWidth: 2,
+    borderWidth: ALERT_PIN_BORDER_WIDTH,
   },
   alertEmoji: {
     fontSize: 16,

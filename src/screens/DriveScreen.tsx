@@ -1,12 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import type { WazeAlert } from '../api/waze/types';
+import { selectNearbyAlerts } from '../engine/selectNearbyAlerts';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
+import { NearbyAlertsSlider } from './radar/NearbyAlertsSlider';
 import { NearbyTransmissionCard } from './radar/NearbyTransmissionCard';
 import { RadarMap } from './radar/RadarMap';
 import { ReportDial } from './radar/ReportDial';
+
+/** How long a tapped nearby-alert card keeps the map focused on it before
+ * the camera returns to following the driver (Step 12 #25). */
+const ALERT_FOCUS_DURATION_MS = 5000;
 
 const brandBadgeImage = require('../../assets/brand-badge.png');
 
@@ -29,12 +36,40 @@ export function DriveScreen() {
   const locationError = useTripStore((state) => state.locationError);
   const recentAnnouncements = useTripStore((state) => state.recentAnnouncements);
   const driverPosition = useTripStore((state) => state.driverPosition);
+  const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
+  const visibleAlerts = useTripStore((state) => state.visibleAlerts);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const [focusedAlert, setFocusedAlert] = useState<WazeAlert | null>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleFocusAlert = useCallback((alert: WazeAlert) => {
+    if (focusTimeoutRef.current !== null) {
+      clearTimeout(focusTimeoutRef.current);
+    }
+    setFocusedAlert(alert);
+    focusTimeoutRef.current = setTimeout(() => {
+      setFocusedAlert(null);
+      focusTimeoutRef.current = null;
+    }, ALERT_FOCUS_DURATION_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (focusTimeoutRef.current !== null) clearTimeout(focusTimeoutRef.current);
+    },
+    []
+  );
+
+  const nearbyAlerts = useMemo(
+    () => (driverPosition ? selectNearbyAlerts(visibleAlerts, driverPosition, driverHeadingDeg) : []),
+    [visibleAlerts, driverPosition, driverHeadingDeg]
+  );
 
   const status = statusFor({ masterMute, isOffline });
   const latestAnnouncement = recentAnnouncements[0] ?? null;
@@ -72,10 +107,12 @@ export function DriveScreen() {
         ) : null}
 
         <View style={styles.mapArea}>
-          <RadarMap />
+          <RadarMap focusedAlert={focusedAlert} />
         </View>
 
         <ScrollView style={styles.lowerScroll} contentContainerStyle={styles.lowerContent}>
+          <NearbyAlertsSlider nearbyAlerts={nearbyAlerts} onSelect={handleFocusAlert} />
+
           {locationError ? (
             <View style={[styles.gpsPill, styles.gpsPillError]}>
               <Text style={styles.gpsPillText}>LOCATION NEEDED</Text>

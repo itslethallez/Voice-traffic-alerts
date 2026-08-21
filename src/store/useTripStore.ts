@@ -14,10 +14,20 @@ const MAX_RECENT_ANNOUNCEMENTS = 3;
  * submitted anywhere; it just becomes a local trip record the driver can
  * see in History, the same way a spoken announcement does.
  */
+/** A tap-and-talk recording attached to a ManualReport (Step 12 #26) -
+ * record-only, no transcription. `uri` is playable directly via expo-audio's
+ * useAudioPlayer, the same way NearbyTransmissionCard replays a live
+ * announcement. */
+export interface VoiceNote {
+  uri: string;
+  durationMs: number;
+}
+
 export interface ManualReport {
   id: string;
   createdAtMs: number;
   position: GeoPoint | null;
+  voiceNote: VoiceNote | null;
 }
 
 /**
@@ -48,7 +58,7 @@ interface TripStoreState {
   visibleAlerts: WazeAlert[];
   manualReports: ManualReport[];
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
-  pushManualReport: () => void;
+  pushManualReport: (voiceNote?: VoiceNote) => void;
   setOffline: (offline: boolean) => void;
   setBannerMessage: (message: string | null) => void;
   setLocationError: (message: string | null) => void;
@@ -72,13 +82,14 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         MAX_RECENT_ANNOUNCEMENTS
       ),
     })),
-  pushManualReport: () =>
+  pushManualReport: (voiceNote) =>
     set((state) => ({
       manualReports: [
         {
           id: `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
           createdAtMs: Date.now(),
           position: get().driverPosition,
+          voiceNote: voiceNote ?? null,
         },
         ...state.manualReports,
       ],
