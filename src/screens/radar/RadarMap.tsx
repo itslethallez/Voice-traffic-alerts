@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
@@ -59,14 +59,6 @@ const FOCUSED_ALERT_ZOOM = 16;
  * FOCUSED_ALERT_ZOOM's tap-driven focus, just triggered by speech instead
  * of a tap. */
 const SPOKEN_SPOTLIGHT_DURATION_MS = 6000;
-/** How recent latestAnnouncement.announcedAtMs must be, at the moment the
- * effect below runs, to count as "just spoken" rather than leftover state
- * from before this component mounted. DriveScreen (and this map with it)
- * unmounts whenever the driver leaves the Drive tab, so returning to it
- * later re-runs the spotlight effect against whatever recentAnnouncements[0]
- * already is - without this check, that would zoom to and spotlight a
- * possibly many-minutes-old alert every single time Drive remounts. */
-const SPOKEN_SPOTLIGHT_FRESHNESS_MS = 3000;
 
 interface RadarMapProps {
   /** Set by the Drive screen's nearby-alerts slider (Step 12 #25) when the
@@ -89,9 +81,25 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
    * the same alert re-triggers it too. An explicit tap-focus takes
    * priority if one is already active - this never overrides it. */
   const [spokenSpotlight, setSpokenSpotlight] = useState<WazeAlert | null>(null);
+  /** Skips the effect's very first run after mount - DriveScreen (and this
+   * map with it) unmounts whenever the driver leaves the Drive tab, so
+   * remounting would otherwise immediately re-run this effect against
+   * whatever recentAnnouncements[0] already is and spotlight a possibly
+   * many-minutes-old alert. A timestamp-based freshness check was tried
+   * here first, but announcedAtMs is set from the nowMs captured at the
+   * *start* of the driver-update handler, before it awaits a poll fetch -
+   * a slow poll can make a genuinely just-dispatched announcement's
+   * timestamp look several seconds old by the time this effect actually
+   * sees it, wrongly skipping the spotlight for a live alert. Tracking
+   * "did this dependency change while already mounted" instead sidesteps
+   * wall-clock timing entirely: every run after the first is necessarily a
+   * genuine change. */
+  const hasRunSpotlightEffectRef = useRef(false);
   useEffect(() => {
-    if (!latestAnnouncement) return;
-    if (Date.now() - latestAnnouncement.announcedAtMs > SPOKEN_SPOTLIGHT_FRESHNESS_MS) return;
+    const isFirstRunSinceMount = !hasRunSpotlightEffectRef.current;
+    hasRunSpotlightEffectRef.current = true;
+    if (!latestAnnouncement || isFirstRunSinceMount) return;
+
     setSpokenSpotlight(latestAnnouncement.candidate.alert);
     const timer = setTimeout(() => setSpokenSpotlight(null), SPOKEN_SPOTLIGHT_DURATION_MS);
     return () => clearTimeout(timer);
