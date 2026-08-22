@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
@@ -54,6 +54,12 @@ const AWARENESS_RING_SIZE = 260;
  * view isn't about the driver's awareness radius. */
 const FOCUSED_ALERT_ZOOM = 16;
 
+/** How long the camera lingers on a just-spoken alert's exact location
+ * before returning to the normal driver-following view - same idea as
+ * FOCUSED_ALERT_ZOOM's tap-driven focus, just triggered by speech instead
+ * of a tap. */
+const SPOKEN_SPOTLIGHT_DURATION_MS = 6000;
+
 interface RadarMapProps {
   /** Set by the Drive screen's nearby-alerts slider (Step 12 #25) when the
    * driver taps a card - the camera centers on this alert instead of
@@ -65,7 +71,25 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
+  const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+
+  /** Auto-focus counterpart to the tap-driven `focusedAlert` prop: when an
+   * alert is spoken, the driver should be able to glance down and
+   * immediately see where it is, without having to tap anything. Keyed on
+   * announcedAtMs (not alertId) so a proximity-reminder re-announcement of
+   * the same alert re-triggers it too. An explicit tap-focus takes
+   * priority if one is already active - this never overrides it. */
+  const [spokenSpotlight, setSpokenSpotlight] = useState<WazeAlert | null>(null);
+  useEffect(() => {
+    if (!latestAnnouncement) return;
+    setSpokenSpotlight(latestAnnouncement.candidate.alert);
+    const timer = setTimeout(() => setSpokenSpotlight(null), SPOKEN_SPOTLIGHT_DURATION_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestAnnouncement?.announcedAtMs]);
+
+  const displayFocus = focusedAlert ?? spokenSpotlight;
 
   if (!Mapbox) {
     return (
@@ -97,15 +121,15 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
       >
         <Mapbox.Camera
           centerCoordinate={
-            focusedAlert
-              ? [focusedAlert.longitude, focusedAlert.latitude]
+            displayFocus
+              ? [displayFocus.longitude, displayFocus.latitude]
               : driverPosition
                 ? [driverPosition.longitude, driverPosition.latitude]
                 : undefined
           }
-          heading={focusedAlert ? 0 : driverHeadingDeg}
+          heading={displayFocus ? 0 : driverHeadingDeg}
           zoomLevel={
-            focusedAlert
+            displayFocus
               ? FOCUSED_ALERT_ZOOM
               : driverPosition
                 ? zoomForRingRadius(announceDistanceMeters, AWARENESS_RING_SIZE / 2, driverPosition.latitude)
@@ -135,7 +159,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         ))}
       </Mapbox.MapView>
 
-      {focusedAlert ? null : (
+      {displayFocus ? null : (
         <>
           <View style={styles.awarenessRing} pointerEvents="none">
             <View style={styles.awarenessLabel}>

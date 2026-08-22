@@ -133,6 +133,24 @@ describe('formatAnnouncement', () => {
     expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 50 }))).toContain('eastbound');
   });
 
+  it('expands a road-type abbreviation at the end of the street name', () => {
+    expect(formatAnnouncement(makeCandidate({ street: 'Anzac Hwy', city: 'Adelaide' }))).toContain(
+      'on Anzac Highway, Adelaide'
+    );
+    expect(formatAnnouncement(makeCandidate({ street: 'North Tce', city: 'Adelaide' }))).toContain(
+      'on North Terrace, Adelaide'
+    );
+    expect(formatAnnouncement(makeCandidate({ street: 'Anzac Rd', city: 'Adelaide' }))).toContain(
+      'on Anzac Road, Adelaide'
+    );
+  });
+
+  it('expands a leading "St" to "Saint" rather than "Street"', () => {
+    expect(formatAnnouncement(makeCandidate({ street: 'St Kilda Rd', city: 'Melbourne' }))).toContain(
+      'on Saint Kilda Road, Melbourne'
+    );
+  });
+
   it('does not append an age note at exactly 10 minutes old (exclusive boundary)', () => {
     const candidate = makeCandidate({ street: null, city: null, ageMinutes: 10 });
     expect(formatAnnouncement(candidate)).toBe('Police reported, 800 metres ahead.');
@@ -267,5 +285,10 @@ describe('announcementLocation', () => {
       city: null,
       direction: 'south',
     });
+  });
+
+  it('expands road-type abbreviations, matching formatAnnouncement', () => {
+    const candidate = makeCandidate({ street: 'Anzac Hwy', city: 'Adelaide', driverHeadingDeg: 0 });
+    expect(announcementLocation(candidate).street).toBe('Anzac Highway');
   });
 });

@@ -201,15 +201,16 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   );
   announcerState = submitCandidates(announcerState, candidates);
 
-  const result = await tick(announcerState, nowMs, {
-    rate: settings.voiceRate,
-    volume: settings.voiceVolume,
-  });
+  const result = await tick(
+    announcerState,
+    nowMs,
+    { rate: settings.voiceRate, volume: settings.voiceVolume },
+    // Real-time: push to the trip store the instant this is dispatched to
+    // speech, not after the whole utterance finishes - otherwise the
+    // on-screen card lags several seconds behind the voice.
+    (entry) => useTripStore.getState().pushAnnouncement(entry)
+  );
   announcerState = result.state;
-
-  if (result.spoken) {
-    useTripStore.getState().pushAnnouncement(result.spoken);
-  }
 }
 
 /**

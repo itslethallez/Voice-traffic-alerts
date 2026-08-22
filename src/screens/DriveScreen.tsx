@@ -27,6 +27,34 @@ const STATUS_DOT_COLOR: Record<ReturnType<typeof statusFor>, string> = {
   muted: colors.inkFaint,
 };
 
+const SLIDESHOW_INTERVAL_MS = 2000;
+
+/**
+ * Cycles through the on-screen card for each recent announcement, 2s
+ * apiece, rather than only ever showing the latest one. Snaps straight
+ * back to index 0 (the newest) whenever a fresh announcement arrives -
+ * keyed on its announcedAtMs, since alertId alone can repeat for a
+ * proximity-reminder re-announcement - so the slideshow never lingers on
+ * a stale item while a brand new one is waiting to be seen.
+ */
+function useAnnouncementSlideIndex(count: number, latestAnnouncedAtMs: number | null): number {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+  }, [latestAnnouncedAtMs]);
+
+  useEffect(() => {
+    if (count <= 1) return undefined;
+    const timer = setInterval(() => {
+      setIndex((current) => (current + 1) % count);
+    }, SLIDESHOW_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [count, latestAnnouncedAtMs]);
+
+  return index;
+}
+
 export function DriveScreen() {
   const masterMute = useSettingsStore((state) => state.masterMute);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
@@ -72,7 +100,11 @@ export function DriveScreen() {
   );
 
   const status = statusFor({ masterMute, isOffline });
-  const latestAnnouncement = recentAnnouncements[0] ?? null;
+  const slideIndex = useAnnouncementSlideIndex(
+    recentAnnouncements.length,
+    recentAnnouncements[0]?.announcedAtMs ?? null
+  );
+  const displayedAnnouncement = recentAnnouncements[slideIndex] ?? null;
 
   return (
     <View style={styles.root}>
@@ -127,9 +159,13 @@ export function DriveScreen() {
             </View>
           )}
 
-          {latestAnnouncement ? (
+          {displayedAnnouncement ? (
             <View style={styles.card}>
-              <NearbyTransmissionCard announcement={latestAnnouncement} nowMs={now} />
+              <NearbyTransmissionCard
+                key={displayedAnnouncement.alertId + displayedAnnouncement.announcedAtMs}
+                announcement={displayedAnnouncement}
+                nowMs={now}
+              />
             </View>
           ) : null}
         </ScrollView>

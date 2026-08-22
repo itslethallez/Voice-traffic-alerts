@@ -48,21 +48,30 @@ export interface AnnouncerTickResult {
  * else speaking, and the minimum gap has elapsed - dispatches it to TTS
  * and awaits completion. A no-op (spoken: null) if it isn't time yet.
  *
+ * `onAnnounce`, if given, fires the instant an alert is dispatched to
+ * speech - before speakAsync's promise settles - so a UI subscriber (the
+ * Drive screen's on-screen card, the radar map's spotlight) can update in
+ * step with the driver hearing it, rather than waiting out the entire
+ * utterance's duration first. It fires even if the TTS call goes on to
+ * fail, since the alert is still worth surfacing visually; that's kept
+ * separate from announcedDistances/recent below, which stay gated on
+ * actual completion.
+ *
  * A TTS failure never throws out of here: the queue is still unblocked
  * (isSpeaking cleared) so the next alert can be announced on the next
  * tick, matching "never crash the loop". The alert is deliberately NOT
  * added to announcedDistances/recent on failure - the driver never heard
- * it, so it shouldn't be dedupe'd as spoken or shown in the UI as if it
- * was. Since dequeueNext already removed it from the pending queue,
- * leaving it out of announcedDistances means the next
- * selectAnnounceableAlerts() call naturally reconsiders it as a fresh
- * candidate (as long as it's still otherwise eligible) rather than
- * requiring separate retry bookkeeping.
+ * it, so it shouldn't be dedupe'd as spoken. Since dequeueNext already
+ * removed it from the pending queue, leaving it out of
+ * announcedDistances means the next selectAnnounceableAlerts() call
+ * naturally reconsiders it as a fresh candidate (as long as it's still
+ * otherwise eligible) rather than requiring separate retry bookkeeping.
  */
 export async function tick(
   state: AnnouncerState,
   nowMs: number,
-  speakOptions: SpeakOptions = {}
+  speakOptions: SpeakOptions = {},
+  onAnnounce?: (entry: RecentAnnouncement) => void
 ): Promise<AnnouncerTickResult> {
   const { next, state: dequeuedQueueState } = dequeueNext(state.queue, nowMs);
   if (!next) {
@@ -70,12 +79,14 @@ export async function tick(
   }
 
   const text = formatAnnouncement(next);
+  const entry: RecentAnnouncement = { alertId: next.alert.alert_id, text, announcedAtMs: nowMs, candidate: next };
+  onAnnounce?.(entry);
 
   let queue = dequeuedQueueState;
   let spoken: RecentAnnouncement | null = null;
   try {
     await speakAsync(text, speakOptions);
-    spoken = { alertId: next.alert.alert_id, text, announcedAtMs: nowMs, candidate: next };
+    spoken = entry;
   } catch (error) {
     console.warn(`[speech] TTS failed for ${next.alert.alert_id}`, error);
   } finally {

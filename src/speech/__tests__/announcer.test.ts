@@ -148,6 +148,44 @@ describe('announcer', () => {
     expect(result.state.queue.isSpeaking).toBe(false);
   });
 
+  it('invokes onAnnounce the instant an alert is dispatched, before the utterance completes', async () => {
+    let resolveSpeak: () => void = () => {};
+    speakAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSpeak = resolve;
+        })
+    );
+    const onAnnounce = jest.fn();
+    let state = createInitialAnnouncerState();
+    state = submitCandidates(state, [makeCandidate('a', 'POLICE', 900)]);
+
+    const tickPromise = tick(state, 0, {}, onAnnounce);
+
+    // onAnnounce must already have fired even though speakAsync is still
+    // pending - this is what lets the UI show the card in real time
+    // instead of waiting out the whole spoken utterance first.
+    expect(onAnnounce).toHaveBeenCalledTimes(1);
+    expect(onAnnounce.mock.calls[0][0]).toMatchObject({ alertId: 'a', announcedAtMs: 0 });
+
+    resolveSpeak();
+    await tickPromise;
+  });
+
+  it('still invokes onAnnounce even when the TTS call goes on to fail', async () => {
+    speakAsync.mockRejectedValueOnce(new Error('tts failed'));
+    const onAnnounce = jest.fn();
+    let state = createInitialAnnouncerState();
+    state = submitCandidates(state, [makeCandidate('a', 'POLICE')]);
+
+    const result = await tick(state, 0, {}, onAnnounce);
+
+    expect(onAnnounce).toHaveBeenCalledTimes(1);
+    // Still not marked as spoken/dedupe'd, even though the UI was told about it.
+    expect(result.spoken).toBeNull();
+    expect(result.state.announcedDistances.has('a')).toBe(false);
+  });
+
   it('does not advance the announcement gap timer on a TTS failure, so a fresh alert is not throttled', async () => {
     speakAsync.mockRejectedValueOnce(new Error('tts failed'));
     let state = createInitialAnnouncerState();

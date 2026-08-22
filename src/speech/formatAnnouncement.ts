@@ -46,12 +46,68 @@ function formatAge(ageMinutes: number): string {
  */
 const ROUTE_NUMBER_PATTERN = /^[A-Za-z]{0,3}-?\d+\s*[A-Za-z]?$/;
 
+/**
+ * Road-type suffix abbreviations expanded to full words so TTS reads them
+ * naturally ("Anzac Highway", not "Anzac Hwy" spelled out letter by
+ * letter). Keyed lowercase, matched against the last word of the street
+ * name only - suffixes are unambiguous there, unlike a leading "St"
+ * (see expandRoadName's separate "Saint" handling).
+ */
+const ROAD_SUFFIX_ABBREVIATIONS: Record<string, string> = {
+  hwy: 'Highway',
+  fwy: 'Freeway',
+  expy: 'Expressway',
+  rd: 'Road',
+  st: 'Street',
+  ave: 'Avenue',
+  av: 'Avenue',
+  dr: 'Drive',
+  ct: 'Court',
+  pde: 'Parade',
+  tce: 'Terrace',
+  cres: 'Crescent',
+  cct: 'Circuit',
+  blvd: 'Boulevard',
+  bvd: 'Boulevard',
+  ln: 'Lane',
+  pl: 'Place',
+  sq: 'Square',
+  cl: 'Close',
+  gr: 'Grove',
+};
+
+/**
+ * Expands a road-type abbreviation at the end of a street name ("Anzac
+ * Hwy" -> "Anzac Highway", "Anzac Rd" -> "Anzac Road") and a leading "St"
+ * to "Saint" ("St Kilda Road" -> "Saint Kilda Road") - the one case where
+ * "St" means something other than "Street". Only the first and last
+ * words are ever touched, so ordinary multi-word names are left alone.
+ */
+function expandRoadName(street: string): string {
+  const words = street.split(/\s+/);
+  if (words.length === 0) return street;
+
+  const lastIndex = words.length - 1;
+  const lastKey = words[lastIndex].replace(/\.$/, '').toLowerCase();
+  const suffixExpansion = ROAD_SUFFIX_ABBREVIATIONS[lastKey];
+  if (suffixExpansion) {
+    words[lastIndex] = suffixExpansion;
+  }
+
+  const firstKey = words[0].replace(/\.$/, '').toLowerCase();
+  if (firstKey === 'st' && words.length > 1) {
+    words[0] = 'Saint';
+  }
+
+  return words.join(' ');
+}
+
 /** null, undefined, empty, whitespace-only, or a bare route number all
  * count as "no speakable street name". */
 function spokenStreet(street: string | null | undefined): string | null {
   const trimmed = street?.trim();
   if (!trimmed || ROUTE_NUMBER_PATTERN.test(trimmed)) return null;
-  return trimmed;
+  return expandRoadName(trimmed);
 }
 
 function normalizeCity(city: string | null | undefined): string | null {
