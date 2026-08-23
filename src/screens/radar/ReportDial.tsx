@@ -38,6 +38,15 @@ export function ReportDial({ isActive }: ReportDialProps) {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const maxDurationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Live mirror of the isActive prop, read inside startRecording() after
+  // its async permission/prepare gap - a plain closure over the prop
+  // itself would only ever see whatever value was current when that
+  // particular startRecording() call began, not whatever it is by the
+  // time recording actually starts.
+  const isActiveRef = useRef(isActive);
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
 
   const clearMaxDurationTimeout = useCallback(() => {
     if (maxDurationTimeoutRef.current !== null) {
@@ -90,6 +99,17 @@ export function ReportDial({ isActive }: ReportDialProps) {
     maxDurationTimeoutRef.current = setTimeout(() => {
       void finishRecording();
     }, MAX_RECORDING_SECONDS * 1000);
+
+    if (!isActiveRef.current) {
+      // The driver already left Drive while permission/prepare was still
+      // in flight - the isActive effect already ran and bailed (isBusyRef
+      // was still set for this very call), so recorder.record() above just
+      // started a recording with nothing watching it. Finish it right now
+      // instead of leaving it running until the 30s cap. Awaited (not
+      // fire-and-forget) so isBusyRef - and the "is anything in flight"
+      // guard other callers rely on - stays true until this is done.
+      await finishRecording();
+    }
   }, [finishRecording, recorder]);
 
   // Guards the async gap in both startRecording (permission request +
@@ -127,13 +147,19 @@ export function ReportDial({ isActive }: ReportDialProps) {
     const status = recorder.getStatus();
     if (!status.isRecording || isBusyRef.current) return;
 
+    // Otherwise the 30s auto-stop timeout armed by startRecording is still
+    // live and fires finishRecording() again later on an already-stopped
+    // recorder - a second, duplicate manual report, and a confirmation
+    // flash the driver never asked for whenever they come back to Drive.
+    clearMaxDurationTimeout();
+
     const durationMs = status.durationMillis;
     recorder
       .stop()
       .then(() => configureDuckingAudioSession())
       .then(() => pushManualReport(recorder.uri ? { uri: recorder.uri, durationMs } : undefined))
       .catch(() => {});
-  }, [pushManualReport, recorder]);
+  }, [clearMaxDurationTimeout, pushManualReport, recorder]);
 
   // DriveScreen now stays mounted (display: none) rather than unmounting
   // on a tab switch (see App.tsx), so this component's own unmount never
