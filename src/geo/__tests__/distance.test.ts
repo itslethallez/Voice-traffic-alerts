@@ -1,4 +1,4 @@
-import { haversineDistance } from '../distance';
+import { haversineDistance, midpoint } from '../distance';
 
 /**
  * Adelaide Railway Station (tram stop node, OpenStreetMap) and Adelaide
@@ -28,5 +28,18 @@ describe('haversineDistance', () => {
 
   it('is zero for the same point', () => {
     expect(haversineDistance(ADELAIDE_OVAL, ADELAIDE_OVAL)).toBe(0);
+  });
+});
+
+describe('midpoint', () => {
+  it('averages latitude and longitude independently', () => {
+    expect(midpoint(ADELAIDE_RAILWAY_STATION, ADELAIDE_OVAL)).toEqual({
+      latitude: (ADELAIDE_RAILWAY_STATION.latitude + ADELAIDE_OVAL.latitude) / 2,
+      longitude: (ADELAIDE_RAILWAY_STATION.longitude + ADELAIDE_OVAL.longitude) / 2,
+    });
+  });
+
+  it('returns the same point when both inputs match', () => {
+    expect(midpoint(ADELAIDE_OVAL, ADELAIDE_OVAL)).toEqual(ADELAIDE_OVAL);
   });
 });

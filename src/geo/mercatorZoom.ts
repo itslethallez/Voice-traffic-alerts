@@ -3,9 +3,11 @@ const WEB_MERCATOR_CONSTANT = 156543.03392;
 /** Mapbox zoom is unbounded in theory but meaningless this far out or in
  * for a driving app - clamps protect against extreme settings values
  * (announceDistanceMeters up to 20km) or an edge-case latitude producing a
- * nonsensical zoom. */
-const MIN_ZOOM = 3;
-const MAX_ZOOM = 18;
+ * nonsensical zoom. Exported so other camera-zoom math (e.g. RadarMap's
+ * zoom-out/zoom-in focus transition) clamps to the same bounds instead of
+ * duplicating them. */
+export const MIN_ZOOM = 3;
+export const MAX_ZOOM = 18;
 
 function toRadians(deg: number): number {
   return (deg * Math.PI) / 180;

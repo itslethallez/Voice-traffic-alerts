@@ -21,3 +21,16 @@ export function haversineDistance(a: GeoPoint, b: GeoPoint): number {
 
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
+
+/**
+ * Simple lat/lon average, not a true great-circle midpoint - fine at the
+ * announce-distance scale (a few km at most) this is used at, and avoids
+ * the antimeridian/pole edge cases a proper spherical midpoint has to
+ * handle for no benefit here.
+ */
+export function midpoint(a: GeoPoint, b: GeoPoint): GeoPoint {
+  return {
+    latitude: (a.latitude + b.latitude) / 2,
+    longitude: (a.longitude + b.longitude) / 2,
+  };
+}

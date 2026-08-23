@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
-import { haversineDistance } from '../../geo/distance';
-import { zoomForRingRadius } from '../../geo/mercatorZoom';
+import { haversineDistance, midpoint } from '../../geo/distance';
+import { MAX_ZOOM, MIN_ZOOM, zoomForRingRadius } from '../../geo/mercatorZoom';
+import type { GeoPoint } from '../../geo/types';
 import { formatDistance } from '../../speech/formatAnnouncement';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
@@ -60,6 +61,19 @@ const FOCUSED_ALERT_ZOOM = 16;
  * of a tap. */
 const SPOKEN_SPOTLIGHT_DURATION_MS = 6000;
 
+/**
+ * Focus-change transition (Step 13 #4): jumping the camera straight to a
+ * newly-focused alert (or back to following the driver) loses the
+ * driver's sense of where that point actually is relative to them. Zoom
+ * out toward a pivot between the driver and the target first, then zoom
+ * into the actual target, instead of a single direct pan+zoom.
+ */
+const TRANSITION_ZOOM_OUT_DURATION_MS = 400;
+const TRANSITION_ZOOM_IN_DURATION_MS = 500;
+/** How much further out than the more-zoomed-in of the two endpoints the
+ * pull-back step goes. */
+const TRANSITION_ZOOM_OUT_DELTA = 2;
+
 interface RadarMapProps {
   /** Set by the Drive screen's nearby-alerts slider (Step 12 #25) when the
    * driver taps a card - the camera centers on this alert instead of
@@ -108,6 +122,68 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
 
   const displayFocus = focusedAlert ?? spokenSpotlight;
 
+  const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
+  /** Skips the very first run, same reasoning as hasRunSpotlightEffectRef
+   * above - there's no meaningful "from" state on mount, and the
+   * declarative Camera props below already center correctly on first
+   * render without needing a transition. */
+  const hasRunFocusTransitionEffectRef = useRef(false);
+  const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusKey = displayFocus?.alert_id ?? null;
+  useEffect(() => {
+    const isFirstRun = !hasRunFocusTransitionEffectRef.current;
+    hasRunFocusTransitionEffectRef.current = true;
+    if (isFirstRun || !cameraRef.current || !driverPosition) return;
+
+    const targetPoint: GeoPoint = displayFocus
+      ? { latitude: displayFocus.latitude, longitude: displayFocus.longitude }
+      : driverPosition;
+    const followingZoom = zoomForRingRadius(
+      announceDistanceMeters,
+      AWARENESS_RING_SIZE / 2,
+      driverPosition.latitude
+    );
+    const targetZoom = displayFocus ? FOCUSED_ALERT_ZOOM : followingZoom;
+    const pulledBackZoom = Math.max(
+      MIN_ZOOM,
+      Math.min(MAX_ZOOM, Math.min(targetZoom, followingZoom) - TRANSITION_ZOOM_OUT_DELTA)
+    );
+    const pivot = midpoint(driverPosition, targetPoint);
+
+    cameraRef.current.setCamera({
+      centerCoordinate: [pivot.longitude, pivot.latitude],
+      zoomLevel: pulledBackZoom,
+      animationDuration: TRANSITION_ZOOM_OUT_DURATION_MS,
+      animationMode: 'easeTo',
+    });
+
+    if (focusTransitionTimeoutRef.current !== null) {
+      clearTimeout(focusTransitionTimeoutRef.current);
+    }
+    focusTransitionTimeoutRef.current = setTimeout(() => {
+      cameraRef.current?.setCamera({
+        centerCoordinate: [targetPoint.longitude, targetPoint.latitude],
+        zoomLevel: targetZoom,
+        heading: displayFocus ? 0 : driverHeadingDeg,
+        animationDuration: TRANSITION_ZOOM_IN_DURATION_MS,
+        animationMode: 'easeTo',
+      });
+      focusTransitionTimeoutRef.current = null;
+    }, TRANSITION_ZOOM_OUT_DURATION_MS);
+
+    return () => {
+      if (focusTransitionTimeoutRef.current !== null) {
+        clearTimeout(focusTransitionTimeoutRef.current);
+        focusTransitionTimeoutRef.current = null;
+      }
+    };
+    // Deliberately keyed on focusKey alone - driverPosition/driverHeadingDeg/
+    // announceDistanceMeters are read live inside for whichever point in
+    // time the transition actually fires, not to re-trigger this effect on
+    // every ~3s position tick the way the declarative Camera props below do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey]);
+
   if (!Mapbox) {
     return (
       <Unsupported message="Radar map needs a rebuilt dev client with the Mapbox native module linked - it will not appear in Expo Go." />
@@ -137,6 +213,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         rotateEnabled={false}
       >
         <Mapbox.Camera
+          ref={cameraRef}
           centerCoordinate={
             displayFocus
               ? [displayFocus.longitude, displayFocus.latitude]
