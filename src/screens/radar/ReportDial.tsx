@@ -13,6 +13,14 @@ const DIAL_SIZE = 132;
 const MIC_PERMISSION_DENIED_MESSAGE =
   'SHOTGUN needs microphone access to record voice reports. Enable it in Settings.';
 
+interface ReportDialProps {
+  /** False while the driver is on History/Settings. DriveScreen now stays
+   * mounted (display: none) rather than unmounting on a tab switch, so
+   * this component's own unmount cleanup below no longer fires when the
+   * driver leaves Drive - this prop is what actually detects that now. */
+  isActive: boolean;
+}
+
 /**
  * "Report what you see" (Step 11b, tap-and-talk since Step 12 #26) - tap
  * once to start recording, tap again to stop and save. Local-only: there is
@@ -21,7 +29,7 @@ const MIC_PERMISSION_DENIED_MESSAGE =
  * record (with a playable voice note) visible in History, the same way a
  * spoken announcement does. Record-only, no transcription.
  */
-export function ReportDial() {
+export function ReportDial({ isActive }: ReportDialProps) {
   const pushManualReport = useTripStore((state) => state.pushManualReport);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 200);
@@ -100,34 +108,50 @@ export function ReportDial() {
     });
   }, [finishRecording, recorderState.isRecording, startRecording]);
 
+  // Shared by both the isActive effect and the unmount cleanup below, so
+  // "the driver left Drive" is handled identically regardless of which of
+  // the two ways that can currently manifest.
+  //
+  // recorder.getStatus() (not recorderState, a stale closure from whichever
+  // render created this callback) is checked live so a recording still in
+  // progress gets stopped and saved instead of silently discarded, and the
+  // audio session gets put back in ducking mode instead of stuck recording.
+  //
+  // Skipped while isBusyRef is set: that means startRecording() or
+  // finishRecording() is already mid-flight (e.g. the driver tapped stop,
+  // or the 30s cap fired, right as they navigated away) - those promises
+  // keep running regardless (they're not tied to the component tree or to
+  // isActive) and will save the report themselves once they settle, so
+  // saving here too would create a duplicate entry.
+  const stopAndSaveIfInProgress = useCallback(() => {
+    const status = recorder.getStatus();
+    if (!status.isRecording || isBusyRef.current) return;
+
+    const durationMs = status.durationMillis;
+    recorder
+      .stop()
+      .then(() => configureDuckingAudioSession())
+      .then(() => pushManualReport(recorder.uri ? { uri: recorder.uri, durationMs } : undefined))
+      .catch(() => {});
+  }, [pushManualReport, recorder]);
+
+  // DriveScreen now stays mounted (display: none) rather than unmounting
+  // on a tab switch (see App.tsx), so this component's own unmount never
+  // fires just from leaving Drive any more - isActive going false is the
+  // actual "driver left Drive" signal now. The unmount cleanup below is
+  // kept too, as a defence-in-depth backstop for the case DriveScreen ever
+  // does unmount for a different reason.
+  useEffect(() => {
+    if (!isActive) stopAndSaveIfInProgress();
+  }, [isActive, stopAndSaveIfInProgress]);
+
   useEffect(
     () => () => {
       clearMaxDurationTimeout();
       if (confirmationTimeoutRef.current !== null) clearTimeout(confirmationTimeoutRef.current);
-
-      // Leaving Drive (e.g. to History/Settings) unmounts this component -
-      // recorder.getStatus() (not recorderState, a stale closure from
-      // mount time) is checked live so a recording still in progress gets
-      // stopped and saved instead of silently discarded, and the audio
-      // session gets put back in ducking mode instead of stuck recording.
-      //
-      // Skipped while isBusyRef is set: that means startRecording() or
-      // finishRecording() is already mid-flight (e.g. the driver tapped
-      // stop, or the 30s cap fired, right as they navigated away) - those
-      // promises keep running after unmount regardless (they're not tied
-      // to the component tree) and will save the report themselves once
-      // they settle, so saving here too would create a duplicate entry.
-      const status = recorder.getStatus();
-      if (status.isRecording && !isBusyRef.current) {
-        const durationMs = status.durationMillis;
-        recorder
-          .stop()
-          .then(() => configureDuckingAudioSession())
-          .then(() => pushManualReport(recorder.uri ? { uri: recorder.uri, durationMs } : undefined))
-          .catch(() => {});
-      }
+      stopAndSaveIfInProgress();
     },
-    [clearMaxDurationTimeout, pushManualReport, recorder]
+    [clearMaxDurationTimeout, stopAndSaveIfInProgress]
   );
 
   const elapsedSeconds = Math.floor(recorderState.durationMillis / 1000);

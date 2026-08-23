@@ -55,7 +55,16 @@ function useAnnouncementSlideIndex(count: number, latestAnnouncedAtMs: number | 
   return index;
 }
 
-export function DriveScreen() {
+interface DriveScreenProps {
+  /** False while the driver is on History/Settings - DriveScreen now stays
+   * mounted (display: none) rather than unmounting on a tab switch (see
+   * App.tsx), so ReportDial needs this to know when it should stop and
+   * save an in-progress voice report instead of relying on its own
+   * unmount, which no longer happens on a normal tab switch. */
+  isActive: boolean;
+}
+
+export function DriveScreen({ isActive }: DriveScreenProps) {
   const masterMute = useSettingsStore((state) => state.masterMute);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
 
@@ -175,7 +184,7 @@ export function DriveScreen() {
          * inside it, which is exactly fatal for a hold-to-confirm gesture
          * like this one - so this stays a fixed, non-scrolling section. */}
         <View style={styles.reportSection}>
-          <ReportDial />
+          <ReportDial isActive={isActive} />
         </View>
       </SafeAreaView>
     </View>
