@@ -14,6 +14,7 @@ function makeCandidate(
     type?: WazeAlert['type'];
     street?: string | null;
     city?: string | null;
+    nearBy?: string | null;
   } = {}
 ): AnnounceableAlert {
   const alert: WazeAlert = {
@@ -32,7 +33,7 @@ function makeCandidate(
     num_thumbs_up: 0,
     alert_reliability: 0,
     alert_confidence: 0,
-    near_by: null,
+    near_by: overrides.nearBy !== undefined ? overrides.nearBy : null,
     comments: [],
     num_comments: 0,
   };
@@ -168,6 +169,27 @@ describe('formatAnnouncement', () => {
     expect(formatAnnouncement(candidate)).toBe(
       'Police reported, 800 metres ahead. Reported 11 minutes ago.'
     );
+  });
+
+  it('falls back to "near {near_by}" alongside the street when there is no suburb', () => {
+    const candidate = makeCandidate({ street: 'North Terrace', city: null, nearBy: 'the casino' });
+    expect(formatAnnouncement(candidate)).toContain('on North Terrace, near the casino');
+  });
+
+  it('falls back to "near {near_by}" alone when there is neither street nor suburb', () => {
+    const candidate = makeCandidate({ street: null, city: null, nearBy: 'the casino' });
+    expect(formatAnnouncement(candidate)).toContain('near the casino');
+  });
+
+  it('prefers the suburb over near_by when both are present', () => {
+    const candidate = makeCandidate({ street: 'North Terrace', city: 'Adelaide', nearBy: 'the casino' });
+    expect(formatAnnouncement(candidate)).toContain('on North Terrace, Adelaide');
+    expect(formatAnnouncement(candidate)).not.toContain('near the casino');
+  });
+
+  it('expands road-type abbreviations on each side of a slash-joined intersection street', () => {
+    const candidate = makeCandidate({ street: 'Main Rd/Cross Rd', city: 'Adelaide' });
+    expect(formatAnnouncement(candidate)).toContain('on Main Road/Cross Road, Adelaide');
   });
 });
 

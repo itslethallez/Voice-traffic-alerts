@@ -82,8 +82,21 @@ const ROAD_SUFFIX_ABBREVIATIONS: Record<string, string> = {
  * to "Saint" ("St Kilda Road" -> "Saint Kilda Road") - the one case where
  * "St" means something other than "Street". Only the first and last
  * words are ever touched, so ordinary multi-word names are left alone.
+ *
+ * Waze alerts sitting at an intersection sometimes give a slash-joined
+ * street pair ("Main Rd/Cross Rd") - treating that as a single string
+ * would only ever touch the very first and last word of the *whole*
+ * thing, expanding the trailing "Rd" while leaving "Rd/Cross" in the
+ * middle untouched. Expand each side of the slash independently instead.
  */
 function expandRoadName(street: string): string {
+  if (street.includes('/')) {
+    return street
+      .split('/')
+      .map((segment) => expandRoadName(segment.trim()))
+      .join('/');
+  }
+
   const words = street.split(/\s+/);
   if (words.length === 0) return street;
 
@@ -115,33 +128,50 @@ function normalizeCity(city: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function normalizeNearBy(nearBy: string | null | undefined): string | null {
+  const trimmed = nearBy?.trim();
+  return trimmed ? trimmed : null;
+}
+
 /**
- * "on {street}, {suburb}" / "on {street}" / "in {suburb}" / null, in that
- * preference order. A route number is never spoken (see spokenStreet) -
- * the suburb carries the location instead.
+ * "on {street}, {suburb}" / "on {street}, near {near_by}" / "on {street}"
+ * / "in {suburb}" / "near {near_by}" / null, in that preference order. A
+ * route number is never spoken (see spokenStreet) - the suburb (or, when
+ * Waze doesn't supply one, `near_by`) carries the location instead.
+ * `near_by` is a real field on WazeAlert that was previously unused -
+ * `city` is frequently blank in practice, and the area rarely getting
+ * named at all is exactly the complaint this fallback tier addresses.
  */
-function locationPhrase(street: string | null | undefined, city: string | null | undefined): string | null {
+function locationPhrase(
+  street: string | null | undefined,
+  city: string | null | undefined,
+  nearBy: string | null | undefined
+): string | null {
   const spoken = spokenStreet(street);
   const normalizedCity = normalizeCity(city);
+  const normalizedNearBy = normalizeNearBy(nearBy);
 
   if (spoken && normalizedCity) return `on ${spoken}, ${normalizedCity}`;
+  if (spoken && normalizedNearBy) return `on ${spoken}, near ${normalizedNearBy}`;
   if (spoken) return `on ${spoken}`;
   if (normalizedCity) return `in ${normalizedCity}`;
+  if (normalizedNearBy) return `near ${normalizedNearBy}`;
   return null;
 }
 
 /**
  * "{type} reported on {street}, {suburb}, {direction}bound, {distance}
- * ahead." (falling back to just the suburb when there's no usable street
- * name, and to the bare original wording when there's neither) plus, if
- * the report is over 10 minutes old, an appended "Reported {n} minutes
- * ago." - stale data pretending to be live is the main way this app loses
+ * ahead." (falling back through locationPhrase's other tiers - near_by
+ * instead of suburb, just the street, just an area name, or the bare
+ * distance-only wording when none of those are usable) plus, if the
+ * report is over 10 minutes old, an appended "Reported {n} minutes ago."
+ * - stale data pretending to be live is the main way this app loses
  * trust. The road/route number itself is never spoken - see spokenStreet.
  */
 export function formatAnnouncement(candidate: AnnounceableAlert): string {
   const label = labelForType(candidate.alert.type);
   const distance = formatDistance(candidate.distanceMeters);
-  const location = locationPhrase(candidate.alert.street, candidate.alert.city);
+  const location = locationPhrase(candidate.alert.street, candidate.alert.city, candidate.alert.near_by);
 
   let text: string;
   if (location) {
@@ -187,15 +217,15 @@ export const NO_BRIEFING_ALERTS_MESSAGE = 'No recent alerts within your briefing
  * formatAnnouncement, which only appends it past the staleness cutoff),
  * since a briefing is explicitly about "how current is this" situational
  * awareness. Prefers "on {street}, {suburb}" (never the route number -
- * see spokenStreet), falls back to just the suburb, and only falls all
- * the way back to distance if the Waze data has neither - a stationary
- * cold-start briefing has no meaningful direction of travel, so unlike
+ * see spokenStreet), falls back through locationPhrase's other tiers, and
+ * only falls all the way back to distance if none of those are usable - a
+ * stationary cold-start briefing has no meaningful direction of travel, so unlike
  * formatAnnouncement this never appends "-bound".
  */
 export function formatBriefingAlert(candidate: AnnounceableAlert): string {
   const label = labelForType(candidate.alert.type);
   const age = formatAge(candidate.ageMinutes);
-  const location = locationPhrase(candidate.alert.street, candidate.alert.city);
+  const location = locationPhrase(candidate.alert.street, candidate.alert.city, candidate.alert.near_by);
 
   if (location) {
     return `${label} reported ${location}, ${age} ago.`;
