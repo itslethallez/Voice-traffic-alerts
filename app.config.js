@@ -57,8 +57,6 @@ module.exports = {
         'expo-audio',
         {
           enableBackgroundPlayback: true,
-          microphonePermission:
-            'SHOTGUN uses your microphone to record voice reports about what you see.',
         },
       ],
       'expo-font',

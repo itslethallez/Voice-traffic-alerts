@@ -1,21 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import type { VoiceNote } from '../store/useTripStore';
+import { compassDirection } from '../geo/bearing';
 import { useTripStore } from '../store/useTripStore';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { formatRelativeTime } from './formatRelativeTime';
-import { VoiceNoteRow } from './radar/VoiceNoteRow';
 
 type HistoryRow =
   | { kind: 'announcement'; id: string; atMs: number; text: string }
-  | { kind: 'manualReport'; id: string; atMs: number; voiceNote: VoiceNote | null };
+  | { kind: 'manualReport'; id: string; atMs: number; headingDeg: number | null };
 
 /**
  * Step 11 stub - lists this trip's announcements and manual reports
- * (Step 11b's Report dial), both already tracked in useTripStore for the
- * Drive screen's own overlays. A real persisted history is future work,
- * out of scope for this step.
+ * (the Drive screen's one-tap Report button), both already tracked in
+ * useTripStore for the Drive screen's own overlays. A real persisted
+ * history is future work, out of scope for this step.
  */
 export function HistoryScreen() {
   const recentAnnouncements = useTripStore((state) => state.recentAnnouncements);
@@ -38,7 +37,7 @@ export function HistoryScreen() {
       kind: 'manualReport',
       id: report.id,
       atMs: report.createdAtMs,
-      voiceNote: report.voiceNote,
+      headingDeg: report.headingDeg,
     }));
     return [...announcementRows, ...manualReportRows].sort((a, b) => b.atMs - a.atMs);
   }, [recentAnnouncements, manualReports]);
@@ -57,12 +56,13 @@ export function HistoryScreen() {
             {rows.map((row) => (
               <View key={row.id} style={styles.row}>
                 <Text style={styles.rowText}>
-                  {row.kind === 'manualReport' ? 'You reported something nearby' : row.text}
+                  {row.kind === 'manualReport'
+                    ? row.headingDeg !== null
+                      ? `Police reported, ${compassDirection(row.headingDeg)}bound`
+                      : 'Police reported nearby'
+                    : row.text}
                 </Text>
                 <Text style={styles.rowTime}>{formatRelativeTime(row.atMs, now)}</Text>
-                {row.kind === 'manualReport' && row.voiceNote ? (
-                  <VoiceNoteRow uri={row.voiceNote.uri} durationMs={row.voiceNote.durationMs} />
-                ) : null}
               </View>
             ))}
           </View>

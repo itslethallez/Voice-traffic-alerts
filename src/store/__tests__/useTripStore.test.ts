@@ -8,7 +8,7 @@ describe('pushManualReport', () => {
   });
 
   it('prepends a new report carrying the current driver position', () => {
-    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90);
+    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
 
     useTripStore.getState().pushManualReport();
 
@@ -25,19 +25,18 @@ describe('pushManualReport', () => {
     expect(useTripStore.getState().manualReports[0].position).toBeNull();
   });
 
-  it('records a null voiceNote when none is passed', () => {
+  it('records the current driver heading', () => {
+    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
+
     useTripStore.getState().pushManualReport();
 
-    expect(useTripStore.getState().manualReports[0].voiceNote).toBeNull();
+    expect(useTripStore.getState().manualReports[0].headingDeg).toBe(90);
   });
 
-  it('attaches the voiceNote when one is passed', () => {
-    useTripStore.getState().pushManualReport({ uri: 'file:///report.m4a', durationMs: 4200 });
+  it('records a null heading when the driver position is not yet known', () => {
+    useTripStore.getState().pushManualReport();
 
-    expect(useTripStore.getState().manualReports[0].voiceNote).toEqual({
-      uri: 'file:///report.m4a',
-      durationMs: 4200,
-    });
+    expect(useTripStore.getState().manualReports[0].headingDeg).toBeNull();
   });
 
   it('prepends (newest first) and gives each report a distinct id', () => {

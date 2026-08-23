@@ -177,7 +177,7 @@ export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<
  */
 async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number): Promise<void> {
   // Radar UI mirror (Step 11) - read-only, doesn't affect any decision below.
-  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg);
+  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg, driver.speedKmh);
 
   const settings = useSettingsStore.getState();
   await pollIfDue(driver, nowMs, settings.announceDistanceMeters);
@@ -297,7 +297,7 @@ export async function runBriefing(
 
   // Radar UI mirror (Step 11) - so the map has a driver position to
   // center on right away, before the first handleDriverUpdate() call.
-  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg);
+  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg, driver.speedKmh);
 
   const hasUsableAlerts = await waitForBriefingAlerts(boundingBox, signal);
   if (signal?.aborted) return;

@@ -116,7 +116,7 @@ describe('handleDriverUpdate', () => {
 
     await handleDriverUpdate(driver, now);
 
-    expect(setDriverPosition).toHaveBeenCalledWith(driver.position, driver.headingDeg);
+    expect(setDriverPosition).toHaveBeenCalledWith(driver.position, driver.headingDeg, driver.speedKmh);
     expect(setVisibleAlerts).toHaveBeenCalledWith(mockAlerts);
   });
 
@@ -491,7 +491,7 @@ describe('runBriefing', () => {
     const promise = runBriefing(driver, Date.now());
     // Not awaiting the fetch retries at all - the mirror should already
     // have happened by the time the very first await inside runBriefing yields.
-    expect(setDriverPosition).toHaveBeenCalledWith(driver.position, driver.headingDeg);
+    expect(setDriverPosition).toHaveBeenCalledWith(driver.position, driver.headingDeg, driver.speedKmh);
 
     await jest.advanceTimersByTimeAsync(
       BRIEFING_FETCH_RETRY_INTERVAL_MS * (BRIEFING_MAX_FETCH_ATTEMPTS - 1) + 100

@@ -8,26 +8,17 @@ export type TripStatus = 'listening' | 'muted' | 'offline';
 const MAX_RECENT_ANNOUNCEMENTS = 3;
 
 /**
- * A driver-initiated "Report what you see" (Step 11b's hold-to-confirm
- * dial) - local-only. There is no Waze write API in this integration (the
- * Waze client here only ever reads alerts-and-jams), so this cannot be
- * submitted anywhere; it just becomes a local trip record the driver can
- * see in History, the same way a spoken announcement does.
+ * A driver-initiated one-tap "Report police" - local-only. There is no
+ * Waze write API in this integration (the Waze client here only ever
+ * reads alerts-and-jams), so this cannot be submitted anywhere; it just
+ * becomes a local trip record the driver can see in History, the same way
+ * a spoken announcement does.
  */
-/** A tap-and-talk recording attached to a ManualReport (Step 12 #26) -
- * record-only, no transcription. `uri` is playable directly via expo-audio's
- * useAudioPlayer, the same way NearbyTransmissionCard replays a live
- * announcement. */
-export interface VoiceNote {
-  uri: string;
-  durationMs: number;
-}
-
 export interface ManualReport {
   id: string;
   createdAtMs: number;
   position: GeoPoint | null;
-  voiceNote: VoiceNote | null;
+  headingDeg: number | null;
 }
 
 /**
@@ -55,14 +46,18 @@ interface TripStoreState {
    */
   driverPosition: GeoPoint | null;
   driverHeadingDeg: number;
+  /** Km/h, mirrored from DriverState.speedKmh (Step 13's Drive-screen
+   * speedometer) - same read-only "radar UI mirror" pattern as
+   * driverPosition/driverHeadingDeg above. */
+  driverSpeedKmh: number;
   visibleAlerts: WazeAlert[];
   manualReports: ManualReport[];
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
-  pushManualReport: (voiceNote?: VoiceNote) => void;
+  pushManualReport: () => void;
   setOffline: (offline: boolean) => void;
   setBannerMessage: (message: string | null) => void;
   setLocationError: (message: string | null) => void;
-  setDriverPosition: (position: GeoPoint, headingDeg: number) => void;
+  setDriverPosition: (position: GeoPoint, headingDeg: number, speedKmh: number) => void;
   setVisibleAlerts: (alerts: WazeAlert[]) => void;
 }
 
@@ -73,6 +68,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   recentAnnouncements: [],
   driverPosition: null,
   driverHeadingDeg: 0,
+  driverSpeedKmh: 0,
   visibleAlerts: [],
   manualReports: [],
   pushAnnouncement: (announcement) =>
@@ -82,14 +78,14 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         MAX_RECENT_ANNOUNCEMENTS
       ),
     })),
-  pushManualReport: (voiceNote) =>
+  pushManualReport: () =>
     set((state) => ({
       manualReports: [
         {
           id: `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
           createdAtMs: Date.now(),
           position: get().driverPosition,
-          voiceNote: voiceNote ?? null,
+          headingDeg: get().driverPosition ? get().driverHeadingDeg : null,
         },
         ...state.manualReports,
       ],
@@ -97,8 +93,8 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   setOffline: (offline) => set({ isOffline: offline }),
   setBannerMessage: (message) => set({ bannerMessage: message }),
   setLocationError: (message) => set({ locationError: message }),
-  setDriverPosition: (position, headingDeg) =>
-    set({ driverPosition: position, driverHeadingDeg: headingDeg }),
+  setDriverPosition: (position, headingDeg, speedKmh) =>
+    set({ driverPosition: position, driverHeadingDeg: headingDeg, driverSpeedKmh: speedKmh }),
   setVisibleAlerts: (alerts) => set({ visibleAlerts: alerts }),
 }));
 

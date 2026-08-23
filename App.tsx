@@ -57,7 +57,7 @@ export default function App() {
          * entirely - there's nothing left for the location-task reset to
          * collide with. */}
         <View style={[styles.screen, tab !== 'radio' && styles.hiddenScreen]}>
-          <DriveScreen isActive={tab === 'radio'} />
+          <DriveScreen />
         </View>
         <View style={[styles.screen, tab !== 'history' && styles.hiddenScreen]}>
           <HistoryScreen />

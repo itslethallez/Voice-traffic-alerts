@@ -9,7 +9,8 @@ import { fontFamily } from '../theme/typography';
 import { NearbyAlertsSlider } from './radar/NearbyAlertsSlider';
 import { NearbyTransmissionCard } from './radar/NearbyTransmissionCard';
 import { RadarMap } from './radar/RadarMap';
-import { ReportDial } from './radar/ReportDial';
+import { ReportButton } from './radar/ReportButton';
+import { Speedometer } from './radar/Speedometer';
 
 /** How long a tapped nearby-alert card keeps the map focused on it before
  * the camera returns to following the driver (Step 12 #25). */
@@ -18,7 +19,7 @@ const ALERT_FOCUS_DURATION_MS = 5000;
 const brandBadgeImage = require('../../assets/brand-badge.png');
 
 /** Dot colour for the header's status line - lime for "actively
- * listening" (matches the Report dial's accent, reads as "go"), amber for
+ * listening" (matches the report button's accent, reads as "go"), amber for
  * offline (a real degraded-mode warning), faint for muted (intentional,
  * not a problem). */
 const STATUS_DOT_COLOR: Record<ReturnType<typeof statusFor>, string> = {
@@ -55,16 +56,7 @@ function useAnnouncementSlideIndex(count: number, latestAnnouncedAtMs: number | 
   return index;
 }
 
-interface DriveScreenProps {
-  /** False while the driver is on History/Settings - DriveScreen now stays
-   * mounted (display: none) rather than unmounting on a tab switch (see
-   * App.tsx), so ReportDial needs this to know when it should stop and
-   * save an in-progress voice report instead of relying on its own
-   * unmount, which no longer happens on a normal tab switch. */
-  isActive: boolean;
-}
-
-export function DriveScreen({ isActive }: DriveScreenProps) {
+export function DriveScreen() {
   const masterMute = useSettingsStore((state) => state.masterMute);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
 
@@ -179,12 +171,12 @@ export function DriveScreen({ isActive }: DriveScreenProps) {
           ) : null}
         </ScrollView>
 
-        {/* Deliberately outside the ScrollView above: a ScrollView's pan
-         * responder can steal a touch mid-hold from a Pressable nested
-         * inside it, which is exactly fatal for a hold-to-confirm gesture
-         * like this one - so this stays a fixed, non-scrolling section. */}
+        {/* Deliberately outside the ScrollView above: speed needs to stay
+         * constantly visible and reachable while driving, not scroll away
+         * with the rest of the content. */}
         <View style={styles.reportSection}>
-          <ReportDial isActive={isActive} />
+          <Speedometer />
+          <ReportButton />
         </View>
       </SafeAreaView>
     </View>
@@ -316,7 +308,11 @@ const styles = StyleSheet.create({
     // not the card component itself.
   },
   reportSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
+    paddingHorizontal: 20,
     paddingBottom: 8,
+    gap: 16,
   },
 });
