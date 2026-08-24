@@ -9,7 +9,7 @@
  */
 module.exports = {
   expo: {
-    name: 'voice-traffic-alerts',
+    name: 'Shotgun',
     slug: 'voice-traffic-alerts',
     version: '1.0.0',
     orientation: 'portrait',
