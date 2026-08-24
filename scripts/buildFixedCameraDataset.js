@@ -188,8 +188,24 @@ async function main() {
   const rows = await fetchSapolTableRows();
   console.log(`Parsed ${rows.length} rows from the SAPOL table.`);
 
-  const speedRows = rows.filter((row) => SPEED_TYPE_MAP[row.rawType.trim().toLowerCase()]);
-  console.log(`${speedRows.length} rows are speed-relevant types (Mid Block/P2P/I-section).`);
+  const speedRowsWithDupes = rows.filter((row) => SPEED_TYPE_MAP[row.rawType.trim().toLowerCase()]);
+  console.log(`${speedRowsWithDupes.length} rows are speed-relevant types (Mid Block/P2P/I-section).`);
+
+  // SAPOL's table lists the same physical location (locationCode) more than
+  // once for some entries - geocoding both just produces two identical
+  // FixedSpeedCamera records with the same generated id, which duplicates
+  // work on every GPS update in selectSpeedCameraWarning.ts for no benefit.
+  const seenLocationCodes = new Set();
+  const speedRows = speedRowsWithDupes.filter((row) => {
+    if (seenLocationCodes.has(row.locationCode)) return false;
+    seenLocationCodes.add(row.locationCode);
+    return true;
+  });
+  if (speedRows.length !== speedRowsWithDupes.length) {
+    console.log(
+      `Deduplicated ${speedRowsWithDupes.length - speedRows.length} row(s) sharing a location code with an earlier row.`
+    );
+  }
 
   const cameras = [];
   const failures = [];

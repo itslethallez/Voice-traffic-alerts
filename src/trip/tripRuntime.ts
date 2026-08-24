@@ -227,15 +227,19 @@ async function checkSpeedCameraWarning(
   });
   if (!warning) return;
 
-  const fired = speedWarningFiredCheckpoints.get(warning.target.id) ?? new Set<SpeedWarningCheckpoint>();
-  fired.add(warning.checkpoint);
-  speedWarningFiredCheckpoints.set(warning.target.id, fired);
-
   try {
     await speakAsync(formatSpeedCameraWarning(warning.target.kind), {
       rate: settings.voiceRate,
       volume: settings.voiceVolume,
     });
+    // Only consumed on success - this is a safety-critical warning, so a
+    // TTS failure (network hiccup, on-device speech error) must not
+    // permanently silence it for the rest of the trip. Leaving the
+    // checkpoint unmarked lets selectSpeedCameraWarning() offer it again on
+    // the next GPS update instead.
+    const fired = speedWarningFiredCheckpoints.get(warning.target.id) ?? new Set<SpeedWarningCheckpoint>();
+    fired.add(warning.checkpoint);
+    speedWarningFiredCheckpoints.set(warning.target.id, fired);
   } catch (error) {
     console.warn(`[speech] speed camera warning TTS failed for ${warning.target.id}`, error);
   }

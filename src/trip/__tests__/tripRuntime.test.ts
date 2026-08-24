@@ -450,6 +450,26 @@ describe('speed camera warning', () => {
     expect(speakAsync).not.toHaveBeenCalled();
   });
 
+  it('retries on the next update after a TTS failure instead of permanently consuming the checkpoint', async () => {
+    // Regression test: the checkpoint used to be marked fired before
+    // speakAsync was even attempted, so a TTS failure (network hiccup,
+    // on-device speech error) would silence this safety-critical warning
+    // for the rest of the trip. It must now only be consumed on success.
+    mockCameras = [TEST_CAMERA];
+    mockSpeedLimitKmh = 60;
+    const now = Date.now();
+
+    speakAsync.mockRejectedValueOnce(new Error('tts failed'));
+    await handleDriverUpdate(approachingDriver(450, 100), now);
+    expect(speakAsync).toHaveBeenCalledTimes(1);
+    speakAsync.mockClear();
+
+    // Still within the same 500m checkpoint - since the first attempt
+    // failed, this must retry rather than treat it as already fired.
+    await handleDriverUpdate(approachingDriver(440, 100), now + 3000);
+    expect(speakAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('speaks the report variant (not the camera variant) for a corroborated police report with no camera involved', async () => {
     mockSpeedLimitKmh = 60;
     const reportPosition = destinationPoint(MOCK_DRIVER_POSITION, 400, 180);

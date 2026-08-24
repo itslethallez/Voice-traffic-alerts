@@ -840,33 +840,6 @@ export const FIXED_SPEED_CAMERAS: FixedSpeedCamera[] = [
     }
   },
   {
-    id: "sapol-108",
-    label: "North Terrace/Frome Road, ADELAIDE",
-    type: "INTERSECTION",
-    position: {
-      latitude: -34.960997,
-      longitude: 138.619346
-    }
-  },
-  {
-    id: "sapol-113",
-    label: "Torrens Road/South Road, RENOWN PARK",
-    type: "INTERSECTION",
-    position: {
-      latitude: -34.893743,
-      longitude: 138.583985
-    }
-  },
-  {
-    id: "sapol-119",
-    label: "South Road/Torrens Road, RENOWN PARK",
-    type: "INTERSECTION",
-    position: {
-      latitude: -34.893743,
-      longitude: 138.583985
-    }
-  },
-  {
     id: "sapol-156",
     label: "South Eastern Freeway, LEAWOOD GARDENS",
     type: "MID_BLOCK",
