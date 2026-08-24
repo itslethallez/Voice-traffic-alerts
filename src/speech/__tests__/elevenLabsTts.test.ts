@@ -95,7 +95,7 @@ describe('speakWithElevenLabsAsync', () => {
     await promise;
 
     const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('https://api.elevenlabs.io/v1/text-to-speech/mu0IU3jf7cZMIxETkI0n');
+    expect(url).toBe('https://api.elevenlabs.io/v1/text-to-speech/HE0XlnHeqQoWUBWhwUa3');
     expect(init.method).toBe('POST');
     expect(init.headers['xi-api-key']).toBe('test-key');
     expect(JSON.parse(init.body).text).toBe('hello');

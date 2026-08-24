@@ -30,8 +30,8 @@ export function NearbyTransmissionCard({ announcement, nowMs }: NearbyTransmissi
   const location = announcementLocation(candidate);
   const title = location.street
     ? `${location.street}, ${location.direction}bound`
-    : location.city
-      ? `${location.city}, ${location.direction}bound`
+    : location.area
+      ? `${location.area}, ${location.direction}bound`
       : `${formatDistance(candidate.distanceMeters)} ahead`;
 
   const handleReplay = () => {

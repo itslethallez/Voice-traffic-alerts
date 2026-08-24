@@ -1,7 +1,7 @@
 import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import { env } from '../config/env';
 
-const ELEVENLABS_VOICE_ID = 'mu0IU3jf7cZMIxETkI0n';
+const ELEVENLABS_VOICE_ID = 'HE0XlnHeqQoWUBWhwUa3';
 /**
  * ElevenLabs' lowest-latency model. The whole point of speaking an alert
  * out loud is minimizing the gap between "alert became announceable" and

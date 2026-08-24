@@ -1,4 +1,13 @@
+const fetchSuburbForPoint = jest.fn<Promise<string | null>, unknown[]>();
+jest.mock('../../api/mapbox/reverseGeocode', () => ({
+  fetchSuburbForPoint: (...args: unknown[]) => fetchSuburbForPoint(...args),
+}));
+jest.mock('../../config/env', () => ({
+  env: { mapboxAccessToken: 'test-token' },
+}));
+
 import type { WazeAlert } from '../../api/waze/types';
+import { prefetchSuburb } from '../../geo/suburbLookup';
 import {
   announcementLocation,
   formatAnnouncement,
@@ -15,6 +24,8 @@ function makeCandidate(
     street?: string | null;
     city?: string | null;
     nearBy?: string | null;
+    latitude?: number;
+    longitude?: number;
   } = {}
 ): AnnounceableAlert {
   const alert: WazeAlert = {
@@ -28,8 +39,8 @@ function makeCandidate(
     country: 'AU',
     city: overrides.city !== undefined ? (overrides.city ?? '') : 'Adelaide',
     street: overrides.street !== undefined ? overrides.street : 'North Terrace',
-    latitude: -34.9,
-    longitude: 138.6,
+    latitude: overrides.latitude ?? -34.9,
+    longitude: overrides.longitude ?? 138.6,
     num_thumbs_up: 0,
     alert_reliability: 0,
     alert_confidence: 0,
@@ -282,11 +293,11 @@ describe('labelForType', () => {
 });
 
 describe('announcementLocation', () => {
-  it('returns the street, suburb and quantized direction for an ordinary street', () => {
+  it('returns the street, area and quantized direction for an ordinary street', () => {
     const candidate = makeCandidate({ street: 'North Terrace', city: 'Adelaide', driverHeadingDeg: 0 });
     expect(announcementLocation(candidate)).toEqual({
       street: 'North Terrace',
-      city: 'Adelaide',
+      area: 'Adelaide',
       direction: 'north',
     });
   });
@@ -295,16 +306,16 @@ describe('announcementLocation', () => {
     const candidate = makeCandidate({ street: 'US-101 N', city: 'Oakland', driverHeadingDeg: 90 });
     expect(announcementLocation(candidate)).toEqual({
       street: null,
-      city: 'Oakland',
+      area: 'Oakland',
       direction: 'east',
     });
   });
 
-  it('returns null city when there is none, independent of the street', () => {
+  it('returns null area when there is none, independent of the street', () => {
     const candidate = makeCandidate({ street: 'North Terrace', city: null, driverHeadingDeg: 180 });
     expect(announcementLocation(candidate)).toEqual({
       street: 'North Terrace',
-      city: null,
+      area: null,
       direction: 'south',
     });
   });
@@ -312,5 +323,52 @@ describe('announcementLocation', () => {
   it('expands road-type abbreviations, matching formatAnnouncement', () => {
     const candidate = makeCandidate({ street: 'Anzac Hwy', city: 'Adelaide', driverHeadingDeg: 0 });
     expect(announcementLocation(candidate).street).toBe('Anzac Highway');
+  });
+});
+
+describe('suburb resolution (geo/suburbLookup)', () => {
+  beforeEach(() => {
+    fetchSuburbForPoint.mockReset();
+  });
+
+  it('prefers a resolved suburb over the raw Waze city, once prefetched', async () => {
+    fetchSuburbForPoint.mockResolvedValue('Modbury North');
+    const point = { latitude: -34.818022, longitude: 138.681585 };
+    await prefetchSuburb(point);
+
+    const candidate = makeCandidate({
+      street: 'Milne Rd',
+      city: 'Adelaide',
+      latitude: point.latitude,
+      longitude: point.longitude,
+    });
+    expect(formatAnnouncement(candidate)).toContain('on Milne Road, Modbury North');
+    expect(announcementLocation(candidate).area).toBe('Modbury North');
+  });
+
+  it('falls back to the raw city when the suburb lookup resolved to nothing', async () => {
+    fetchSuburbForPoint.mockResolvedValue(null);
+    const point = { latitude: -34.7, longitude: 138.5 };
+    await prefetchSuburb(point);
+
+    const candidate = makeCandidate({
+      street: 'Some Rd',
+      city: 'Gawler',
+      latitude: point.latitude,
+      longitude: point.longitude,
+    });
+    expect(formatAnnouncement(candidate)).toContain('on Some Road, Gawler');
+  });
+
+  it('falls back to the raw city when no prefetch was ever attempted for that point', () => {
+    const point = { latitude: -34.6, longitude: 138.4 };
+    const candidate = makeCandidate({
+      street: 'Untouched Rd',
+      city: 'Somewhere',
+      latitude: point.latitude,
+      longitude: point.longitude,
+    });
+    expect(formatAnnouncement(candidate)).toContain('on Untouched Road, Somewhere');
+    expect(fetchSuburbForPoint).not.toHaveBeenCalled();
   });
 });

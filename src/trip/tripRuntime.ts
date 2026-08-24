@@ -1,14 +1,22 @@
 import { fetchAlertsForBoundingBox } from '../api/waze/fetchAlertsForBoundingBox';
 import { WazeApiError } from '../api/waze/client';
+import { FIXED_SPEED_CAMERAS } from '../data/fixedSpeedCameras';
 import { applyFetchResult, initialAlertsCache } from '../engine/cache';
 import { initialMovementState, updateMovementState } from '../engine/movement';
 import { planPoll } from '../engine/pollPlanner';
 import { selectAnnounceableAlerts } from '../engine/selectAlerts';
 import { selectBriefingAlerts } from '../engine/selectBriefingAlerts';
+import {
+  hasNearbyWarningTarget,
+  selectSpeedCameraWarning,
+  type SpeedWarningCheckpoint,
+} from '../engine/selectSpeedCameraWarning';
 import { initialSpeedState, isSustainedLowSpeed, updateSpeedState } from '../engine/speedGate';
 import type { AlertsCache, DriverState, MovementState, SpeedState } from '../engine/types';
 import type { WazeBoundingBoxParams } from '../geo/boundingBox';
 import { radiusBoundingBox } from '../geo/radiusBoundingBox';
+import { getCachedSpeedLimit, prefetchSpeedLimit } from '../geo/speedLimitLookup';
+import { prefetchSuburb } from '../geo/suburbLookup';
 import {
   createInitialAnnouncerState,
   speakBriefing,
@@ -18,6 +26,7 @@ import {
 } from '../speech/announcer';
 import { delay } from '../speech/delay';
 import { formatBriefingAlert, NO_BRIEFING_ALERTS_MESSAGE } from '../speech/formatAnnouncement';
+import { formatSpeedCameraWarning } from '../speech/formatSpeedCameraWarning';
 import { speakAsync } from '../speech/ttsAdapter';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -47,6 +56,10 @@ let alertsCache: AlertsCache = initialAlertsCache;
 let lastPollAttemptAtMs: number | null = null;
 let consecutiveRateLimitHits = 0;
 let rateLimitBannerShown = false;
+/** Which speed-camera-warning checkpoints (500m/200m) have already fired
+ * for which target id (a fixed camera or a corroborated police report)
+ * this trip - see engine/selectSpeedCameraWarning.ts. */
+let speedWarningFiredCheckpoints: Map<string, Set<SpeedWarningCheckpoint>> = new Map();
 
 /** Call when a new trip starts (e.g. app cold start) to clear all of the above. */
 export function resetTripRuntime(): void {
@@ -57,6 +70,7 @@ export function resetTripRuntime(): void {
   lastPollAttemptAtMs = null;
   consecutiveRateLimitHits = 0;
   rateLimitBannerShown = false;
+  speedWarningFiredCheckpoints = new Map();
   // Also start a fresh serialization chain - otherwise a call already
   // queued behind the old chain (from before this reset) would still run
   // afterwards and write into the just-reset state.
@@ -84,6 +98,15 @@ async function fetchAndApplyAlerts(boundingBox: WazeBoundingBoxParams, nowMs: nu
     alertsCache = applyFetchResult(alertsCache, { ok: true, alerts, nowMs });
     useTripStore.getState().setOffline(false);
     useTripStore.getState().setVisibleAlerts(alertsCache.alerts);
+
+    // Kick off suburb resolution as early as possible - fire-and-forget,
+    // never awaited - so it has the whole announce-window approach (an
+    // alert has to cross into range before it's ever spoken) to resolve
+    // before formatAnnouncement.ts actually needs it. A no-op per alert if
+    // already cached/in-flight (see geo/suburbLookup.ts's quantized cache).
+    for (const alert of alerts) {
+      prefetchSuburb({ latitude: alert.latitude, longitude: alert.longitude }).catch(() => {});
+    }
 
     if (quadrantRateLimited) {
       // A quadrant came back 429 even though the call as a whole returned
@@ -168,6 +191,57 @@ export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<
 }
 
 /**
+ * Speed-camera / corroborated-police-report warning (Step 12 Part 4): only
+ * fires while the driver is speedLimitKmh + SPEED_WARNING_BUFFER_KMH or
+ * more, and only for a target within the live announce distance - never a
+ * proximity-only "camera here" callout. Gated on the POLICE category
+ * toggle, since a SAPOL camera is police-adjacent enforcement
+ * infrastructure and a driver who's turned POLICE off has said "don't tell
+ * me about police." The (comparatively expensive, rate-limited) OSM speed
+ * limit lookup is only ever prefetched once hasNearbyWarningTarget already
+ * confirms there's something worth warning about - most of a trip has no
+ * nearby camera or corroborated report, so this keeps Overpass usage rare.
+ * Speaks directly via speakAsync, bypassing the announcer's priority queue
+ * (submitCandidates/tick) entirely - that queue's 20s MIN_ANNOUNCEMENT_GAP_MS
+ * and distance-based dedupe don't fit this feature's own fixed 500m/200m
+ * checkpoints (see engine/selectSpeedCameraWarning.ts).
+ */
+async function checkSpeedCameraWarning(
+  driver: DriverState,
+  nowMs: number,
+  settings: ReturnType<typeof useSettingsStore.getState>
+): Promise<void> {
+  if (!settings.categoriesEnabled.POLICE) return;
+  if (!hasNearbyWarningTarget(driver, FIXED_SPEED_CAMERAS, alertsCache.alerts, nowMs)) return;
+
+  prefetchSpeedLimit(driver.position).catch(() => {});
+  const speedLimitKmh = getCachedSpeedLimit(driver.position) ?? null;
+
+  const warning = selectSpeedCameraWarning({
+    driver,
+    speedLimitKmh,
+    cameras: FIXED_SPEED_CAMERAS,
+    alerts: alertsCache.alerts,
+    firedCheckpoints: speedWarningFiredCheckpoints,
+    nowMs,
+  });
+  if (!warning) return;
+
+  const fired = speedWarningFiredCheckpoints.get(warning.target.id) ?? new Set<SpeedWarningCheckpoint>();
+  fired.add(warning.checkpoint);
+  speedWarningFiredCheckpoints.set(warning.target.id, fired);
+
+  try {
+    await speakAsync(formatSpeedCameraWarning(warning.target.kind), {
+      rate: settings.voiceRate,
+      volume: settings.voiceVolume,
+    });
+  } catch (error) {
+    console.warn(`[speech] speed camera warning TTS failed for ${warning.target.id}`, error);
+  }
+}
+
+/**
  * The single place a new driver position turns into "maybe fetch fresh
  * alerts, maybe speak one". Reads live settings and pushes to the trip
  * store itself (both are plain module-level stores, not React context,
@@ -211,6 +285,8 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     (entry) => useTripStore.getState().pushAnnouncement(entry)
   );
   announcerState = result.state;
+
+  await checkSpeedCameraWarning(driver, nowMs, settings);
 }
 
 /**

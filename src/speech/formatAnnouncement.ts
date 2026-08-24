@@ -1,6 +1,7 @@
-import type { WazeAlertType } from '../api/waze/types';
+import type { WazeAlert, WazeAlertType } from '../api/waze/types';
 import type { AnnounceableAlert } from '../engine/types';
 import { compassDirection, type CompassDirection } from '../geo/bearing';
+import { getCachedSuburb } from '../geo/suburbLookup';
 import { STALE_ANNOUNCEMENT_AGE_MINUTES } from './constants';
 
 /**
@@ -134,27 +135,42 @@ function normalizeNearBy(nearBy: string | null | undefined): string | null {
 }
 
 /**
- * "on {street}, {suburb}" / "on {street}, near {near_by}" / "on {street}"
- * / "in {suburb}" / "near {near_by}" / null, in that preference order. A
- * route number is never spoken (see spokenStreet) - the suburb (or, when
- * Waze doesn't supply one, `near_by`) carries the location instead.
- * `near_by` is a real field on WazeAlert that was previously unused -
- * `city` is frequently blank in practice, and the area rarely getting
- * named at all is exactly the complaint this fallback tier addresses.
+ * Prefers the real suburb (from geo/suburbLookup's reverse-geocode cache,
+ * prefetched by tripRuntime.ts as soon as alerts land) over Waze's own
+ * `city` field, which is frequently too coarse to be useful in practice -
+ * live testing showed every alert across a huge span of metro Adelaide
+ * came back with the same `city: "Adelaide"`. Falls back to `city` when
+ * the suburb hasn't resolved yet (still in flight) or none was found.
+ * A pure, synchronous read - never triggers a network call itself.
+ */
+function resolveAreaName(alert: WazeAlert): string | null {
+  const suburb = getCachedSuburb({ latitude: alert.latitude, longitude: alert.longitude });
+  return suburb ?? normalizeCity(alert.city);
+}
+
+/**
+ * "on {street}, {area}" / "on {street}, near {near_by}" / "on {street}"
+ * / "in {area}" / "near {near_by}" / null, in that preference order. A
+ * route number is never spoken (see spokenStreet) - the area name (see
+ * resolveAreaName) or, failing that, `near_by`, carries the location
+ * instead. `near_by` is a real field on WazeAlert that was previously
+ * unused - `city` is frequently blank or too coarse in practice, and the
+ * area rarely getting named at all is exactly the complaint this fallback
+ * tier addresses.
  */
 function locationPhrase(
   street: string | null | undefined,
-  city: string | null | undefined,
+  area: string | null | undefined,
   nearBy: string | null | undefined
 ): string | null {
   const spoken = spokenStreet(street);
-  const normalizedCity = normalizeCity(city);
+  const normalizedArea = area?.trim() || null;
   const normalizedNearBy = normalizeNearBy(nearBy);
 
-  if (spoken && normalizedCity) return `on ${spoken}, ${normalizedCity}`;
+  if (spoken && normalizedArea) return `on ${spoken}, ${normalizedArea}`;
   if (spoken && normalizedNearBy) return `on ${spoken}, near ${normalizedNearBy}`;
   if (spoken) return `on ${spoken}`;
-  if (normalizedCity) return `in ${normalizedCity}`;
+  if (normalizedArea) return `in ${normalizedArea}`;
   if (normalizedNearBy) return `near ${normalizedNearBy}`;
   return null;
 }
@@ -171,7 +187,7 @@ function locationPhrase(
 export function formatAnnouncement(candidate: AnnounceableAlert): string {
   const label = labelForType(candidate.alert.type);
   const distance = formatDistance(candidate.distanceMeters);
-  const location = locationPhrase(candidate.alert.street, candidate.alert.city, candidate.alert.near_by);
+  const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
 
   let text: string;
   if (location) {
@@ -191,7 +207,9 @@ export function formatAnnouncement(candidate: AnnounceableAlert): string {
 export interface AnnouncementLocation {
   /** Never a bare route number - see spokenStreet. */
   street: string | null;
-  city: string | null;
+  /** The suburb when resolved (see resolveAreaName), falling back to
+   * Waze's own `city` field otherwise. */
+  area: string | null;
   direction: CompassDirection;
 }
 
@@ -205,7 +223,7 @@ export interface AnnouncementLocation {
 export function announcementLocation(candidate: AnnounceableAlert): AnnouncementLocation {
   return {
     street: spokenStreet(candidate.alert.street),
-    city: normalizeCity(candidate.alert.city),
+    area: resolveAreaName(candidate.alert),
     direction: compassDirection(candidate.driverHeadingDeg),
   };
 }
@@ -225,7 +243,7 @@ export const NO_BRIEFING_ALERTS_MESSAGE = 'No recent alerts within your briefing
 export function formatBriefingAlert(candidate: AnnounceableAlert): string {
   const label = labelForType(candidate.alert.type);
   const age = formatAge(candidate.ageMinutes);
-  const location = locationPhrase(candidate.alert.street, candidate.alert.city, candidate.alert.near_by);
+  const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
 
   if (location) {
     return `${label} reported ${location}, ${age} ago.`;

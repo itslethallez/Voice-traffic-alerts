@@ -53,6 +53,36 @@ jest.mock('../../api/waze/fetchAlertsForBoundingBox', () => ({
   fetchAlertsForBoundingBox: (...args: unknown[]) => fetchAlertsForBoundingBox(...args),
 }));
 
+/**
+ * Without this mock, the alerts fixture's own wm-006 (a POLICE report only
+ * ~150m from MOCK_DRIVER, thumbs-up 1, reliability 5 - corroborated per
+ * engine/selectSpeedCameraWarning.ts's bar) would make every existing test
+ * above that uses buildMockAlerts() a real nearby warning target, firing a
+ * genuine network call to Overpass via geo/speedLimitLookup.ts. Mocked to
+ * "unresolved" (undefined) by default so speedLimitKmh reads null and
+ * selectSpeedCameraWarning() never fires unless a test explicitly opts in
+ * by setting mockSpeedLimitKmh.
+ */
+const prefetchSpeedLimit = jest.fn().mockResolvedValue(undefined);
+let mockSpeedLimitKmh: number | null | undefined;
+jest.mock('../../geo/speedLimitLookup', () => ({
+  prefetchSpeedLimit: (...args: unknown[]) => prefetchSpeedLimit(...args),
+  getCachedSpeedLimit: () => mockSpeedLimitKmh,
+}));
+
+/** Real FIXED_SPEED_CAMERAS is genuine South Australian data, nowhere near
+ * MOCK_DRIVER's San Francisco test coordinates - mocked to an empty array
+ * by default, overridable per test for the dedicated speed-camera-warning
+ * cases below. */
+let mockCameras: Array<{ id: string; label: string; type: string; position: { latitude: number; longitude: number } }> =
+  [];
+jest.mock('../../data/fixedSpeedCameras', () => ({
+  get FIXED_SPEED_CAMERAS() {
+    return mockCameras;
+  },
+}));
+
+import { destinationPoint } from '../../geo/destination';
 import { handleDriverUpdate, resetTripRuntime, runBriefing } from '../tripRuntime';
 
 const driver: DriverState = {
@@ -72,6 +102,9 @@ describe('handleDriverUpdate', () => {
     speakAsync.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();
+    prefetchSpeedLimit.mockClear();
+    mockSpeedLimitKmh = undefined;
+    mockCameras = [];
     tripBannerMessage = null;
     settingsState = {
       ...defaultSettingsValues,
@@ -314,6 +347,143 @@ describe('handleDriverUpdate', () => {
   });
 });
 
+describe('speed camera warning', () => {
+  beforeEach(() => {
+    resetTripRuntime();
+    speakAsync.mockClear();
+    fetchAlertsForBoundingBox.mockReset();
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([])); // no Waze alerts - isolates the camera/report targets these tests set up directly
+    prefetchSpeedLimit.mockClear();
+    mockSpeedLimitKmh = undefined;
+    mockCameras = [];
+    settingsState = {
+      ...defaultSettingsValues,
+      categoriesEnabled: { ...defaultSettingsValues.categoriesEnabled },
+    };
+  });
+
+  /** A driver `distanceMeters` south of the camera, heading north (0deg) -
+   * i.e. approaching it head-on, well within the 45-degree announce cone. */
+  function approachingDriver(distanceMeters: number, speedKmh: number): DriverState {
+    return {
+      position: destinationPoint(MOCK_DRIVER_POSITION, distanceMeters, 180),
+      headingDeg: 0,
+      speedKmh,
+    };
+  }
+
+  const MOCK_DRIVER_POSITION = { latitude: MOCK_DRIVER.latitude, longitude: MOCK_DRIVER.longitude };
+  const TEST_CAMERA = {
+    id: 'sapol-test',
+    label: 'Test Rd, TESTVILLE',
+    type: 'MID_BLOCK',
+    position: MOCK_DRIVER_POSITION,
+  };
+
+  it('speaks the camera warning when speeding and within 500m of a known fixed camera', async () => {
+    mockCameras = [TEST_CAMERA];
+    mockSpeedLimitKmh = 60;
+
+    await handleDriverUpdate(approachingDriver(450, 100), Date.now());
+
+    expect(speakAsync).toHaveBeenCalledWith(
+      expect.stringContaining('Speed camera ahead'),
+      expect.anything()
+    );
+  });
+
+  it('does not warn when under the speeding buffer', async () => {
+    mockCameras = [TEST_CAMERA];
+    mockSpeedLimitKmh = 60;
+
+    await handleDriverUpdate(approachingDriver(450, 63), Date.now()); // 3 km/h over - under the 6 km/h buffer
+
+    expect(speakAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not warn when the POLICE category is disabled in Settings', async () => {
+    mockCameras = [TEST_CAMERA];
+    mockSpeedLimitKmh = 60;
+    settingsState.categoriesEnabled.POLICE = false;
+
+    await handleDriverUpdate(approachingDriver(450, 100), Date.now());
+
+    expect(speakAsync).not.toHaveBeenCalled();
+    expect(prefetchSpeedLimit).not.toHaveBeenCalled(); // shouldn't even bother resolving the limit
+  });
+
+  it('does not warn while the speed limit is still unresolved, but does trigger a prefetch', async () => {
+    mockCameras = [TEST_CAMERA];
+    // mockSpeedLimitKmh left undefined - simulates "prefetch in flight, not back yet"
+
+    await handleDriverUpdate(approachingDriver(450, 100), Date.now());
+
+    expect(speakAsync).not.toHaveBeenCalled();
+    expect(prefetchSpeedLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not warn when muted', async () => {
+    mockCameras = [TEST_CAMERA];
+    mockSpeedLimitKmh = 60;
+    settingsState.masterMute = true;
+
+    await handleDriverUpdate(approachingDriver(450, 100), Date.now());
+
+    expect(speakAsync).not.toHaveBeenCalled();
+  });
+
+  it('fires the 500m call, then the 200m call as the driver gets closer, without ever re-firing either', async () => {
+    mockCameras = [TEST_CAMERA];
+    mockSpeedLimitKmh = 60;
+    const now = Date.now();
+
+    await handleDriverUpdate(approachingDriver(450, 100), now);
+    expect(speakAsync).toHaveBeenCalledTimes(1);
+    speakAsync.mockClear();
+
+    await handleDriverUpdate(approachingDriver(150, 100), now + 5000);
+    expect(speakAsync).toHaveBeenCalledTimes(1);
+    speakAsync.mockClear();
+
+    // Still inside 200m on a later update - already fired, must stay silent.
+    await handleDriverUpdate(approachingDriver(150, 100), now + 10000);
+    expect(speakAsync).not.toHaveBeenCalled();
+  });
+
+  it('speaks the report variant (not the camera variant) for a corroborated police report with no camera involved', async () => {
+    mockSpeedLimitKmh = 60;
+    const reportPosition = destinationPoint(MOCK_DRIVER_POSITION, 400, 180);
+    const reportAlert = {
+      alert_id: 'live-report-test',
+      type: 'POLICE',
+      subtype: null,
+      reported_by: null,
+      description: null,
+      image: null,
+      publish_datetime_utc: new Date().toISOString(),
+      country: 'AU',
+      city: 'Adelaide',
+      street: 'Test Rd',
+      latitude: reportPosition.latitude,
+      longitude: reportPosition.longitude,
+      num_thumbs_up: 2,
+      alert_reliability: 5,
+      alert_confidence: 3,
+      near_by: null,
+      comments: [],
+      num_comments: 0,
+    };
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([reportAlert]));
+
+    await handleDriverUpdate({ position: destinationPoint(MOCK_DRIVER_POSITION, 480, 180), headingDeg: 0, speedKmh: 100 }, Date.now());
+
+    expect(speakAsync).toHaveBeenCalledWith(
+      expect.stringContaining('Police reported ahead'),
+      expect.anything()
+    );
+  });
+});
+
 describe('runBriefing', () => {
   beforeEach(() => {
     resetTripRuntime();
@@ -325,6 +495,9 @@ describe('runBriefing', () => {
     speakAsync.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();
+    prefetchSpeedLimit.mockClear();
+    mockSpeedLimitKmh = undefined;
+    mockCameras = [];
     tripBannerMessage = null;
     settingsState = {
       ...defaultSettingsValues,

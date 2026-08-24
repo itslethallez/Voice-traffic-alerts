@@ -6,6 +6,7 @@ import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM, zoomForRingRadius } from '../../geo/mercatorZoom';
 import type { GeoPoint } from '../../geo/types';
 import { formatDistance } from '../../speech/formatAnnouncement';
+import { enabledTypesFromSettings } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
@@ -74,6 +75,18 @@ const TRANSITION_ZOOM_IN_DURATION_MS = 500;
  * pull-back step goes. */
 const TRANSITION_ZOOM_OUT_DELTA = 2;
 
+/**
+ * Minimum time the camera commits to one alert-to-alert focus target before
+ * it's allowed to move to the next (Step 13 pacing fix): back-to-back
+ * spotlight changes - most commonly several alerts spoken in quick
+ * succession during the cold-start briefing, only BRIEFING_GAP_MS apart -
+ * were retriggering the zoom-out-then-zoom-in transition above before its
+ * own ~900ms (TRANSITION_ZOOM_OUT_DURATION_MS + TRANSITION_ZOOM_IN_DURATION_MS)
+ * had even finished, cutting the zoom-out short mid-motion. 7s comfortably
+ * covers that transition plus enough dwell time to actually read the pin.
+ */
+const MIN_ALERT_DWELL_MS = 7000;
+
 interface RadarMapProps {
   /** Set by the Drive screen's nearby-alerts slider (Step 12 #25) when the
    * driver taps a card - the camera centers on this alert instead of
@@ -87,6 +100,19 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
+
+  /** Same enabled-categories state that already drives speech filtering
+   * (engine/selectAlerts.ts, engine/selectBriefingAlerts.ts both take this
+   * same enabledTypesFromSettings() result as their `enabledTypes` option)
+   * - reused here, not reimplemented, so a category switched off in
+   * Settings disappears from the map the same instant it stops being
+   * announced, via the exact same source of truth. */
+  const enabledTypes = useMemo(() => enabledTypesFromSettings(categoriesEnabled), [categoriesEnabled]);
+  const mapVisibleAlerts = useMemo(
+    () => visibleAlerts.filter((alert) => enabledTypes.has(alert.type)),
+    [visibleAlerts, enabledTypes]
+  );
 
   /** Auto-focus counterpart to the tap-driven `focusedAlert` prop: when an
    * alert is spoken, the driver should be able to glance down and
@@ -122,6 +148,46 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
 
   const displayFocus = focusedAlert ?? spokenSpotlight;
 
+  /**
+   * Gates how often the camera is actually allowed to retarget (Step 13
+   * pacing fix - see MIN_ALERT_DWELL_MS above). `displayFocus` can change
+   * as often as every BRIEFING_GAP_MS during a briefing; `dwelledFocus`
+   * only ever changes at most once per MIN_ALERT_DWELL_MS, coalescing any
+   * faster churn onto whichever target is current once the dwell expires
+   * (rather than visiting every intermediate one).
+   */
+  const [dwelledFocus, setDwelledFocus] = useState<WazeAlert | null>(null);
+  const lastDwellAppliedAtRef = useRef(0);
+  const pendingDwellTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (pendingDwellTimeoutRef.current !== null) {
+      clearTimeout(pendingDwellTimeoutRef.current);
+      pendingDwellTimeoutRef.current = null;
+    }
+
+    const applyNow = () => {
+      lastDwellAppliedAtRef.current = Date.now();
+      setDwelledFocus(displayFocus);
+    };
+
+    const remainingDwellMs = MIN_ALERT_DWELL_MS - (Date.now() - lastDwellAppliedAtRef.current);
+    if (remainingDwellMs <= 0) {
+      applyNow();
+    } else {
+      pendingDwellTimeoutRef.current = setTimeout(() => {
+        pendingDwellTimeoutRef.current = null;
+        applyNow();
+      }, remainingDwellMs);
+    }
+
+    return () => {
+      if (pendingDwellTimeoutRef.current !== null) {
+        clearTimeout(pendingDwellTimeoutRef.current);
+        pendingDwellTimeoutRef.current = null;
+      }
+    };
+  }, [displayFocus]);
+
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
   /** Skips the very first run, same reasoning as hasRunSpotlightEffectRef
    * above - there's no meaningful "from" state on mount, and the
@@ -129,21 +195,21 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
    * render without needing a transition. */
   const hasRunFocusTransitionEffectRef = useRef(false);
   const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const focusKey = displayFocus?.alert_id ?? null;
+  const focusKey = dwelledFocus?.alert_id ?? null;
   useEffect(() => {
     const isFirstRun = !hasRunFocusTransitionEffectRef.current;
     hasRunFocusTransitionEffectRef.current = true;
     if (isFirstRun || !cameraRef.current || !driverPosition) return;
 
-    const targetPoint: GeoPoint = displayFocus
-      ? { latitude: displayFocus.latitude, longitude: displayFocus.longitude }
+    const targetPoint: GeoPoint = dwelledFocus
+      ? { latitude: dwelledFocus.latitude, longitude: dwelledFocus.longitude }
       : driverPosition;
     const followingZoom = zoomForRingRadius(
       announceDistanceMeters,
       AWARENESS_RING_SIZE / 2,
       driverPosition.latitude
     );
-    const targetZoom = displayFocus ? FOCUSED_ALERT_ZOOM : followingZoom;
+    const targetZoom = dwelledFocus ? FOCUSED_ALERT_ZOOM : followingZoom;
     const pulledBackZoom = Math.max(
       MIN_ZOOM,
       Math.min(MAX_ZOOM, Math.min(targetZoom, followingZoom) - TRANSITION_ZOOM_OUT_DELTA)
@@ -164,7 +230,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
       cameraRef.current?.setCamera({
         centerCoordinate: [targetPoint.longitude, targetPoint.latitude],
         zoomLevel: targetZoom,
-        heading: displayFocus ? 0 : driverHeadingDeg,
+        heading: dwelledFocus ? 0 : driverHeadingDeg,
         animationDuration: TRANSITION_ZOOM_IN_DURATION_MS,
         animationMode: 'easeTo',
       });
@@ -215,15 +281,15 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         <Mapbox.Camera
           ref={cameraRef}
           centerCoordinate={
-            displayFocus
-              ? [displayFocus.longitude, displayFocus.latitude]
+            dwelledFocus
+              ? [dwelledFocus.longitude, dwelledFocus.latitude]
               : driverPosition
                 ? [driverPosition.longitude, driverPosition.latitude]
                 : undefined
           }
-          heading={displayFocus ? 0 : driverHeadingDeg}
+          heading={dwelledFocus ? 0 : driverHeadingDeg}
           zoomLevel={
-            displayFocus
+            dwelledFocus
               ? FOCUSED_ALERT_ZOOM
               : driverPosition
                 ? zoomForRingRadius(announceDistanceMeters, AWARENESS_RING_SIZE / 2, driverPosition.latitude)
@@ -242,7 +308,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
           </Mapbox.MarkerView>
         ) : null}
 
-        {visibleAlerts.map((alert) => (
+        {mapVisibleAlerts.map((alert) => (
           <Mapbox.MarkerView
             key={alert.alert_id}
             coordinate={[alert.longitude, alert.latitude]}
@@ -253,7 +319,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         ))}
       </Mapbox.MapView>
 
-      {displayFocus ? null : (
+      {dwelledFocus ? null : (
         <>
           <View style={styles.awarenessRing} pointerEvents="none">
             <View style={styles.awarenessLabel}>
