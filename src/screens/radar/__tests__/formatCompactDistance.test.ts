@@ -1,4 +1,4 @@
-import { formatCompactDistance } from '../formatCompactDistance';
+import { formatCompactDistance, splitCompactDistance } from '../formatCompactDistance';
 
 describe('formatCompactDistance', () => {
   it('shows one decimal of kilometres under 10km', () => {
@@ -16,5 +16,22 @@ describe('formatCompactDistance', () => {
   it('handles distances under a kilometre', () => {
     expect(formatCompactDistance(50)).toBe('0.1km');
     expect(formatCompactDistance(0)).toBe('0.0km');
+  });
+});
+
+describe('splitCompactDistance', () => {
+  it('splits the numeral from the uppercased unit, under 10km', () => {
+    expect(splitCompactDistance(1400)).toEqual({ value: '1.4', unit: 'KM' });
+  });
+
+  it('splits the numeral from the uppercased unit, at or above 10km', () => {
+    expect(splitCompactDistance(12400)).toEqual({ value: '12', unit: 'KM' });
+  });
+
+  it('matches formatCompactDistance\'s own rounding rather than re-deriving it', () => {
+    for (const meters of [0, 50, 700, 9949, 10000, 12600]) {
+      const { value, unit } = splitCompactDistance(meters);
+      expect(`${value}${unit.toLowerCase()}`).toBe(formatCompactDistance(meters));
+    }
   });
 });

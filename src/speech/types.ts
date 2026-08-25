@@ -17,4 +17,11 @@ export interface RecentAnnouncement {
    * direction, distance, confidence) without formatAnnouncement's spoken
    * sentence needing to double as a UI data model. */
   candidate: AnnounceableAlert;
+  /** True when this was spoken by speakBriefing() rather than tick()'s live
+   * queue. `candidate.driverHeadingDeg` is a meaningless 0 on a briefing
+   * candidate (see AnnounceableAlert's own doc comment) - a UI consumer
+   * that wants to show "-bound" direction must check this first and omit
+   * it for a briefing entry, the same way formatBriefingAlert() itself
+   * never appends "-bound" to the spoken text. */
+  isBriefing: boolean;
 }

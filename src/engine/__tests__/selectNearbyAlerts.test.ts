@@ -6,10 +6,11 @@ const position: GeoPoint = { latitude: MOCK_DRIVER.latitude, longitude: MOCK_DRI
 const alerts = buildMockAlerts();
 
 describe('selectNearbyAlerts', () => {
-  it('returns the 2 closest ahead-of-travel alerts by default, nearest first', () => {
+  it('returns the 3 closest ahead-of-travel alerts by default, nearest first', () => {
     const result = selectNearbyAlerts(alerts, position, MOCK_DRIVER.heading);
-    expect(result.map((r) => r.alert.alert_id)).toEqual(['wm-006', 'wm-020']);
+    expect(result.map((r) => r.alert.alert_id)).toEqual(['wm-006', 'wm-020', 'wm-012']);
     expect(result[0].distanceMeters).toBeLessThan(result[1].distanceMeters);
+    expect(result[1].distanceMeters).toBeLessThan(result[2].distanceMeters);
   });
 
   it('excludes an alert directly behind the driver (180 degrees)', () => {

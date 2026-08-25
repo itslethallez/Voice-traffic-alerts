@@ -79,7 +79,13 @@ export async function tick(
   }
 
   const text = formatAnnouncement(next);
-  const entry: RecentAnnouncement = { alertId: next.alert.alert_id, text, announcedAtMs: nowMs, candidate: next };
+  const entry: RecentAnnouncement = {
+    alertId: next.alert.alert_id,
+    text,
+    announcedAtMs: nowMs,
+    candidate: next,
+    isBriefing: false,
+  };
   onAnnounce?.(entry);
 
   let queue = dequeuedQueueState;
@@ -176,6 +182,7 @@ export async function speakBriefing(
           text,
           announcedAtMs: Date.now(),
           candidate,
+          isBriefing: true,
         };
         const announcedDistances = new Map(current.announcedDistances);
         announcedDistances.set(candidate.alert.alert_id, candidate.distanceMeters);

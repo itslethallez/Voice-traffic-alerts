@@ -8,7 +8,7 @@ export interface NearbyAlert {
   distanceMeters: number;
 }
 
-const DEFAULT_COUNT = 2;
+const DEFAULT_COUNT = 3;
 
 /** Deliberately wider than announceWindow.ts's strict 45-degree
  * announce-eligibility bearing (ANNOUNCE_MAX_BEARING_DIFF_DEG) - this
@@ -20,7 +20,7 @@ const NEARBY_MAX_BEARING_DIFF_DEG = 90;
 /**
  * The `count` closest alerts roughly ahead of the driver (within
  * NEARBY_MAX_BEARING_DIFF_DEG of headingDeg), sorted nearest-first - the
- * Drive screen's nearby-alerts slider (Step 12 #25). No distance ceiling,
+ * Drive screen's alert ledger (Step 12 #25). No distance ceiling,
  * freshness check, or category filter: unlike selectAnnounceableAlerts,
  * this only decides what to show in a glance list, not what to speak.
  */

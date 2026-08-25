@@ -2,20 +2,20 @@ import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
+import { compassDirection } from '../../geo/bearing';
 import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM, zoomForRingRadius } from '../../geo/mercatorZoom';
 import type { GeoPoint } from '../../geo/types';
-import { formatDistance } from '../../speech/formatAnnouncement';
+import { announcementLocation } from '../../speech/formatAnnouncement';
 import { enabledTypesFromSettings } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { colors } from '../../theme/colors';
+import { instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
-import { ALERT_PIN_BORDER_WIDTH, ALERT_PIN_SIZE } from './alertPinSize';
+import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
-import { PoliceLightsPin } from './PoliceLightsPin';
-import { PulseRings } from './PulseRings';
+import { PoliceLightBar } from './PoliceLightBar';
 
 /**
  * @rnmapbox/maps throws at *import time* if its native module isn't
@@ -45,12 +45,14 @@ try {
  * to compute a to-scale zoom from - matches the existing "no center
  * coordinate until driverPosition exists" fallback below. */
 const DEFAULT_ZOOM = 15;
-/** Fixed screen size for the awareness ring; the map's Camera zoomLevel is
- * chosen (via zoomForRingRadius) so this fixed-size ring actually
- * represents announceDistanceMeters of real-world ground distance at the
- * driver's current latitude - not just a decorative circle labeled with
- * the number. */
-const AWARENESS_RING_SIZE = 260;
+/** Fixed screen sizes for the two concentric awareness rings
+ * (design_handoff_instrument_face) - the outer ring is what the map's
+ * Camera zoomLevel is chosen (via zoomForRingRadius) to represent
+ * announceDistanceMeters of real-world ground distance at the driver's
+ * current latitude; the inner ring is purely decorative depth, not tied to
+ * any setting. */
+const AWARENESS_RING_SIZE = 236;
+const INNER_AWARENESS_RING_SIZE = 120;
 /** Fixed zoom for a focused alert (Step 12 #25) - close enough to read the
  * marker clearly, not derived from announceDistanceMeters since a focused
  * view isn't about the driver's awareness radius. */
@@ -88,9 +90,9 @@ const TRANSITION_ZOOM_OUT_DELTA = 2;
 const MIN_ALERT_DWELL_MS = 7000;
 
 interface RadarMapProps {
-  /** Set by the Drive screen's nearby-alerts slider (Step 12 #25) when the
-   * driver taps a card - the camera centers on this alert instead of
-   * following the driver for a few seconds, then the caller clears it. */
+  /** Set by the Drive screen's alert ledger (Step 12 #25) when the driver
+   * taps a row - the camera centers on this alert instead of following the
+   * driver for a few seconds, then the caller clears it. */
   focusedAlert?: WazeAlert | null;
 }
 
@@ -259,10 +261,41 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
     return <Unsupported message="Add EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN to .env to load the map." />;
   }
 
+  const headingStreet = latestAnnouncement ? announcementLocation(latestAnnouncement.candidate).street : null;
+
+  // When the camera is focused on a specific alert (tapped or just spoken),
+  // the awareness rings/heading chip below are hidden - without a
+  // replacement, the driver sees a silent zoomed-in map with no way to
+  // tell what they're actually looking at. This reuses
+  // announcementLocation()'s existing street/area resolution (including
+  // route-number filtering and the suburb-preferring fallback) rather than
+  // re-deriving it, same pattern as DriveScreen.tsx's ledger rows.
+  const focusLocation = dwelledFocus
+    ? announcementLocation({
+        alert: dwelledFocus,
+        distanceMeters: 0,
+        bearingDeg: 0,
+        bearingDiffDeg: 0,
+        ageMinutes: 0,
+        driverHeadingDeg,
+      })
+    : null;
+  const focusLabel = focusLocation
+    ? [focusLocation.street, focusLocation.area, `${focusLocation.direction}bound`]
+        .filter((part): part is string => Boolean(part))
+        .join(' · ')
+        .toUpperCase()
+    : null;
+
   return (
     <View style={styles.root}>
       <Mapbox.MapView
         style={styles.root}
+        // Mapbox has no built-in "monochrome" stock style - Dark is the
+        // closest available match to the design's near-black map ground
+        // without hand-authoring a full custom style JSON, which risks a
+        // blank/broken map if it's wrong and can't be visually verified in
+        // this environment. Documented fidelity gap - see the redesign plan.
         styleURL={Mapbox.StyleURL.Dark}
         compassEnabled={false}
         scaleBarEnabled={false}
@@ -301,10 +334,11 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
 
         {driverPosition ? (
           <Mapbox.MarkerView
+            id="driver-marker"
             coordinate={[driverPosition.longitude, driverPosition.latitude]}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <PulseRings />
+            <DriverMark />
           </Mapbox.MarkerView>
         ) : null}
 
@@ -319,18 +353,21 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         ))}
       </Mapbox.MapView>
 
-      {dwelledFocus ? null : (
-        <>
-          <View style={styles.awarenessRing} pointerEvents="none">
-            <View style={styles.awarenessLabel}>
-              <Text style={styles.awarenessLabelText}>
-                {formatDistance(announceDistanceMeters).toUpperCase()} AWARENESS
-              </Text>
-            </View>
+      {dwelledFocus ? (
+        focusLabel ? (
+          <View style={styles.headingChip} pointerEvents="none">
+            <Text style={styles.headingChipText}>{focusLabel}</Text>
           </View>
-
-          <View style={styles.radiusBadge} pointerEvents="none">
-            <Text style={styles.radiusBadgeText}>{formatDistance(announceDistanceMeters)}</Text>
+        ) : null
+      ) : (
+        <>
+          <View style={styles.awarenessRingOuter} pointerEvents="none" />
+          <View style={styles.awarenessRingInner} pointerEvents="none" />
+          <View style={styles.headingChip} pointerEvents="none">
+            <Text style={styles.headingChipText}>
+              {compassDirection(driverHeadingDeg).toUpperCase()}BOUND
+              {headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''}
+            </Text>
           </View>
         </>
       )}
@@ -346,6 +383,7 @@ function AlertMarker({
   driverPosition: { latitude: number; longitude: number } | null;
 }) {
   const meta = useMemo(() => alertTypeMeta(alert.type), [alert.type]);
+  const isPolice = alert.type === 'POLICE';
   const distanceMeters = useMemo(
     () =>
       driverPosition
@@ -354,18 +392,40 @@ function AlertMarker({
     [driverPosition, alert.latitude, alert.longitude]
   );
 
+  if (isPolice) {
+    // Just the flashing blue/red light bar - no letter, no distance chip.
+    // A real police car doesn't wear a label or a range-finder, just its
+    // lights; the other alert types still get the letter+distance
+    // treatment since they have no equivalent "just show what it is" glyph.
+    return (
+      <View
+        style={styles.policeMarker}
+        accessibilityLabel={
+          distanceMeters !== null
+            ? `Police alert, ${formatCompactDistance(distanceMeters)} ahead`
+            : 'Police alert'
+        }
+      >
+        <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_MARKER_HEIGHT} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.alertMarker}>
-      {alert.type === 'POLICE' ? (
-        <PoliceLightsPin emoji={meta.emoji} />
-      ) : (
-        <View style={[styles.alertPin, { borderColor: meta.color }]}>
-          <Text style={styles.alertEmoji}>{meta.emoji}</Text>
-        </View>
-      )}
+      <View
+        style={styles.alertPin}
+        accessibilityLabel={
+          distanceMeters !== null
+            ? `${meta.label} alert, ${formatCompactDistance(distanceMeters)} ahead`
+            : `${meta.label} alert`
+        }
+      >
+        <Text style={styles.alertPinLetter}>{meta.letter}</Text>
+      </View>
       {distanceMeters !== null ? (
         <View style={styles.alertDistanceChip}>
-          <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters)}</Text>
+          <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters).replace(/km$/, ' KM')}</Text>
         </View>
       ) : null}
     </View>
@@ -380,6 +440,11 @@ function Unsupported({ message }: { message: string }) {
   );
 }
 
+const POLICE_MARKER_SIZE = 34;
+const POLICE_MARKER_HEIGHT = 18;
+const ALERT_PIN_SIZE = 28;
+const ALERT_PIN_BORDER_WIDTH = 2;
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -387,17 +452,17 @@ const styles = StyleSheet.create({
   unsupported: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.backgroundAccent,
+    backgroundColor: instrument.mapGround,
     paddingHorizontal: 32,
   },
   unsupportedText: {
     fontFamily: fontFamily.medium,
     fontSize: 16,
     lineHeight: 22,
-    color: colors.inkMuted,
+    color: instrument.mutedOnInk,
     textAlign: 'center',
   },
-  awarenessRing: {
+  awarenessRingOuter: {
     position: 'absolute',
     top: '50%',
     left: '50%',
@@ -407,67 +472,66 @@ const styles = StyleSheet.create({
     marginTop: -AWARENESS_RING_SIZE / 2,
     borderRadius: AWARENESS_RING_SIZE / 2,
     borderWidth: 1,
-    borderColor: 'rgba(108, 140, 255, 0.35)',
-    alignItems: 'center',
+    borderColor: 'rgba(243,242,242,0.35)',
   },
-  awarenessLabel: {
-    marginTop: -12,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: colors.background,
+  awarenessRingInner: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: INNER_AWARENESS_RING_SIZE,
+    height: INNER_AWARENESS_RING_SIZE,
+    marginLeft: -INNER_AWARENESS_RING_SIZE / 2,
+    marginTop: -INNER_AWARENESS_RING_SIZE / 2,
+    borderRadius: INNER_AWARENESS_RING_SIZE / 2,
     borderWidth: 1,
-    borderColor: 'rgba(108, 140, 255, 0.35)',
+    borderColor: 'rgba(243,242,242,0.20)',
   },
-  awarenessLabelText: {
+  headingChip: {
+    position: 'absolute',
+    top: 12,
+    left: 20,
+    backgroundColor: instrument.ink,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+  },
+  headingChipText: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
-    letterSpacing: 1,
-    color: colors.accent,
-  },
-  radiusBadge: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(10, 10, 12, 0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 245, 247, 0.15)',
-  },
-  radiusBadgeText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    color: colors.ink,
+    letterSpacing: 1.5,
+    color: instrument.paper,
   },
   alertMarker: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 3,
+  },
+  policeMarker: {
+    width: POLICE_MARKER_SIZE,
+    height: POLICE_MARKER_HEIGHT,
   },
   alertPin: {
     width: ALERT_PIN_SIZE,
     height: ALERT_PIN_SIZE,
-    borderRadius: ALERT_PIN_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.backgroundAccent,
+    backgroundColor: instrument.ink,
     borderWidth: ALERT_PIN_BORDER_WIDTH,
+    borderColor: instrument.paper,
   },
-  alertEmoji: {
-    fontSize: 16,
+  alertPinLetter: {
+    fontFamily: fontFamily.black,
+    fontSize: 15,
+    lineHeight: 15,
+    color: instrument.paper,
   },
   alertDistanceChip: {
-    marginTop: 2,
     paddingVertical: 1,
-    paddingHorizontal: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(10, 10, 12, 0.75)',
+    paddingHorizontal: 4,
+    backgroundColor: instrument.ink,
   },
   alertDistanceText: {
     fontFamily: fontFamily.bold,
     fontSize: 10,
-    color: colors.ink,
+    letterSpacing: 0.5,
+    color: instrument.paper,
   },
 });

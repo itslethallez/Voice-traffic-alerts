@@ -21,3 +21,29 @@ export const colors = {
   policeLightBlue: '#3D6BFF',
   policeLightRed: '#FF3D3D',
 } as const;
+
+/**
+ * The "Instrument" redesign's palette (design_handoff_instrument_face) -
+ * a flat ruled instrument face with no accent colour at all; emphasis is a
+ * full ink/paper inversion instead. Kept separate from `colors` above
+ * until every screen has migrated - see the handoff README for the full
+ * rationale and measured values.
+ */
+export const instrument = {
+  ink: '#201E1D', // night ground, day ink
+  paper: '#F3F2F2', // day ground, night ink
+  statusBar: '#141312', // status-bar strip, night face only
+  mapGround: '#14140F', // map field, night
+  mapRoad: '#2B2927', // road fills, night
+  mapGroundDay: '#E4E2E1',
+  // Night-face secondary text / rules, over `ink`:
+  mutedOnInk: 'rgba(243,242,242,0.55)',
+  ruleOnInk: 'rgba(243,242,242,0.20)', // 1px row rules
+  faintOnInk: 'rgba(243,242,242,0.30)', // slider track
+  tickOnInk: 'rgba(243,242,242,0.40)', // slider end labels
+  gridOnInk: 'rgba(243,242,242,0.07)', // map grid
+  // Day-face equivalents, over `paper`:
+  mutedOnPaper: '#6B6764',
+  ruleOnPaper: 'rgba(32,30,29,0.20)',
+  gridOnPaper: 'rgba(32,30,29,0.07)',
+} as const;

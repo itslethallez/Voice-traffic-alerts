@@ -1,17 +1,18 @@
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useTripStore } from '../../store/useTripStore';
-import { colors } from '../../theme/colors';
+import { instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
 
 const CONFIRMATION_DISPLAY_MS = 1500;
 
 /**
- * One-tap "report police" - replaces the old tap-and-talk Report dial
- * entirely (voice recording removed, not just condensed). A single touch
- * immediately logs the driver's current location and direction of travel
- * as a manual report - no recording, no confirmation delay, fast enough
- * to use safely while driving.
+ * One-tap "report police" (design_handoff_instrument_face): the whole
+ * report control, restyled to a full-height inverted block - same
+ * `pushManualReport()` + 1500ms-confirmation behaviour as the shipped
+ * version, no icon, no pill shape. Every Pressable in the redesign inverts
+ * on press; since this one is already inverted at rest (paper ground, ink
+ * text), a press drops it to ink/paper instead.
  */
 export function ReportButton() {
   const pushManualReport = useTripStore((state) => state.pushManualReport);
@@ -33,33 +34,54 @@ export function ReportButton() {
   return (
     <Pressable
       onPress={handlePress}
-      style={styles.button}
+      style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
       accessibilityRole="button"
       accessibilityLabel="Report police nearby"
     >
-      <Text style={styles.icon}>{justReported ? '✅' : '🚓'}</Text>
-      <Text style={styles.label}>{justReported ? 'Reported' : 'Report police'}</Text>
+      {({ pressed }) => (
+        <>
+          <Text style={[styles.caption, pressed && styles.textPressed]}>ONE TAP</Text>
+          <Text style={[styles.label, pressed && styles.textPressed]}>
+            {justReported ? 'REPORTED' : 'REPORT\nPOLICE'}
+          </Text>
+        </>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 150,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignSelf: 'stretch',
+    borderLeftWidth: 2,
+    borderLeftColor: instrument.paper,
+    backgroundColor: instrument.paper,
+    justifyContent: 'flex-end',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 16,
-    backgroundColor: colors.report,
   },
-  icon: {
-    fontSize: 16,
-    marginRight: 8,
+  buttonPressed: {
+    backgroundColor: instrument.ink,
+  },
+  caption: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: instrument.ink,
+    opacity: 0.7,
   },
   label: {
-    fontFamily: fontFamily.bold,
-    fontSize: 13,
-    color: colors.background,
+    marginTop: 2,
+    fontFamily: fontFamily.black,
+    fontSize: 20,
+    letterSpacing: 0.5,
+    lineHeight: 21,
+    color: instrument.ink,
+  },
+  textPressed: {
+    color: instrument.paper,
   },
 });

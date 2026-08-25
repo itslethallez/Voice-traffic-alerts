@@ -48,3 +48,18 @@ describe('pushManualReport', () => {
     expect(manualReports[0].id).not.toBe(manualReports[1].id);
   });
 });
+
+describe('tripStartedAtMs', () => {
+  beforeEach(() => {
+    useTripStore.setState(initialState, true);
+  });
+
+  it('starts null', () => {
+    expect(useTripStore.getState().tripStartedAtMs).toBeNull();
+  });
+
+  it('is set by setTripStartedAtMs', () => {
+    useTripStore.getState().setTripStartedAtMs(12345);
+    expect(useTripStore.getState().tripStartedAtMs).toBe(12345);
+  });
+});

@@ -52,6 +52,12 @@ interface TripStoreState {
   driverSpeedKmh: number;
   visibleAlerts: WazeAlert[];
   manualReports: ManualReport[];
+  /** ms epoch this trip started - set once from tripRuntime.ts's
+   * resetTripRuntime(), the existing "call when a new trip starts" hook.
+   * Drives the History header's "THIS TRIP · {n} MIN" line
+   * (design_handoff_instrument_face) - null until the trip actually
+   * starts. */
+  tripStartedAtMs: number | null;
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
   pushManualReport: () => void;
   setOffline: (offline: boolean) => void;
@@ -59,6 +65,7 @@ interface TripStoreState {
   setLocationError: (message: string | null) => void;
   setDriverPosition: (position: GeoPoint, headingDeg: number, speedKmh: number) => void;
   setVisibleAlerts: (alerts: WazeAlert[]) => void;
+  setTripStartedAtMs: (atMs: number) => void;
 }
 
 export const useTripStore = create<TripStoreState>((set, get) => ({
@@ -71,6 +78,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   driverSpeedKmh: 0,
   visibleAlerts: [],
   manualReports: [],
+  tripStartedAtMs: null,
   pushAnnouncement: (announcement) =>
     set((state) => ({
       recentAnnouncements: [announcement, ...state.recentAnnouncements].slice(
@@ -96,6 +104,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   setDriverPosition: (position, headingDeg, speedKmh) =>
     set({ driverPosition: position, driverHeadingDeg: headingDeg, driverSpeedKmh: speedKmh }),
   setVisibleAlerts: (alerts) => set({ visibleAlerts: alerts }),
+  setTripStartedAtMs: (atMs) => set({ tripStartedAtMs: atMs }),
 }));
 
 export function statusFor(state: { masterMute: boolean; isOffline: boolean }): TripStatus {

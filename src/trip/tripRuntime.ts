@@ -78,6 +78,8 @@ export function resetTripRuntime(): void {
   // Radar UI mirror (Step 11) - drop the previous trip's alerts so a
   // fresh trip doesn't briefly show stale markers before the first fetch.
   useTripStore.getState().setVisibleAlerts([]);
+  // History header's "THIS TRIP · {n} MIN" line (design_handoff_instrument_face).
+  useTripStore.getState().setTripStartedAtMs(Date.now());
 }
 
 const RATE_LIMIT_BANNER_MESSAGE = 'Requests are being limited. Retrying automatically.';

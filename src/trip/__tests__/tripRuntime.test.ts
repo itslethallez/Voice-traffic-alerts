@@ -12,6 +12,7 @@ const pushAnnouncement = jest.fn();
 const setOffline = jest.fn();
 const setDriverPosition = jest.fn();
 const setVisibleAlerts = jest.fn();
+const setTripStartedAtMs = jest.fn();
 let tripBannerMessage: string | null = null;
 const setBannerMessage = jest.fn((message: string | null) => {
   tripBannerMessage = message;
@@ -30,6 +31,7 @@ jest.mock('../../store/useTripStore', () => ({
       setBannerMessage,
       setDriverPosition,
       setVisibleAlerts,
+      setTripStartedAtMs,
       get bannerMessage() {
         return tripBannerMessage;
       },
@@ -99,6 +101,7 @@ describe('handleDriverUpdate', () => {
     setBannerMessage.mockClear();
     setDriverPosition.mockClear();
     setVisibleAlerts.mockClear();
+    setTripStartedAtMs.mockClear();
     speakAsync.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();
@@ -341,6 +344,7 @@ describe('handleDriverUpdate', () => {
     expect(setVisibleAlerts).toHaveBeenCalledWith(expect.arrayContaining([expect.anything()]));
 
     setVisibleAlerts.mockClear();
+    setTripStartedAtMs.mockClear();
     resetTripRuntime();
 
     expect(setVisibleAlerts).toHaveBeenCalledWith([]);
@@ -512,6 +516,7 @@ describe('runBriefing', () => {
     setBannerMessage.mockClear();
     setDriverPosition.mockClear();
     setVisibleAlerts.mockClear();
+    setTripStartedAtMs.mockClear();
     speakAsync.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();

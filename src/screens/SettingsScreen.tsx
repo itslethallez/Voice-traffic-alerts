@@ -1,5 +1,6 @@
-import Slider from '@react-native-community/slider';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RangeSlider } from '../components/RangeSlider';
 import {
   ALERT_CATEGORIES,
   MAX_ANNOUNCE_DISTANCE_METERS,
@@ -11,9 +12,8 @@ import {
   type AlertCategory,
 } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { colors } from '../theme/colors';
+import { instrument } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
-import { formatDistance } from '../speech/formatAnnouncement';
 import { BuildInfoCard } from './BuildInfoCard';
 
 const CATEGORY_LABELS: Record<AlertCategory, string> = {
@@ -23,6 +23,23 @@ const CATEGORY_LABELS: Record<AlertCategory, string> = {
   ROAD_CLOSED: 'Road closures',
   JAM: 'Traffic jams',
 };
+
+/** The big numeral always keeps one decimal ("5.0") - distinct from
+ * formatKmTrimmed's slider-end-label style ("5"), matching the two
+ * different formats measured in the design artboard. */
+function formatKmFixed1(meters: number): string {
+  return (meters / 1000).toFixed(1);
+}
+
+/** Slider end labels drop a redundant ".0" ("1", "20") but keep a real
+ * decimal ("0.5") - matches the artboard's WARN ME FROM / BRIEF ME WITHIN
+ * end labels exactly. */
+function formatKmTrimmed(meters: number): string {
+  const km = meters / 1000;
+  return Number.isInteger(km) ? String(km) : km.toFixed(1);
+}
+
+type VoiceControl = 'volume' | 'rate';
 
 interface SettingsScreenProps {
   onClose?: () => void;
@@ -42,118 +59,157 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
   const setVoiceRate = useSettingsStore((state) => state.setVoiceRate);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
 
+  /** Which of Volume/Rate is expanded to show its slider - the design
+   * artboard only shows the closed state, so this interaction (tap to
+   * reveal a RangeSlider inline, reusing the same component Range uses) is
+   * my own call, not a measured spec. At most one open at a time. */
+  const [expandedVoiceControl, setExpandedVoiceControl] = useState<VoiceControl | null>(null);
+  const toggleVoiceControl = (control: VoiceControl) =>
+    setExpandedVoiceControl((current) => (current === control ? null : control));
+
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <Text style={styles.title}>Settings</Text>
+          <Text style={styles.title}>SETTINGS</Text>
+          <View style={styles.headerSpacer} />
           <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button">
-            <Text style={styles.doneText}>Done</Text>
+            <Text style={styles.doneText}>DONE</Text>
           </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.sectionTitle}>Alert categories</Text>
-          <View style={styles.card}>
-            {ALERT_CATEGORIES.map((category, index) => (
-              <View
+          <View style={styles.sectionLabelBottomOnly}>
+            <Text style={styles.sectionLabelText}>SPEAK THESE</Text>
+          </View>
+          {ALERT_CATEGORIES.map((category) => {
+            const enabled = categoriesEnabled[category];
+            return (
+              <Pressable
                 key={category}
-                style={[styles.row, index < ALERT_CATEGORIES.length - 1 && styles.rowDivider]}
+                onPress={() => toggleCategory(category)}
+                style={styles.categoryRow}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: enabled }}
+                accessibilityLabel={CATEGORY_LABELS[category]}
               >
-                <Text style={styles.rowLabel}>{CATEGORY_LABELS[category]}</Text>
-                <Switch
-                  value={categoriesEnabled[category]}
-                  onValueChange={() => toggleCategory(category)}
-                  trackColor={{ false: colors.muteButtonIdle, true: colors.accentDim }}
-                  thumbColor={categoriesEnabled[category] ? colors.accent : colors.inkMuted}
-                />
-              </View>
-            ))}
+                <Text style={[styles.categoryLabel, !enabled && styles.mutedText]}>
+                  {CATEGORY_LABELS[category]}
+                </Text>
+                <View style={[styles.stateBlock, enabled ? styles.stateBlockOn : styles.stateBlockOff]}>
+                  <Text style={[styles.stateBlockText, enabled ? styles.stateBlockTextOn : styles.mutedText]}>
+                    {enabled ? 'ON' : 'OFF'}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+
+          <View style={styles.sectionLabel}>
+            <Text style={styles.sectionLabelText}>RANGE</Text>
           </View>
 
-          <Text style={styles.sectionTitle}>Announcement distance</Text>
-          <View style={styles.card}>
-            <View style={styles.sliderHeader}>
-              <Text style={styles.rowLabel}>Warn me from</Text>
-              <Text style={styles.valueText}>{formatDistance(announceDistanceMeters)}</Text>
+          <View style={styles.rangeRow}>
+            <View style={styles.rangeHeaderRow}>
+              <Text style={styles.rangeLabel}>WARN ME FROM</Text>
+              <Text style={styles.rangeValue}>{formatKmFixed1(announceDistanceMeters)}</Text>
+              <Text style={styles.rangeUnit}>KM</Text>
             </View>
-            <Slider
-              value={announceDistanceMeters}
-              minimumValue={MIN_ANNOUNCE_DISTANCE_METERS}
-              maximumValue={MAX_ANNOUNCE_DISTANCE_METERS}
-              step={100}
-              onValueChange={setAnnounceDistanceMeters}
-              minimumTrackTintColor={colors.accent}
-              maximumTrackTintColor={colors.muteButtonIdle}
-              thumbTintColor={colors.accent}
-            />
-          </View>
-
-          <Text style={styles.sectionTitle}>Briefing radius</Text>
-          <View style={styles.card}>
-            <View style={styles.sliderHeader}>
-              <Text style={styles.rowLabel}>Brief me within</Text>
-              <Text style={styles.valueText}>{formatDistance(briefingRadiusMeters)}</Text>
-            </View>
-            <Slider
-              value={briefingRadiusMeters}
-              minimumValue={MIN_BRIEFING_RADIUS_METERS}
-              maximumValue={MAX_BRIEFING_RADIUS_METERS}
-              step={500}
-              onValueChange={setBriefingRadiusMeters}
-              minimumTrackTintColor={colors.accent}
-              maximumTrackTintColor={colors.muteButtonIdle}
-              thumbTintColor={colors.accent}
-            />
-          </View>
-
-          <Text style={styles.sectionTitle}>Voice</Text>
-          <View style={styles.card}>
-            <View style={styles.sliderHeader}>
-              <Text style={styles.rowLabel}>Volume</Text>
-              <Text style={styles.valueText}>{Math.round(voiceVolume * 100)}%</Text>
-            </View>
-            <Slider
-              value={voiceVolume}
-              minimumValue={0}
-              maximumValue={1}
-              step={0.05}
-              onValueChange={setVoiceVolume}
-              minimumTrackTintColor={colors.accent}
-              maximumTrackTintColor={colors.muteButtonIdle}
-              thumbTintColor={colors.accent}
-            />
-
-            <View style={[styles.sliderHeader, styles.secondSlider]}>
-              <Text style={styles.rowLabel}>Speaking rate</Text>
-              <Text style={styles.valueText}>{voiceRate.toFixed(1)}x</Text>
-            </View>
-            <Slider
-              value={voiceRate}
-              minimumValue={MIN_VOICE_RATE}
-              maximumValue={MAX_VOICE_RATE}
-              step={0.1}
-              onValueChange={setVoiceRate}
-              minimumTrackTintColor={colors.accent}
-              maximumTrackTintColor={colors.muteButtonIdle}
-              thumbTintColor={colors.accent}
-            />
-          </View>
-
-          <Text style={styles.sectionTitle}>Master mute</Text>
-          <View style={styles.card}>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Mute all announcements</Text>
-              <Switch
-                value={masterMute}
-                onValueChange={toggleMasterMute}
-                trackColor={{ false: colors.muteButtonIdle, true: colors.accentDim }}
-                thumbColor={masterMute ? colors.accent : colors.inkMuted}
+            <View style={styles.rangeSliderWrap}>
+              <RangeSlider
+                value={announceDistanceMeters}
+                min={MIN_ANNOUNCE_DISTANCE_METERS}
+                max={MAX_ANNOUNCE_DISTANCE_METERS}
+                step={100}
+                onChange={setAnnounceDistanceMeters}
+                minLabel={formatKmTrimmed(MIN_ANNOUNCE_DISTANCE_METERS)}
+                maxLabel={`${formatKmTrimmed(MAX_ANNOUNCE_DISTANCE_METERS)} KM`}
               />
             </View>
           </View>
 
-          <Text style={styles.sectionTitle}>Build</Text>
+          <View style={styles.rangeRow}>
+            <View style={styles.rangeHeaderRow}>
+              <Text style={styles.rangeLabel}>BRIEF ME WITHIN</Text>
+              <Text style={styles.rangeValue}>{formatKmFixed1(briefingRadiusMeters)}</Text>
+              <Text style={styles.rangeUnit}>KM</Text>
+            </View>
+            <View style={styles.rangeSliderWrap}>
+              <RangeSlider
+                value={briefingRadiusMeters}
+                min={MIN_BRIEFING_RADIUS_METERS}
+                max={MAX_BRIEFING_RADIUS_METERS}
+                step={500}
+                onChange={setBriefingRadiusMeters}
+                minLabel={formatKmTrimmed(MIN_BRIEFING_RADIUS_METERS)}
+                maxLabel={`${formatKmTrimmed(MAX_BRIEFING_RADIUS_METERS)} KM`}
+              />
+            </View>
+          </View>
+
+          <View style={styles.sectionLabel}>
+            <Text style={styles.sectionLabelText}>VOICE</Text>
+          </View>
+
+          <View style={styles.voiceRow}>
+            <Pressable style={styles.voiceCell} onPress={() => toggleVoiceControl('volume')}>
+              <Text style={styles.voiceCaption}>VOLUME</Text>
+              <View style={styles.voiceValueRow}>
+                <Text style={styles.voiceValue}>{Math.round(voiceVolume * 100)}</Text>
+                <Text style={styles.voiceUnit}>%</Text>
+              </View>
+            </Pressable>
+            <Pressable style={[styles.voiceCell, styles.voiceCellRight]} onPress={() => toggleVoiceControl('rate')}>
+              <Text style={styles.voiceCaption}>RATE</Text>
+              <View style={styles.voiceValueRow}>
+                <Text style={styles.voiceValue}>{voiceRate.toFixed(1)}</Text>
+                <Text style={styles.voiceUnit}>×</Text>
+              </View>
+            </Pressable>
+          </View>
+
+          {expandedVoiceControl === 'volume' ? (
+            <View style={styles.expandedSliderRow}>
+              <RangeSlider
+                value={voiceVolume}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={setVoiceVolume}
+                minLabel="0"
+                maxLabel="100%"
+              />
+            </View>
+          ) : null}
+          {expandedVoiceControl === 'rate' ? (
+            <View style={styles.expandedSliderRow}>
+              <RangeSlider
+                value={voiceRate}
+                min={MIN_VOICE_RATE}
+                max={MAX_VOICE_RATE}
+                step={0.1}
+                onChange={setVoiceRate}
+                minLabel={`${MIN_VOICE_RATE.toFixed(1)}×`}
+                maxLabel={`${MAX_VOICE_RATE.toFixed(1)}×`}
+              />
+            </View>
+          ) : null}
+
+          <Pressable
+            onPress={toggleMasterMute}
+            style={styles.muteRow}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: masterMute }}
+            accessibilityLabel="Mute everything"
+          >
+            <Text style={styles.categoryLabel}>MUTE EVERYTHING</Text>
+            <View style={[styles.stateBlock, masterMute ? styles.stateBlockOn : styles.stateBlockOff]}>
+              <Text style={[styles.stateBlockText, masterMute ? styles.stateBlockTextOn : styles.mutedText]}>
+                {masterMute ? 'ON' : 'OFF'}
+              </Text>
+            </View>
+          </Pressable>
+
           <BuildInfoCard />
         </ScrollView>
       </SafeAreaView>
@@ -164,73 +220,184 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: instrument.ink,
   },
   safeArea: {
     flex: 1,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 10,
+    paddingTop: 16,
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: instrument.paper,
   },
   title: {
-    fontFamily: fontFamily.bold,
-    fontSize: 28,
-    color: colors.ink,
+    fontFamily: fontFamily.black,
+    fontSize: 34,
+    letterSpacing: -0.5,
+    color: instrument.paper,
+  },
+  headerSpacer: {
+    flex: 1,
   },
   doneText: {
-    fontFamily: fontFamily.medium,
-    fontSize: 17,
-    color: colors.accent,
+    fontFamily: fontFamily.bold,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: instrument.paper,
   },
   content: {
-    paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  sectionTitle: {
-    fontFamily: fontFamily.medium,
-    fontSize: 14,
-    color: colors.inkMuted,
-    textTransform: 'uppercase',
+  sectionLabel: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 8,
+    borderTopWidth: 2,
+    borderTopColor: instrument.paper,
+    borderBottomWidth: 2,
+    borderBottomColor: instrument.paper,
+  },
+  sectionLabelBottomOnly: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: instrument.paper,
+  },
+  sectionLabelText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 2,
+    color: instrument.mutedOnInk,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: instrument.ruleOnInk,
+  },
+  categoryLabel: {
+    flex: 1,
+    fontFamily: fontFamily.bold,
+    fontSize: 17,
     letterSpacing: 0.5,
-    marginTop: 24,
-    marginBottom: 8,
+    color: instrument.paper,
   },
-  card: {
-    backgroundColor: colors.backgroundAccent,
-    borderRadius: 16,
-    paddingHorizontal: 16,
+  mutedText: {
+    color: instrument.mutedOnInk,
   },
-  row: {
+  stateBlock: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  stateBlockOn: {
+    backgroundColor: instrument.paper,
+  },
+  stateBlockOff: {
+    borderWidth: 2,
+    borderColor: instrument.mutedOnInk,
+  },
+  stateBlockText: {
+    fontFamily: fontFamily.black,
+    fontSize: 11,
+    letterSpacing: 1.5,
+  },
+  stateBlockTextOn: {
+    color: instrument.ink,
+  },
+  rangeRow: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: instrument.ruleOnInk,
+  },
+  rangeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+  },
+  rangeLabel: {
+    flex: 1,
+    fontFamily: fontFamily.bold,
+    fontSize: 17,
+    letterSpacing: 0.5,
+    color: instrument.paper,
+  },
+  rangeValue: {
+    fontFamily: fontFamily.black,
+    fontSize: 26,
+    lineHeight: 26,
+    color: instrument.paper,
+    fontVariant: ['tabular-nums'],
+  },
+  rangeUnit: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: instrument.mutedOnInk,
+  },
+  rangeSliderWrap: {
+    marginTop: 12,
+  },
+  voiceRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: instrument.ruleOnInk,
+  },
+  voiceCell: {
+    flex: 1,
+    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  voiceCellRight: {
+    borderLeftWidth: 2,
+    borderLeftColor: instrument.paper,
+  },
+  voiceCaption: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: instrument.mutedOnInk,
+  },
+  voiceValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  voiceValue: {
+    fontFamily: fontFamily.black,
+    fontSize: 30,
+    color: instrument.paper,
+    fontVariant: ['tabular-nums'],
+  },
+  voiceUnit: {
+    fontFamily: fontFamily.bold,
+    fontSize: 12,
+    color: instrument.paper,
+  },
+  expandedSliderRow: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: instrument.ruleOnInk,
+  },
+  muteRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-  },
-  rowDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(245, 245, 247, 0.12)',
-  },
-  rowLabel: {
-    fontFamily: fontFamily.regular,
-    fontSize: 17,
-    color: colors.ink,
-  },
-  sliderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 16,
-  },
-  secondSlider: {
-    marginTop: 8,
-  },
-  valueText: {
-    fontFamily: fontFamily.medium,
-    fontSize: 17,
-    color: colors.inkMuted,
+    gap: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: instrument.ruleOnInk,
   },
 });

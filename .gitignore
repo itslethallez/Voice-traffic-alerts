@@ -40,3 +40,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# raw design handoff archives - kept extracted under design_handoff_instrument_face/ instead
+/*.zip

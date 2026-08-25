@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../theme/colors';
+import { instrument } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 
 /**
@@ -86,27 +86,27 @@ export function BuildInfoCard() {
   return (
     <View style={styles.card}>
       <View style={styles.row}>
-        <Text style={styles.label}>Running</Text>
+        <Text style={styles.label}>RUNNING</Text>
         <Text style={styles.value}>
           {Updates.isEmbeddedLaunch ? 'Embedded build (no OTA update applied)' : 'OTA update'}
         </Text>
       </View>
-      <View style={[styles.row, styles.rowDivider]}>
-        <Text style={styles.label}>Update ID</Text>
+      <View style={styles.row}>
+        <Text style={styles.label}>UPDATE ID</Text>
         <Text style={styles.value}>{Updates.updateId ?? '—'}</Text>
       </View>
-      <View style={[styles.row, styles.rowDivider]}>
-        <Text style={styles.label}>Published</Text>
+      <View style={styles.row}>
+        <Text style={styles.label}>PUBLISHED</Text>
         <Text style={styles.value}>
           {Updates.createdAt ? Updates.createdAt.toLocaleString() : '—'}
         </Text>
       </View>
-      <View style={[styles.row, styles.rowDivider]}>
-        <Text style={styles.label}>Channel</Text>
+      <View style={styles.row}>
+        <Text style={styles.label}>CHANNEL</Text>
         <Text style={styles.value}>{Updates.channel ?? '—'}</Text>
       </View>
-      <View style={[styles.row, styles.rowDivider]}>
-        <Text style={styles.label}>Runtime version</Text>
+      <View style={styles.row}>
+        <Text style={styles.label}>RUNTIME VERSION</Text>
         <Text style={styles.value}>{Updates.runtimeVersion ?? '—'}</Text>
       </View>
 
@@ -114,25 +114,37 @@ export function BuildInfoCard() {
         {state === 'ready' ? (
           <Pressable
             onPress={handleApplyUpdate}
-            style={styles.button}
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
             accessibilityRole="button"
             accessibilityLabel="Restart to apply the downloaded update"
           >
-            <Text style={styles.buttonText}>Restart to apply update</Text>
+            {({ pressed }) => (
+              <Text style={[styles.buttonText, pressed && styles.buttonTextPressed]}>
+                RESTART TO APPLY UPDATE
+              </Text>
+            )}
           </Pressable>
         ) : (
           <Pressable
             onPress={handleCheckForUpdate}
             disabled={state === 'checking' || state === 'downloading'}
-            style={[styles.button, (state === 'checking' || state === 'downloading') && styles.buttonDisabled]}
+            style={({ pressed }) => [
+              styles.button,
+              (state === 'checking' || state === 'downloading') && styles.buttonDisabled,
+              pressed && styles.buttonPressed,
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Check for updates"
           >
-            {state === 'checking' || state === 'downloading' ? (
-              <ActivityIndicator color={colors.background} />
-            ) : (
-              <Text style={styles.buttonText}>Check for updates</Text>
-            )}
+            {({ pressed }) =>
+              state === 'checking' || state === 'downloading' ? (
+                <ActivityIndicator color={instrument.ink} />
+              ) : (
+                <Text style={[styles.buttonText, pressed && styles.buttonTextPressed]}>
+                  CHECK FOR UPDATES
+                </Text>
+              )
+            }
           </Pressable>
         )}
 
@@ -150,62 +162,65 @@ export function BuildInfoCard() {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.backgroundAccent,
-    borderRadius: 16,
-    paddingHorizontal: 16,
+    marginTop: 4,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
     paddingVertical: 12,
-  },
-  rowDivider: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(245, 245, 247, 0.12)',
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: instrument.ruleOnInk,
   },
   label: {
-    fontFamily: fontFamily.regular,
-    fontSize: 15,
-    color: colors.inkMuted,
-  },
-  value: {
     fontFamily: fontFamily.medium,
     fontSize: 13,
-    color: colors.ink,
+    letterSpacing: 0.5,
+    color: instrument.mutedOnInk,
+  },
+  value: {
+    fontFamily: fontFamily.bold,
+    fontSize: 13,
+    color: instrument.paper,
     flexShrink: 1,
     textAlign: 'right',
-    marginLeft: 12,
   },
   actionRow: {
+    paddingHorizontal: 20,
     paddingVertical: 16,
-    alignItems: 'center',
     gap: 8,
   },
   button: {
-    alignSelf: 'stretch',
-    minHeight: 44,
-    borderRadius: 12,
-    backgroundColor: colors.accent,
+    height: 44,
+    backgroundColor: instrument.paper,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonPressed: {
+    backgroundColor: instrument.ink,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    fontFamily: fontFamily.bold,
+    fontFamily: fontFamily.black,
     fontSize: 15,
-    color: colors.background,
+    letterSpacing: 1,
+    color: instrument.ink,
+  },
+  buttonTextPressed: {
+    color: instrument.paper,
   },
   status: {
-    fontFamily: fontFamily.regular,
+    fontFamily: fontFamily.medium,
     fontSize: 13,
-    color: colors.inkMuted,
+    color: instrument.mutedOnInk,
     textAlign: 'center',
   },
   errorText: {
-    fontFamily: fontFamily.regular,
+    fontFamily: fontFamily.medium,
     fontSize: 13,
     color: '#E85D5D',
     textAlign: 'center',

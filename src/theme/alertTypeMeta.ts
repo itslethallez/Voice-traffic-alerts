@@ -7,19 +7,30 @@ export interface AlertTypeMeta {
    * doesn't touch the existing announcement/briefing text. */
   label: string;
   color: string;
-  /** Marker glyph (Step 11b) - matches the mockup's emoji-per-type pins. */
+  /** Marker glyph (Step 11b) - matches the mockup's emoji-per-type pins.
+   * Unused by the Instrument redesign (see `letter`), kept for any screen
+   * still on the old palette until migration is complete. */
   emoji: string;
+  /** Single-letter marker glyph for the Instrument redesign
+   * (design_handoff_instrument_face) - P/H/X/C/J, measured from the
+   * design artboard. */
+  letter: string;
 }
 
 const ALERT_TYPE_META: Partial<Record<string, AlertTypeMeta>> = {
-  POLICE: { label: 'Police', color: colors.accent, emoji: '🚓' },
-  ACCIDENT: { label: 'Crash', color: '#E85D5D', emoji: '💥' },
-  HAZARD: { label: 'Hazard', color: colors.warning, emoji: '⚠️' },
-  ROAD_CLOSED: { label: 'Closed', color: '#E85D5D', emoji: '🚧' },
-  JAM: { label: 'Jam', color: colors.warning, emoji: '🚗' },
+  POLICE: { label: 'Police', color: colors.accent, emoji: '🚓', letter: 'P' },
+  ACCIDENT: { label: 'Crash', color: '#E85D5D', emoji: '💥', letter: 'X' },
+  HAZARD: { label: 'Hazard', color: colors.warning, emoji: '⚠️', letter: 'H' },
+  ROAD_CLOSED: { label: 'Closed', color: '#E85D5D', emoji: '🚧', letter: 'C' },
+  JAM: { label: 'Jam', color: colors.warning, emoji: '🚗', letter: 'J' },
 };
 
-const DEFAULT_ALERT_TYPE_META: AlertTypeMeta = { label: 'Alert', color: colors.inkFaint, emoji: '❗' };
+const DEFAULT_ALERT_TYPE_META: AlertTypeMeta = {
+  label: 'Alert',
+  color: colors.inkFaint,
+  emoji: '❗',
+  letter: '!',
+};
 
 export function alertTypeMeta(type: WazeAlertType): AlertTypeMeta {
   return ALERT_TYPE_META[type] ?? DEFAULT_ALERT_TYPE_META;
