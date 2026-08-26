@@ -96,8 +96,9 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   pushManualReport: () => {
     const position = get().driverPosition;
     const headingDeg = position ? get().driverHeadingDeg : null;
+    const localId = `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
     const report: ManualReport = {
-      id: `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+      id: localId,
       createdAtMs: Date.now(),
       position,
       headingDeg,
@@ -114,7 +115,17 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
       void (async () => {
         try {
           const deviceId = await getDeviceId();
-          await submitManualReport({ deviceId, position, headingDeg });
+          const remote = await submitManualReport({ deviceId, position, headingDeg });
+          // Swap the optimistic local id for the backend's real one. The
+          // backend assigns its own id (never the "manual-" one this
+          // function generated), so without this, setManualReports'
+          // startup-hydration merge below has no way to recognise this
+          // report as already-synced if that fetch resolves after this -
+          // it would keep the local entry *and* add the hydrated one,
+          // showing the same report twice.
+          set((state) => ({
+            manualReports: state.manualReports.map((r) => (r.id === localId ? { ...r, id: remote.id } : r)),
+          }));
         } catch (error) {
           console.warn('[reports] failed to sync manual report to the backend', error);
         }

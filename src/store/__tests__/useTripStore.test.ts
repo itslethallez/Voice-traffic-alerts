@@ -3,7 +3,7 @@ jest.mock('../../config/deviceId', () => ({
   getDeviceId: () => getDeviceId(),
 }));
 
-const submitManualReport = jest.fn().mockResolvedValue(undefined);
+const submitManualReport = jest.fn().mockResolvedValue({ id: 'remote-default-id' });
 jest.mock('../../api/backend/client', () => ({
   submitManualReport: (...args: unknown[]) => submitManualReport(...args),
 }));
@@ -94,6 +94,46 @@ describe('pushManualReport', () => {
 
     useTripStore.getState().pushManualReport();
     await flushMicrotasks();
+
+    expect(useTripStore.getState().manualReports).toHaveLength(1);
+  });
+
+  it('reconciles the local id with the backend id once the sync succeeds', async () => {
+    // Regression test: without this, a report that finishes syncing before
+    // the startup hydration fetch resolves keeps its local "manual-" id
+    // forever, so setManualReports (which recognises already-synced reports
+    // by id) can never tell the two apart and shows the report twice.
+    submitManualReport.mockResolvedValueOnce({ id: 'remote-real-id' });
+    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
+
+    useTripStore.getState().pushManualReport();
+    const localId = useTripStore.getState().manualReports[0].id;
+    await flushMicrotasks();
+
+    const { manualReports } = useTripStore.getState();
+    expect(manualReports).toHaveLength(1);
+    expect(manualReports[0].id).toBe('remote-real-id');
+    expect(manualReports[0].id).not.toBe(localId);
+  });
+
+  it('does not resurrect a duplicate when hydration resolves after the id has already been reconciled', async () => {
+    submitManualReport.mockResolvedValueOnce({ id: 'remote-real-id' });
+    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
+
+    useTripStore.getState().pushManualReport();
+    await flushMicrotasks();
+    const syncedReport = useTripStore.getState().manualReports[0];
+
+    // Simulate the startup hydration fetch resolving afterwards and already
+    // including this same report under the backend's id.
+    useTripStore.getState().setManualReports([
+      {
+        id: 'remote-real-id',
+        createdAtMs: syncedReport.createdAtMs,
+        position: syncedReport.position,
+        headingDeg: syncedReport.headingDeg,
+      },
+    ]);
 
     expect(useTripStore.getState().manualReports).toHaveLength(1);
   });
