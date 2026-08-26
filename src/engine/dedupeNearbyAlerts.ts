@@ -22,6 +22,20 @@ export const DUPLICATE_CLUSTER_RADIUS_M = 500;
 const PARALLEL_TOLERANCE_DEG = 45;
 
 /**
+ * Below this distance, the bearing between two alerts isn't a meaningful
+ * signal - bearingBetween on near-identical coordinates is dominated by
+ * GPS/rounding noise rather than real geometry (exactly-coincident points
+ * even hit its atan2(0, 0) edge case, an arbitrary due-north result). This
+ * is exactly the primary case this whole module exists for: two different
+ * reporters describing the same real-world incident from essentially the
+ * same spot. Skip the carriageway/bearing check entirely at this range and
+ * always treat same-type alerts this close as duplicates; it only starts
+ * applying past this radius, where "along the road" vs "across it" is
+ * actually measurable.
+ */
+const SAME_SPOT_RADIUS_M = 30;
+
+/**
  * Guards against merging two alerts that are close in raw distance but on
  * opposite carriageways of a divided road - e.g. police monitoring both
  * directions of a highway, each a genuine, separate presence. Waze's data
@@ -40,10 +54,11 @@ const PARALLEL_TOLERANCE_DEG = 45;
  * meaningfully safer default than distance alone.
  */
 function isLikelySameCarriageway(a: AnnounceableAlert, b: AnnounceableAlert, driverHeadingDeg: number): boolean {
-  const bearingBetweenAlerts = bearingBetween(
-    { latitude: a.alert.latitude, longitude: a.alert.longitude },
-    { latitude: b.alert.latitude, longitude: b.alert.longitude }
-  );
+  const positionA = { latitude: a.alert.latitude, longitude: a.alert.longitude };
+  const positionB = { latitude: b.alert.latitude, longitude: b.alert.longitude };
+  if (haversineDistance(positionA, positionB) <= SAME_SPOT_RADIUS_M) return true;
+
+  const bearingBetweenAlerts = bearingBetween(positionA, positionB);
   const diffFromHeading = bearingDifference(driverHeadingDeg, bearingBetweenAlerts);
   const diffFromReverseHeading = bearingDifference((driverHeadingDeg + 180) % 360, bearingBetweenAlerts);
   return Math.min(diffFromHeading, diffFromReverseHeading) <= PARALLEL_TOLERANCE_DEG;

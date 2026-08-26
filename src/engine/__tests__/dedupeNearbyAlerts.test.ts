@@ -76,6 +76,31 @@ describe('dedupeNearbyAlerts', () => {
     expect(result[0].alert.alert_id).toBe(b.alert.alert_id); // more corroborated survives
   });
 
+  it('merges two same-type alerts close enough together that bearing is not a meaningful signal, even directly across the driver heading (same-spot bypass)', () => {
+    // Regression test: bearingBetween on near-identical coordinates is
+    // dominated by GPS/rounding noise, not real geometry - two reporters
+    // describing the exact same incident from ~15m apart used to fail the
+    // parallel-bearing check whenever that noise happened to land roughly
+    // perpendicular to the driver's heading, leaving genuine duplicates
+    // unmerged.
+    const a = makeCandidateAt(offsetFromBase(0, 0), { alert_reliability: 8 });
+    const b = makeCandidateAt(offsetFromBase(0, 15), { alert_reliability: 9 }); // 15m across - same real-world spot
+
+    const result = dedupeNearbyAlerts([a, b], DRIVER_HEADING_DEG);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].alert.alert_id).toBe(b.alert.alert_id);
+  });
+
+  it('still applies the carriageway/bearing check once alerts are far enough apart for bearing to be meaningful', () => {
+    const a = makeCandidateAt(offsetFromBase(0, 0), { alert_reliability: 8 });
+    const b = makeCandidateAt(offsetFromBase(0, 100), { alert_reliability: 9 }); // well past the same-spot bypass radius
+
+    const result = dedupeNearbyAlerts([a, b], DRIVER_HEADING_DEG);
+
+    expect(result).toHaveLength(2);
+  });
+
   it('does NOT merge two same-type alerts close together but across the road (opposite carriageway)', () => {
     const a = makeCandidateAt(offsetFromBase(0, 0), { alert_reliability: 8 });
     const b = makeCandidateAt(offsetFromBase(0, 300), { alert_reliability: 8 }); // 300m across, not along

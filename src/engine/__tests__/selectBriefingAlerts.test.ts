@@ -27,7 +27,12 @@ describe('selectBriefingAlerts', () => {
     // wm-006 (150m) and wm-020 (250m) are inside live driving's 300m
     // floor and would never qualify there, but the briefing has no such
     // floor - a stationary driver wants to know what's right next to them.
-    const result = selectBriefingAlerts(alerts, position, now, { radiusMeters: 2000 });
+    // Radius capped at 500 (not the usual 2000 in this file) so wm-010 -
+    // also a JAM, elsewhere in this fixture, and close/aligned enough with
+    // wm-020 to trigger the cluster dedupe below - isn't a candidate here;
+    // that dedupe interaction is real and has its own dedicated test,
+    // that's not what this test is about.
+    const result = selectBriefingAlerts(alerts, position, now, { radiusMeters: 500 });
     const ids = new Set(result.map((r) => r.alert.alert_id));
     expect(ids.has('wm-006')).toBe(true);
     expect(ids.has('wm-020')).toBe(true);
@@ -81,16 +86,45 @@ describe('selectBriefingAlerts', () => {
 
   it('breaks distance ties deterministically by alert_id', () => {
     const base = alerts[0];
-    const makeAlertAt = (id: string): WazeAlert => ({
+    // Different types (not all base's own POLICE) - three same-type alerts
+    // at an identical position would now be collapsed to one by the
+    // dedupeNearbyAlerts merge below, which would defeat this test's actual
+    // purpose (sort tie-breaking, not dedup).
+    const makeAlertAt = (id: string, type: WazeAlert['type']): WazeAlert => ({
       ...base,
       alert_id: id,
+      type,
       latitude: base.latitude,
       longitude: base.longitude,
     });
-    const tied = [makeAlertAt('b-alert'), makeAlertAt('a-alert'), makeAlertAt('c-alert')];
+    const tied = [
+      makeAlertAt('b-alert', 'POLICE'),
+      makeAlertAt('a-alert', 'HAZARD'),
+      makeAlertAt('c-alert', 'JAM'),
+    ];
 
     const result = selectBriefingAlerts(tied, position, now, { radiusMeters: 50_000 });
     expect(result.map((r) => r.alert.alert_id)).toEqual(['a-alert', 'b-alert', 'c-alert']);
+  });
+
+  it('merges duplicate same-type reports at essentially the same spot, same as live driving does', () => {
+    // Regression test: the briefing used to skip dedupeNearbyAlerts
+    // entirely, so two reporters describing one incident from the same
+    // location - the densest moment for this to happen is right at a cold
+    // start, with everything nearby all being briefed at once - would be
+    // spoken back-to-back as if they were separate.
+    const base = alerts[0];
+    const original: WazeAlert = { ...base, alert_id: 'dup-original', type: 'POLICE', alert_reliability: 4 };
+    const duplicate: WazeAlert = {
+      ...base,
+      alert_id: 'dup-more-corroborated',
+      type: 'POLICE',
+      alert_reliability: 9, // more corroborated - should survive
+    };
+
+    const result = selectBriefingAlerts([original, duplicate], position, now, { radiusMeters: 50_000 });
+
+    expect(result.map((r) => r.alert.alert_id)).toEqual(['dup-more-corroborated']);
   });
 
   it('returns nothing when every candidate is filtered out', () => {
