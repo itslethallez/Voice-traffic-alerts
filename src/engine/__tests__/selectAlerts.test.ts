@@ -62,6 +62,36 @@ describe('selectAnnounceableAlerts', () => {
     expect(ids.has('wm-015')).toBe(true); // 44.5 degrees
   });
 
+  it('does not merge wm-001 and wm-016 despite being only ~125m apart - their relative bearing (49deg) is just outside the "same carriageway" tolerance', () => {
+    // Documents real geometry in this fixture, not a designed test case for
+    // dedupeNearbyAlerts.ts itself (see its own dedicated test file for
+    // that) - included so a future fixture edit that changes this doesn't
+    // silently change selectAnnounceableAlerts' output out from under it.
+    const result = selectAnnounceableAlerts(alerts, driver, new Map(), now);
+    const ids = result.map((r) => r.alert.alert_id);
+    expect(ids).toContain('wm-001');
+    expect(ids).toContain('wm-016');
+  });
+
+  it('collapses two nearby same-type alerts along the direction of travel into the more corroborated one', () => {
+    // Hand-placed (not the shared fixture, whose POLICE entries don't
+    // happen to sit within the "same carriageway" bearing tolerance - see
+    // the test above) to exercise the actual merge path end-to-end through
+    // selectAnnounceableAlerts, on top of dedupeNearbyAlerts.ts's own
+    // dedicated unit tests.
+    const base = alerts.find((a) => a.alert_id === 'wm-001')!;
+    const nearDuplicate = {
+      ...base,
+      alert_id: 'wm-001-duplicate-report',
+      latitude: base.latitude + 0.0005, // ~55m further along the same north bearing from the driver
+      alert_reliability: base.alert_reliability + 1, // more corroborated - should survive
+    };
+    const result = selectAnnounceableAlerts([base, nearDuplicate], driver, new Map(), now);
+    const ids = result.map((r) => r.alert.alert_id);
+    expect(ids).not.toContain('wm-001');
+    expect(ids).toContain('wm-001-duplicate-report');
+  });
+
   it('excludes an alert just past a boundary: 46deg bearing, 31min old', () => {
     const result = selectAnnounceableAlerts(alerts, driver, new Map(), now);
     const ids = new Set(result.map((r) => r.alert.alert_id));

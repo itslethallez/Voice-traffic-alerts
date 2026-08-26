@@ -4,7 +4,7 @@ import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
 import { compassDirection } from '../../geo/bearing';
 import { haversineDistance, midpoint } from '../../geo/distance';
-import { MAX_ZOOM, MIN_ZOOM, zoomForRingRadius } from '../../geo/mercatorZoom';
+import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import type { GeoPoint } from '../../geo/types';
 import { announcementLocation } from '../../speech/formatAnnouncement';
 import { enabledTypesFromSettings } from '../../store/settingsDefaults';
@@ -45,24 +45,34 @@ try {
  * to compute a to-scale zoom from - matches the existing "no center
  * coordinate until driverPosition exists" fallback below. */
 const DEFAULT_ZOOM = 15;
-/** Fixed screen sizes for the two concentric awareness rings
- * (design_handoff_instrument_face) - the outer ring is what the map's
- * Camera zoomLevel is chosen (via zoomForRingRadius) to represent
- * announceDistanceMeters of real-world ground distance at the driver's
- * current latitude; the inner ring is purely decorative depth, not tied to
- * any setting. */
-const AWARENESS_RING_SIZE = 236;
-const INNER_AWARENESS_RING_SIZE = 120;
+/**
+ * Two-zone layout (Step 12/13 rework): the map's default view is now a
+ * close, tightly-zoomed "where am I right now" view centered on the
+ * driver, decoupled from announceDistanceMeters entirely - it no longer
+ * tours out to a wide survey. The old awareness rings, which visualised
+ * the announce radius to scale, are gone along with the wide default zoom
+ * they depended on.
+ */
+const DEFAULT_CLOSE_ZOOM = 16;
 /** Fixed zoom for a focused alert (Step 12 #25) - close enough to read the
  * marker clearly, not derived from announceDistanceMeters since a focused
  * view isn't about the driver's awareness radius. */
 const FOCUSED_ALERT_ZOOM = 16;
 
-/** How long the camera lingers on a just-spoken alert's exact location
- * before returning to the normal driver-following view - same idea as
- * FOCUSED_ALERT_ZOOM's tap-driven focus, just triggered by speech instead
- * of a tap. */
-const SPOKEN_SPOTLIGHT_DURATION_MS = 6000;
+/**
+ * How long the camera lingers on a genuinely-new alert's exact location
+ * before returning to the close driver-following view - a brief
+ * interruption, not a tour. "Genuinely new" means an alert_id not already
+ * in seenAlertIds below; already-seen alerts never retrigger this, however
+ * many times they're re-fetched.
+ */
+const NEW_ALERT_LOCATE_HOLD_MS = 3000;
+/** Minimum time between one auto-locate interruption and the next, so a
+ * dense stretch of road introducing several new alerts within a few polls
+ * doesn't turn back into a touring loop - at most one interruption per
+ * cooldown window; any other new alerts in the meantime are marked seen
+ * (never revisited) but shown with no camera treatment. */
+const NEW_ALERT_LOCATE_COOLDOWN_MS = 20000;
 
 /**
  * Focus-change transition (Step 13 #4): jumping the camera straight to a
@@ -77,22 +87,12 @@ const TRANSITION_ZOOM_IN_DURATION_MS = 500;
  * pull-back step goes. */
 const TRANSITION_ZOOM_OUT_DELTA = 2;
 
-/**
- * Minimum time the camera commits to one alert-to-alert focus target before
- * it's allowed to move to the next (Step 13 pacing fix): back-to-back
- * spotlight changes - most commonly several alerts spoken in quick
- * succession during the cold-start briefing, only BRIEFING_GAP_MS apart -
- * were retriggering the zoom-out-then-zoom-in transition above before its
- * own ~900ms (TRANSITION_ZOOM_OUT_DURATION_MS + TRANSITION_ZOOM_IN_DURATION_MS)
- * had even finished, cutting the zoom-out short mid-motion. 7s comfortably
- * covers that transition plus enough dwell time to actually read the pin.
- */
-const MIN_ALERT_DWELL_MS = 7000;
-
 interface RadarMapProps {
-  /** Set by the Drive screen's alert ledger (Step 12 #25) when the driver
+  /** Set by the Drive screen's alert feed (Step 12 #25) when the driver
    * taps a row - the camera centers on this alert instead of following the
-   * driver for a few seconds, then the caller clears it. */
+   * driver for a few seconds, then the caller clears it. The only
+   * deliberate zoom-to-an-alert trigger; takes priority over the
+   * automatic new-alert spotlight below if both are somehow active. */
   focusedAlert?: WazeAlert | null;
 }
 
@@ -101,7 +101,6 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
-  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
 
   /** Same enabled-categories state that already drives speech filtering
@@ -116,106 +115,72 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
     [visibleAlerts, enabledTypes]
   );
 
-  /** Auto-focus counterpart to the tap-driven `focusedAlert` prop: when an
-   * alert is spoken, the driver should be able to glance down and
-   * immediately see where it is, without having to tap anything. Keyed on
-   * announcedAtMs (not alertId) so a proximity-reminder re-announcement of
-   * the same alert re-triggers it too. An explicit tap-focus takes
-   * priority if one is already active - this never overrides it. */
-  const [spokenSpotlight, setSpokenSpotlight] = useState<WazeAlert | null>(null);
-  /** Skips the effect's very first run after mount - DriveScreen (and this
-   * map with it) unmounts whenever the driver leaves the Drive tab, so
-   * remounting would otherwise immediately re-run this effect against
-   * whatever recentAnnouncements[0] already is and spotlight a possibly
-   * many-minutes-old alert. A timestamp-based freshness check was tried
-   * here first, but announcedAtMs is set from the nowMs captured at the
-   * *start* of the driver-update handler, before it awaits a poll fetch -
-   * a slow poll can make a genuinely just-dispatched announcement's
-   * timestamp look several seconds old by the time this effect actually
-   * sees it, wrongly skipping the spotlight for a live alert. Tracking
-   * "did this dependency change while already mounted" instead sidesteps
-   * wall-clock timing entirely: every run after the first is necessarily a
-   * genuine change. */
-  const hasRunSpotlightEffectRef = useRef(false);
-  useEffect(() => {
-    const isFirstRunSinceMount = !hasRunSpotlightEffectRef.current;
-    hasRunSpotlightEffectRef.current = true;
-    if (!latestAnnouncement || isFirstRunSinceMount) return;
-
-    setSpokenSpotlight(latestAnnouncement.candidate.alert);
-    const timer = setTimeout(() => setSpokenSpotlight(null), SPOKEN_SPOTLIGHT_DURATION_MS);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestAnnouncement?.announcedAtMs]);
-
-  const displayFocus = focusedAlert ?? spokenSpotlight;
-
   /**
-   * Gates how often the camera is actually allowed to retarget (Step 13
-   * pacing fix - see MIN_ALERT_DWELL_MS above). `displayFocus` can change
-   * as often as every BRIEFING_GAP_MS during a briefing; `dwelledFocus`
-   * only ever changes at most once per MIN_ALERT_DWELL_MS, coalescing any
-   * faster churn onto whichever target is current once the dwell expires
-   * (rather than visiting every intermediate one).
+   * Auto-locate for genuinely new alerts (two-zone layout rework): briefly
+   * spotlights an alert the driver hasn't seen this session, then returns
+   * to the close view - never a repeating tour. `seenAlertIds` is
+   * deliberately never cleared (not reset per-trip) - tied to this
+   * component's own mount lifetime, which per App.tsx's permanent-mount
+   * pattern is effectively the whole app session.
    */
-  const [dwelledFocus, setDwelledFocus] = useState<WazeAlert | null>(null);
-  const lastDwellAppliedAtRef = useRef(0);
-  const pendingDwellTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seenAlertIdsRef = useRef<Set<string>>(new Set());
+  const lastLocateAtRef = useRef(0);
+  const [newAlertSpotlight, setNewAlertSpotlight] = useState<WazeAlert | null>(null);
+  const newAlertClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (pendingDwellTimeoutRef.current !== null) {
-      clearTimeout(pendingDwellTimeoutRef.current);
-      pendingDwellTimeoutRef.current = null;
+    const newlyArrived = mapVisibleAlerts.filter((alert) => !seenAlertIdsRef.current.has(alert.alert_id));
+    if (newlyArrived.length === 0) return;
+
+    for (const alert of newlyArrived) {
+      seenAlertIdsRef.current.add(alert.alert_id);
     }
 
-    const applyNow = () => {
-      lastDwellAppliedAtRef.current = Date.now();
-      setDwelledFocus(displayFocus);
-    };
+    const alreadySpotlighting = newAlertClearTimeoutRef.current !== null;
+    const cooledDown = Date.now() - lastLocateAtRef.current >= NEW_ALERT_LOCATE_COOLDOWN_MS;
+    if (alreadySpotlighting || !cooledDown || !driverPosition) return;
 
-    const remainingDwellMs = MIN_ALERT_DWELL_MS - (Date.now() - lastDwellAppliedAtRef.current);
-    if (remainingDwellMs <= 0) {
-      applyNow();
-    } else {
-      pendingDwellTimeoutRef.current = setTimeout(() => {
-        pendingDwellTimeoutRef.current = null;
-        applyNow();
-      }, remainingDwellMs);
-    }
+    const nearest = newlyArrived.reduce((closest, alert) => {
+      const alertPos = { latitude: alert.latitude, longitude: alert.longitude };
+      const closestPos = { latitude: closest.latitude, longitude: closest.longitude };
+      return haversineDistance(driverPosition, alertPos) < haversineDistance(driverPosition, closestPos)
+        ? alert
+        : closest;
+    });
 
-    return () => {
-      if (pendingDwellTimeoutRef.current !== null) {
-        clearTimeout(pendingDwellTimeoutRef.current);
-        pendingDwellTimeoutRef.current = null;
-      }
-    };
-  }, [displayFocus]);
+    lastLocateAtRef.current = Date.now();
+    setNewAlertSpotlight(nearest);
+    newAlertClearTimeoutRef.current = setTimeout(() => {
+      setNewAlertSpotlight(null);
+      newAlertClearTimeoutRef.current = null;
+    }, NEW_ALERT_LOCATE_HOLD_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapVisibleAlerts]);
+  useEffect(
+    () => () => {
+      if (newAlertClearTimeoutRef.current !== null) clearTimeout(newAlertClearTimeoutRef.current);
+    },
+    []
+  );
+
+  const displayFocus = focusedAlert ?? newAlertSpotlight;
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
-  /** Skips the very first run, same reasoning as hasRunSpotlightEffectRef
-   * above - there's no meaningful "from" state on mount, and the
-   * declarative Camera props below already center correctly on first
-   * render without needing a transition. */
+  /** Skips the very first run - there's no meaningful "from" state on
+   * mount, and the declarative Camera props below already center
+   * correctly on first render without needing a transition. */
   const hasRunFocusTransitionEffectRef = useRef(false);
   const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const focusKey = dwelledFocus?.alert_id ?? null;
+  const focusKey = displayFocus?.alert_id ?? null;
   useEffect(() => {
     const isFirstRun = !hasRunFocusTransitionEffectRef.current;
     hasRunFocusTransitionEffectRef.current = true;
     if (isFirstRun || !cameraRef.current || !driverPosition) return;
 
-    const targetPoint: GeoPoint = dwelledFocus
-      ? { latitude: dwelledFocus.latitude, longitude: dwelledFocus.longitude }
+    const targetPoint: GeoPoint = displayFocus
+      ? { latitude: displayFocus.latitude, longitude: displayFocus.longitude }
       : driverPosition;
-    const followingZoom = zoomForRingRadius(
-      announceDistanceMeters,
-      AWARENESS_RING_SIZE / 2,
-      driverPosition.latitude
-    );
-    const targetZoom = dwelledFocus ? FOCUSED_ALERT_ZOOM : followingZoom;
-    const pulledBackZoom = Math.max(
-      MIN_ZOOM,
-      Math.min(MAX_ZOOM, Math.min(targetZoom, followingZoom) - TRANSITION_ZOOM_OUT_DELTA)
-    );
+    const targetZoom = displayFocus ? FOCUSED_ALERT_ZOOM : DEFAULT_CLOSE_ZOOM;
+    const pulledBackZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom - TRANSITION_ZOOM_OUT_DELTA));
     const pivot = midpoint(driverPosition, targetPoint);
 
     cameraRef.current.setCamera({
@@ -232,7 +197,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
       cameraRef.current?.setCamera({
         centerCoordinate: [targetPoint.longitude, targetPoint.latitude],
         zoomLevel: targetZoom,
-        heading: dwelledFocus ? 0 : driverHeadingDeg,
+        heading: displayFocus ? 0 : driverHeadingDeg,
         animationDuration: TRANSITION_ZOOM_IN_DURATION_MS,
         animationMode: 'easeTo',
       });
@@ -245,10 +210,10 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         focusTransitionTimeoutRef.current = null;
       }
     };
-    // Deliberately keyed on focusKey alone - driverPosition/driverHeadingDeg/
-    // announceDistanceMeters are read live inside for whichever point in
-    // time the transition actually fires, not to re-trigger this effect on
-    // every ~3s position tick the way the declarative Camera props below do.
+    // Deliberately keyed on focusKey alone - driverPosition/driverHeadingDeg
+    // are read live inside for whichever point in time the transition
+    // actually fires, not to re-trigger this effect on every ~3s position
+    // tick the way the declarative Camera props below do.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
 
@@ -263,16 +228,16 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
 
   const headingStreet = latestAnnouncement ? announcementLocation(latestAnnouncement.candidate).street : null;
 
-  // When the camera is focused on a specific alert (tapped or just spoken),
-  // the awareness rings/heading chip below are hidden - without a
-  // replacement, the driver sees a silent zoomed-in map with no way to
-  // tell what they're actually looking at. This reuses
-  // announcementLocation()'s existing street/area resolution (including
-  // route-number filtering and the suburb-preferring fallback) rather than
-  // re-deriving it, same pattern as DriveScreen.tsx's ledger rows.
-  const focusLocation = dwelledFocus
+  // When the camera is focused on a specific alert (tapped or newly
+  // located), the heading chip below is replaced with this - without it,
+  // the driver sees a silent zoomed-in map with no way to tell what
+  // they're actually looking at. Reuses announcementLocation()'s existing
+  // street/area resolution (including route-number filtering and the
+  // suburb-preferring fallback) rather than re-deriving it, same pattern
+  // as DriveScreen.tsx's feed rows.
+  const focusLocation = displayFocus
     ? announcementLocation({
-        alert: dwelledFocus,
+        alert: displayFocus,
         distanceMeters: 0,
         bearingDeg: 0,
         bearingDiffDeg: 0,
@@ -314,20 +279,14 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         <Mapbox.Camera
           ref={cameraRef}
           centerCoordinate={
-            dwelledFocus
-              ? [dwelledFocus.longitude, dwelledFocus.latitude]
+            displayFocus
+              ? [displayFocus.longitude, displayFocus.latitude]
               : driverPosition
                 ? [driverPosition.longitude, driverPosition.latitude]
                 : undefined
           }
-          heading={dwelledFocus ? 0 : driverHeadingDeg}
-          zoomLevel={
-            dwelledFocus
-              ? FOCUSED_ALERT_ZOOM
-              : driverPosition
-                ? zoomForRingRadius(announceDistanceMeters, AWARENESS_RING_SIZE / 2, driverPosition.latitude)
-                : DEFAULT_ZOOM
-          }
+          heading={displayFocus ? 0 : driverHeadingDeg}
+          zoomLevel={displayFocus ? FOCUSED_ALERT_ZOOM : driverPosition ? DEFAULT_CLOSE_ZOOM : DEFAULT_ZOOM}
           animationMode="easeTo"
           animationDuration={600}
         />
@@ -353,24 +312,15 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         ))}
       </Mapbox.MapView>
 
-      {dwelledFocus ? (
-        focusLabel ? (
-          <View style={styles.headingChip} pointerEvents="none">
-            <Text style={styles.headingChipText}>{focusLabel}</Text>
-          </View>
-        ) : null
-      ) : (
-        <>
-          <View style={styles.awarenessRingOuter} pointerEvents="none" />
-          <View style={styles.awarenessRingInner} pointerEvents="none" />
-          <View style={styles.headingChip} pointerEvents="none">
-            <Text style={styles.headingChipText}>
-              {compassDirection(driverHeadingDeg).toUpperCase()}BOUND
-              {headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''}
-            </Text>
-          </View>
-        </>
-      )}
+      <View style={styles.headingChip} pointerEvents="none">
+        <Text style={styles.headingChipText}>
+          {displayFocus && focusLabel
+            ? focusLabel
+            : `${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
+                headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''
+              }`}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -461,30 +411,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: instrument.mutedOnInk,
     textAlign: 'center',
-  },
-  awarenessRingOuter: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: AWARENESS_RING_SIZE,
-    height: AWARENESS_RING_SIZE,
-    marginLeft: -AWARENESS_RING_SIZE / 2,
-    marginTop: -AWARENESS_RING_SIZE / 2,
-    borderRadius: AWARENESS_RING_SIZE / 2,
-    borderWidth: 1,
-    borderColor: 'rgba(243,242,242,0.35)',
-  },
-  awarenessRingInner: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: INNER_AWARENESS_RING_SIZE,
-    height: INNER_AWARENESS_RING_SIZE,
-    marginLeft: -INNER_AWARENESS_RING_SIZE / 2,
-    marginTop: -INNER_AWARENESS_RING_SIZE / 2,
-    borderRadius: INNER_AWARENESS_RING_SIZE / 2,
-    borderWidth: 1,
-    borderColor: 'rgba(243,242,242,0.20)',
   },
   headingChip: {
     position: 'absolute',

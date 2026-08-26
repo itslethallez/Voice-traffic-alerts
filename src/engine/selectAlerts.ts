@@ -8,6 +8,7 @@ import {
   isFreshEnoughToAnnounce,
   isMeaningfullyCloser,
 } from '../geo/announceWindow';
+import { dedupeNearbyAlerts } from './dedupeNearbyAlerts';
 import { sortBySeverity } from './severity';
 import type { AnnounceableAlert, DriverState } from './types';
 
@@ -30,8 +31,18 @@ export const defaultAnnounceSettings: AnnounceSettings = {
  * Settings. An alert already announced this trip is skipped unless the
  * driver has since gotten meaningfully closer to it (see
  * isMeaningfullyCloser), in which case it qualifies again as a proximity
- * reminder. Result is sorted by severity (see severity.ts), highest
- * priority first.
+ * reminder.
+ *
+ * Candidates are then deduped by real-world proximity (dedupeNearbyAlerts) -
+ * two different Waze users reporting the same police car moments apart
+ * produce two different alert_ids, which the announcedDistances check
+ * above can't catch (it only recognises the *same* id being re-seen). Only
+ * the more-corroborated of a cluster survives; if that one later drops out
+ * of the feed while the other persists, the other is treated as a fresh,
+ * never-announced alert - an acceptable edge case, not a bug, since the
+ * two were never actually tracked as the same alert internally.
+ *
+ * Result is sorted by severity (see severity.ts), highest priority first.
  */
 export function selectAnnounceableAlerts(
   alerts: WazeAlert[],
@@ -75,5 +86,5 @@ export function selectAnnounceableAlerts(
     });
   }
 
-  return sortBySeverity(candidates);
+  return sortBySeverity(dedupeNearbyAlerts(candidates, driver.headingDeg));
 }

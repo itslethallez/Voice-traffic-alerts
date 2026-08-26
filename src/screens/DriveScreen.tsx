@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../api/waze/types';
 import type { AnnounceableAlert } from '../engine/types';
-import type { NearbyAlert } from '../engine/selectNearbyAlerts';
-import { selectNearbyAlerts } from '../engine/selectNearbyAlerts';
+import { haversineDistance } from '../geo/distance';
 import { announcementLocation } from '../speech/formatAnnouncement';
 import { STALE_ANNOUNCEMENT_AGE_MINUTES } from '../speech/constants';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
@@ -63,7 +62,6 @@ export function DriveScreen() {
   const bannerMessage = useTripStore((state) => state.bannerMessage);
   const locationError = useTripStore((state) => state.locationError);
   const driverPosition = useTripStore((state) => state.driverPosition);
-  const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
 
   const [now, setNow] = useState(() => Date.now());
@@ -95,14 +93,22 @@ export function DriveScreen() {
 
   // Same enabled-categories state that already drives speech filtering and
   // the map's own markers (RadarMap.tsx) - reused here, not reimplemented,
-  // so a category switched off in Settings disappears from this ledger the
+  // so a category switched off in Settings disappears from this feed the
   // same instant it stops being announced/shown on the map.
   const enabledTypes = useMemo(() => enabledTypesFromSettings(categoriesEnabled), [categoriesEnabled]);
+  // Two-zone layout rework: this feed now mirrors exactly what the map
+  // plots (mapVisibleAlerts there, the same enabledTypes filter here) -
+  // no cap, no forward-facing bearing cone. selectNearbyAlerts.ts (the old
+  // top-3/90-degree-cone logic) is gone; "expiring" needs no extra
+  // handling, since this simply re-derives from live visibleAlerts on
+  // every poll, same as before.
   const nearbyAlerts = useMemo(() => {
     if (!driverPosition) return [];
-    const enabledVisibleAlerts = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
-    return selectNearbyAlerts(enabledVisibleAlerts, driverPosition, driverHeadingDeg);
-  }, [visibleAlerts, enabledTypes, driverPosition, driverHeadingDeg]);
+    return visibleAlerts
+      .filter((alert) => enabledTypes.has(alert.type))
+      .map((alert) => ({ alert, distanceMeters: haversineDistance(driverPosition, alert) }))
+      .sort((a, b) => a.distanceMeters - b.distanceMeters);
+  }, [visibleAlerts, enabledTypes, driverPosition]);
 
   const status = statusFor({ masterMute, isOffline });
   const metaLine = `${statusLabel(status).toUpperCase()} · ${formatAwarenessKm(announceDistanceMeters)} KM AWARENESS · ${
@@ -133,20 +139,25 @@ export function DriveScreen() {
 
         <View style={styles.ledger}>
           <View style={styles.ledgerHeaderRow}>
-            <Text style={styles.ledgerHeaderLabel}>AHEAD OF YOU</Text>
+            <Text style={styles.ledgerHeaderLabel}>NEARBY ALERTS</Text>
             <Text style={styles.ledgerHeaderLabel}>{nearbyAlerts.length} ALERTS</Text>
           </View>
-          <View style={styles.ledgerRule}>
-            {nearbyAlerts.map((nearby, index) => (
-              <AlertLedgerRow
-                key={nearby.alert.alert_id}
-                nearby={nearby}
-                nowMs={now}
-                inverted={index === 0}
-                onPress={() => handleFocusAlert(nearby.alert)}
-              />
-            ))}
-          </View>
+          {/* Persistent, uncapped feed (two-zone layout rework) - can run
+           * long in a dense area, so this scrolls instead of the fixed
+           * top-3 list it replaced. */}
+          <ScrollView style={styles.ledgerScroll}>
+            <View style={styles.ledgerRule}>
+              {nearbyAlerts.map((nearby, index) => (
+                <AlertLedgerRow
+                  key={nearby.alert.alert_id}
+                  nearby={nearby}
+                  nowMs={now}
+                  inverted={index === 0}
+                  onPress={() => handleFocusAlert(nearby.alert)}
+                />
+              ))}
+            </View>
+          </ScrollView>
         </View>
 
         <View style={styles.speedReportRow}>
@@ -164,7 +175,7 @@ function AlertLedgerRow({
   inverted,
   onPress,
 }: {
-  nearby: NearbyAlert;
+  nearby: { alert: WazeAlert; distanceMeters: number };
   nowMs: number;
   inverted: boolean;
   onPress: () => void;
@@ -281,6 +292,9 @@ const styles = StyleSheet.create({
   ledger: {
     flex: 1,
     overflow: 'hidden',
+  },
+  ledgerScroll: {
+    flex: 1,
   },
   ledgerHeaderRow: {
     flexDirection: 'row',
