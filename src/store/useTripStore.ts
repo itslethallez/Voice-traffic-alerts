@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import { submitManualReport } from '../api/backend/client';
 import type { WazeAlert } from '../api/waze/types';
+import { getDeviceId } from '../config/deviceId';
 import type { GeoPoint } from '../geo/types';
 import type { RecentAnnouncement } from '../speech/types';
 
@@ -8,11 +10,12 @@ export type TripStatus = 'listening' | 'muted' | 'offline';
 const MAX_RECENT_ANNOUNCEMENTS = 3;
 
 /**
- * A driver-initiated one-tap "Report police" - local-only. There is no
- * Waze write API in this integration (the Waze client here only ever
- * reads alerts-and-jams), so this cannot be submitted anywhere; it just
- * becomes a local trip record the driver can see in History, the same way
- * a spoken announcement does.
+ * A driver-initiated one-tap "Report police". Pushed to local state
+ * immediately (so the UI's "REPORTED" confirmation and History screen are
+ * never waiting on a network round trip) and separately synced to the
+ * shared backend in the background - see submitManualReport below and
+ * trip/tripRuntime.ts's startup hydration, which reads these back via
+ * fetchOwnReports so they survive a relaunch.
  */
 export interface ManualReport {
   id: string;
@@ -60,6 +63,9 @@ interface TripStoreState {
   tripStartedAtMs: number | null;
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
   pushManualReport: () => void;
+  /** Overwrites manualReports wholesale - used once at startup to hydrate
+   * from the backend (trip/tripRuntime.ts), not a general-purpose setter. */
+  setManualReports: (reports: ManualReport[]) => void;
   setOffline: (offline: boolean) => void;
   setBannerMessage: (message: string | null) => void;
   setLocationError: (message: string | null) => void;
@@ -86,18 +92,35 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         MAX_RECENT_ANNOUNCEMENTS
       ),
     })),
-  pushManualReport: () =>
-    set((state) => ({
-      manualReports: [
-        {
-          id: `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-          createdAtMs: Date.now(),
-          position: get().driverPosition,
-          headingDeg: get().driverPosition ? get().driverHeadingDeg : null,
-        },
-        ...state.manualReports,
-      ],
-    })),
+  pushManualReport: () => {
+    const position = get().driverPosition;
+    const headingDeg = position ? get().driverHeadingDeg : null;
+    const report: ManualReport = {
+      id: `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+      createdAtMs: Date.now(),
+      position,
+      headingDeg,
+    };
+    set((state) => ({ manualReports: [report, ...state.manualReports] }));
+
+    // Fire-and-forget: a driver tapping "Report police" gets the same
+    // instant local confirmation regardless of network state. A sync
+    // failure is logged, not surfaced - this app treats background
+    // data/sync issues as non-blocking (Waze cache-on-failure, offline
+    // banner) rather than alarming mid-drive, and there's no location to
+    // report yet if position is null.
+    if (position) {
+      void (async () => {
+        try {
+          const deviceId = await getDeviceId();
+          await submitManualReport({ deviceId, position, headingDeg });
+        } catch (error) {
+          console.warn('[reports] failed to sync manual report to the backend', error);
+        }
+      })();
+    }
+  },
+  setManualReports: (reports) => set({ manualReports: reports }),
   setOffline: (offline) => set({ isOffline: offline }),
   setBannerMessage: (message) => set({ bannerMessage: message }),
   setLocationError: (message) => set({ locationError: message }),

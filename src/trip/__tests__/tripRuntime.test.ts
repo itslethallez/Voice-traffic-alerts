@@ -13,6 +13,7 @@ const setOffline = jest.fn();
 const setDriverPosition = jest.fn();
 const setVisibleAlerts = jest.fn();
 const setTripStartedAtMs = jest.fn();
+const setManualReports = jest.fn();
 let tripBannerMessage: string | null = null;
 const setBannerMessage = jest.fn((message: string | null) => {
   tripBannerMessage = message;
@@ -32,11 +33,36 @@ jest.mock('../../store/useTripStore', () => ({
       setDriverPosition,
       setVisibleAlerts,
       setTripStartedAtMs,
+      setManualReports,
       get bannerMessage() {
         return tripBannerMessage;
       },
     }),
   },
+}));
+
+/**
+ * Central Database brief: resetTripRuntime() also fires off a live camera
+ * fetch and a manual-reports hydration in the background. fetchFixedCameras
+ * is mocked to always reject, deliberately - if it ever resolved, a
+ * fire-and-forget refreshFixedCameras() call from an earlier test's
+ * beforeEach could race a later test's synchronous `mockCameras = [...]`
+ * assignment (see the live FIXED_SPEED_CAMERAS getter mock below) and pin
+ * getActiveFixedCameras() to the fetched value, silently breaking every
+ * test that depends on mockCameras. Rejecting keeps tripRuntime.ts's own
+ * bundled-fallback path in play, which is what every test below actually
+ * exercises (and matches this suite having no real network anyway).
+ */
+const fetchFixedCameras = jest.fn().mockRejectedValue(new Error('not mocked in this test'));
+const fetchOwnReports = jest.fn().mockResolvedValue([]);
+jest.mock('../../api/backend/client', () => ({
+  fetchFixedCameras: (...args: unknown[]) => fetchFixedCameras(...args),
+  fetchOwnReports: (...args: unknown[]) => fetchOwnReports(...args),
+}));
+
+const getDeviceId = jest.fn().mockResolvedValue('test-device-id');
+jest.mock('../../config/deviceId', () => ({
+  getDeviceId: () => getDeviceId(),
 }));
 
 const speakAsync = jest.fn().mockResolvedValue(undefined);

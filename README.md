@@ -12,7 +12,10 @@ genuinely ahead of the driver and read aloud with text to speech.
 - `expo-speech` for text to speech
 - `expo-task-manager` for the background location task
 - Zustand for state
-- No backend in v1 — see "API key" below.
+- `server/` — a small Vercel + Neon Postgres backend for fixed camera
+  locations and user-submitted reports (see "Central database" below).
+  The Waze API itself still has no backend of its own — see "API key"
+  below.
 
 ## Project structure
 
@@ -147,6 +150,29 @@ ship this to public app stores as-is**. Before a public release, put a thin
 proxy (or serverless function) between the app and OpenWeb Ninja that holds
 the real key server-side, and point the app at that proxy instead.
 
+## Central database
+
+Fixed camera locations and user-submitted police reports live in a Neon
+Postgres database, reachable only through `server/`'s Vercel serverless
+functions - the app never holds database credentials, the same "proxy
+before public release" principle as the Waze key above. See
+`server/schema.sql` for the two tables and `server/api/*.ts` for the
+endpoints.
+
+- Manual reports (`ReportButton`) sync to `POST /api/reports` in the
+  background and are read back on app start via `GET /api/reports`, so
+  they survive a relaunch - previously they were pure in-memory state.
+- Fixed cameras are fetched from `GET /api/cameras` at trip start,
+  falling back to the bundled `src/data/fixedSpeedCameras.ts` snapshot if
+  the fetch fails. `scripts/buildFixedCameraDataset.js` ingests SAPOL's
+  published fixed-camera list into the `fixed_cameras` table (re-run it
+  occasionally; it no longer writes the bundled TS file).
+- Abuse prevention on the public write endpoint is an anonymous
+  per-device ID (`src/config/deviceId.ts`) plus server-side rate limiting
+  - no accounts, no corroboration gating. See `server/api/reports.ts` for
+  the current limits.
+- Voice notes and full user accounts remain explicitly out of scope.
+
 ## Build status
 
 - [x] Step 1: Expo scaffold, TypeScript config, folder structure, env handling
@@ -158,10 +184,12 @@ the real key server-side, and point the app at that proxy instead.
 - [x] Step 7: Settings screen and persistence
 - [x] Step 8: Background location task
 - [x] Step 9: Swap mock for live API
+- [x] Central database: Neon Postgres behind a Vercel API for fixed
+      cameras and user reports (see "Central database" above)
 
 ## Non-goals for v1
 
-No accounts, no user-submitted reports, no map view, no routing, no CarPlay
-or Android Auto, no backend.
+No accounts, no routing, no CarPlay or Android Auto, no centralized voice
+note storage, no social-media scraping.
 
 <!-- test push #2: re-checking GitHub App access after a revocation attempt - harmless, no functional change. -->

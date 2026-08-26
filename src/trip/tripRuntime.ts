@@ -1,6 +1,9 @@
+import { fetchFixedCameras, fetchOwnReports } from '../api/backend/client';
 import { fetchAlertsForBoundingBox } from '../api/waze/fetchAlertsForBoundingBox';
 import { WazeApiError } from '../api/waze/client';
-import { FIXED_SPEED_CAMERAS } from '../data/fixedSpeedCameras';
+import { getDeviceId } from '../config/deviceId';
+import { FIXED_SPEED_CAMERAS, type FixedSpeedCamera } from '../data/fixedSpeedCameras';
+import type { ManualReport } from '../store/useTripStore';
 import { applyFetchResult, initialAlertsCache } from '../engine/cache';
 import { initialMovementState, updateMovementState } from '../engine/movement';
 import { planPoll } from '../engine/pollPlanner';
@@ -61,6 +64,65 @@ let rateLimitBannerShown = false;
  * this trip - see engine/selectSpeedCameraWarning.ts. */
 let speedWarningFiredCheckpoints: Map<string, Set<SpeedWarningCheckpoint>> = new Map();
 
+/**
+ * null until a live fetch from the central `fixed_cameras` table succeeds
+ * (Central Database brief) - getActiveFixedCameras() falls back to the
+ * bundled FIXED_SPEED_CAMERAS constant until then, or forever if the
+ * backend is unreachable, same offline-resilience pattern as the rest of
+ * this file. Deliberately read through a function rather than a plain
+ * variable snapshot of FIXED_SPEED_CAMERAS - tripRuntime.test.ts mocks
+ * that import with a live getter, and a function call here (instead of
+ * copying its value once at module load) keeps that mock working exactly
+ * as before whenever the live fetch hasn't overridden it.
+ */
+let fetchedFixedCameras: FixedSpeedCamera[] | null = null;
+
+function getActiveFixedCameras(): FixedSpeedCamera[] {
+  return fetchedFixedCameras ?? FIXED_SPEED_CAMERAS;
+}
+
+async function refreshFixedCameras(): Promise<void> {
+  try {
+    const remote = await fetchFixedCameras();
+    fetchedFixedCameras = remote.map((camera) => ({
+      id: camera.id,
+      label: camera.roadName,
+      type: 'MID_BLOCK', // the live table only distinguishes fixed/mobile_zone - see server/schema.sql
+      position: { latitude: camera.lat, longitude: camera.lng },
+    }));
+  } catch (error) {
+    console.warn('[cameras] failed to fetch live fixed camera data, using bundled fallback', error);
+  }
+}
+
+function toManualReport(remote: {
+  id: string;
+  createdAt: string;
+  lat: number;
+  lng: number;
+  headingDeg: number | null;
+}): ManualReport {
+  return {
+    id: remote.id,
+    createdAtMs: new Date(remote.createdAt).getTime(),
+    position: { latitude: remote.lat, longitude: remote.lng },
+    headingDeg: remote.headingDeg,
+  };
+}
+
+/** Restores this device's own past reports (Central Database brief) so
+ * HistoryScreen isn't empty just because the app relaunched - manualReports
+ * itself has no persistence of its own (see useTripStore.ts). */
+async function hydrateManualReportsFromBackend(): Promise<void> {
+  try {
+    const deviceId = await getDeviceId();
+    const remoteReports = await fetchOwnReports(deviceId);
+    useTripStore.getState().setManualReports(remoteReports.map(toManualReport));
+  } catch (error) {
+    console.warn('[reports] failed to hydrate manual reports from the backend', error);
+  }
+}
+
 /** Call when a new trip starts (e.g. app cold start) to clear all of the above. */
 export function resetTripRuntime(): void {
   announcerState = createInitialAnnouncerState();
@@ -80,6 +142,11 @@ export function resetTripRuntime(): void {
   useTripStore.getState().setVisibleAlerts([]);
   // History header's "THIS TRIP · {n} MIN" line (design_handoff_instrument_face).
   useTripStore.getState().setTripStartedAtMs(Date.now());
+
+  // Both fire-and-forget: neither blocks trip start, both fall back to
+  // already-in-memory/bundled data on failure (Central Database brief).
+  void refreshFixedCameras();
+  void hydrateManualReportsFromBackend();
 }
 
 const RATE_LIMIT_BANNER_MESSAGE = 'Requests are being limited. Retrying automatically.';
@@ -214,7 +281,8 @@ async function checkSpeedCameraWarning(
   settings: ReturnType<typeof useSettingsStore.getState>
 ): Promise<void> {
   if (!settings.categoriesEnabled.POLICE) return;
-  if (!hasNearbyWarningTarget(driver, FIXED_SPEED_CAMERAS, alertsCache.alerts, nowMs)) return;
+  const cameras = getActiveFixedCameras();
+  if (!hasNearbyWarningTarget(driver, cameras, alertsCache.alerts, nowMs)) return;
 
   prefetchSpeedLimit(driver.position).catch(() => {});
   const speedLimitKmh = getCachedSpeedLimit(driver.position) ?? null;
@@ -222,7 +290,7 @@ async function checkSpeedCameraWarning(
   const warning = selectSpeedCameraWarning({
     driver,
     speedLimitKmh,
-    cameras: FIXED_SPEED_CAMERAS,
+    cameras,
     alerts: alertsCache.alerts,
     firedCheckpoints: speedWarningFiredCheckpoints,
     nowMs,
