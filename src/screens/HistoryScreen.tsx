@@ -82,12 +82,18 @@ export function HistoryScreen() {
             <View style={styles.headerSpacer} />
             <Text style={styles.count}>{totalCount}</Text>
           </View>
-          <Text style={styles.metaLine}>THIS TRIP · {tripMinutes} MIN</Text>
+          {/* Only the "SPOKEN TO YOU" group below is actually trip-scoped
+           * (recentAnnouncements resets every trip) - "YOUR REPORTS" is
+           * hydrated from the backend and deliberately survives a relaunch
+           * (see ManualReport's doc comment in useTripStore.ts), so this
+           * line describes trip duration without claiming it scopes the
+           * whole screen or the {totalCount} badge above. */}
+          <Text style={styles.metaLine}>TRIP TIME · {tripMinutes} MIN</Text>
         </View>
 
         {totalCount === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Nothing announced or reported yet this trip.</Text>
+            <Text style={styles.emptyText}>Nothing announced this trip, and no reports on record.</Text>
           </View>
         ) : (
           <View style={styles.content}>

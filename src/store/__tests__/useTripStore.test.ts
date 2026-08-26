@@ -104,15 +104,78 @@ describe('setManualReports', () => {
     useTripStore.setState(initialState, true);
   });
 
-  it('overwrites manualReports wholesale', () => {
+  it('replaces old hydrated data with freshly-fetched data', () => {
+    const first = [
+      { id: 'remote-1', createdAtMs: 100, position: { latitude: -34.9, longitude: 138.6 }, headingDeg: null },
+    ];
+    useTripStore.getState().setManualReports(first);
+    const second = [
+      { id: 'remote-2', createdAtMs: 200, position: { latitude: -34.9, longitude: 138.6 }, headingDeg: null },
+    ];
+
+    useTripStore.getState().setManualReports(second);
+
+    expect(useTripStore.getState().manualReports).toEqual(second);
+  });
+
+  it('preserves a locally-pushed report not yet reflected in the hydrated list, instead of wiping it', () => {
+    // Regression test: the driver taps "Report police" (pushManualReport)
+    // right as the startup hydration fetch is still in flight - the
+    // fetched snapshot predates that tap, so it won't include it, but the
+    // optimistic local entry must survive the merge rather than being
+    // overwritten away.
     useTripStore.getState().pushManualReport();
+    const localReport = useTripStore.getState().manualReports[0];
     const hydrated = [
-      { id: 'remote-1', createdAtMs: 123, position: { latitude: -34.9, longitude: 138.6 }, headingDeg: null },
+      {
+        id: 'remote-1',
+        createdAtMs: localReport.createdAtMs - 1000,
+        position: { latitude: -34.9, longitude: 138.6 },
+        headingDeg: null,
+      },
     ];
 
     useTripStore.getState().setManualReports(hydrated);
 
-    expect(useTripStore.getState().manualReports).toEqual(hydrated);
+    const { manualReports } = useTripStore.getState();
+    expect(manualReports).toHaveLength(2);
+    expect(manualReports.some((r) => r.id === localReport.id)).toBe(true);
+    expect(manualReports.some((r) => r.id === 'remote-1')).toBe(true);
+  });
+
+  it('does not duplicate a local report once the hydrated list actually includes it', () => {
+    useTripStore.getState().pushManualReport();
+    const localReport = useTripStore.getState().manualReports[0];
+    const hydrated = [
+      {
+        id: localReport.id,
+        createdAtMs: localReport.createdAtMs,
+        position: localReport.position,
+        headingDeg: localReport.headingDeg,
+      },
+    ];
+
+    useTripStore.getState().setManualReports(hydrated);
+
+    expect(useTripStore.getState().manualReports).toHaveLength(1);
+  });
+
+  it('sorts the merged result newest-first', () => {
+    useTripStore.setState({
+      manualReports: [{ id: 'manual-old', createdAtMs: 100, position: null, headingDeg: null }],
+    });
+    const hydrated = [
+      { id: 'remote-1', createdAtMs: 300, position: null, headingDeg: null },
+      { id: 'remote-2', createdAtMs: 200, position: null, headingDeg: null },
+    ];
+
+    useTripStore.getState().setManualReports(hydrated);
+
+    expect(useTripStore.getState().manualReports.map((r) => r.id)).toEqual([
+      'remote-1',
+      'remote-2',
+      'manual-old',
+    ]);
   });
 });
 

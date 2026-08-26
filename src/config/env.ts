@@ -27,10 +27,24 @@ if (!BACKEND_API_URL) {
   );
 }
 
+/**
+ * `new URL(relativePath, base)` resolves per the WHATWG URL spec: without a
+ * trailing slash, the base's last path segment is *replaced* rather than
+ * appended to (the same rule as an HTML `<base href>`) - e.g.
+ * `new URL('reports', 'https://x/api')` resolves to `https://x/reports`,
+ * silently dropping `/api`. wazeApiBaseUrl above is a hardcoded constant
+ * that was written with the trailing slash already in place; this one comes
+ * from a user-supplied .env value, so it's normalized here rather than
+ * trusting whoever sets EXPO_PUBLIC_BACKEND_API_URL to remember it.
+ */
+function withTrailingSlash(url: string): string {
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
 export const env = {
   wazeApiKey: WAZE_API_KEY ?? '',
   wazeApiBaseUrl: 'https://api.openwebninja.com/waze/',
   mapboxAccessToken: MAPBOX_ACCESS_TOKEN ?? '',
   elevenLabsApiKey: ELEVENLABS_API_KEY ?? '',
-  backendApiBaseUrl: BACKEND_API_URL ?? '',
+  backendApiBaseUrl: BACKEND_API_URL ? withTrailingSlash(BACKEND_API_URL) : '',
 };

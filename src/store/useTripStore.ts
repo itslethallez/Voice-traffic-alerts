@@ -63,8 +63,9 @@ interface TripStoreState {
   tripStartedAtMs: number | null;
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
   pushManualReport: () => void;
-  /** Overwrites manualReports wholesale - used once at startup to hydrate
-   * from the backend (trip/tripRuntime.ts), not a general-purpose setter. */
+  /** Merges the backend's list into manualReports - used once at startup to
+   * hydrate from the backend (trip/tripRuntime.ts), not a general-purpose
+   * setter. Not a wholesale overwrite: see its implementation below for why. */
   setManualReports: (reports: ManualReport[]) => void;
   setOffline: (offline: boolean) => void;
   setBannerMessage: (message: string | null) => void;
@@ -120,7 +121,25 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
       })();
     }
   },
-  setManualReports: (reports) => set({ manualReports: reports }),
+  setManualReports: (reports) =>
+    set((state) => {
+      // hydrateManualReportsFromBackend (tripRuntime.ts) runs once,
+      // fire-and-forget, at trip start - if the driver taps "Report
+      // police" (pushManualReport, above) before that fetch resolves, a
+      // plain overwrite here would wipe the optimistic local entry from
+      // the UI even though its background sync may well still succeed.
+      // Locally-generated reports (the "manual-" id prefix pushManualReport
+      // uses, distinct from whatever id format the backend assigns its own
+      // rows) that aren't already present in the fetched list are kept
+      // alongside it instead of being replaced.
+      const remoteIds = new Set(reports.map((r) => r.id));
+      const notYetReconciled = state.manualReports.filter(
+        (r) => r.id.startsWith('manual-') && !remoteIds.has(r.id)
+      );
+      return {
+        manualReports: [...notYetReconciled, ...reports].sort((a, b) => b.createdAtMs - a.createdAtMs),
+      };
+    }),
   setOffline: (offline) => set({ isOffline: offline }),
   setBannerMessage: (message) => set({ bannerMessage: message }),
   setLocationError: (message) => set({ locationError: message }),

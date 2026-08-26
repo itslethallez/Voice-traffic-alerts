@@ -181,6 +181,16 @@ async function upsertCameras(sql, cameras) {
  * behaviour for sites SAPOL has since removed. Never touches rows from
  * other sources (e.g. a future TomTom mobile_zone ingest). */
 async function deleteStaleCameras(sql, currentIds) {
+  if (currentIds.length === 0) {
+    // Postgres' `!= ALL(array)` against an *empty* array is vacuously true
+    // for every row, so an empty currentIds list would otherwise match (and
+    // delete) every SAPOL row in the table. A run that geocoded zero
+    // cameras - SAPOL's page format changed, Mapbox had an outage, every
+    // row failed suburb validation - must never be allowed to wipe the
+    // whole existing dataset just because the upsert above was a no-op.
+    console.warn('No cameras were geocoded this run - skipping stale-row cleanup to avoid deleting the entire dataset.');
+    return 0;
+  }
   const staleRows = await sql`
     SELECT id FROM fixed_cameras WHERE source = 'sapol' AND id != ALL(${currentIds})
   `;
