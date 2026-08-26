@@ -163,3 +163,5 @@ the real key server-side, and point the app at that proxy instead.
 
 No accounts, no user-submitted reports, no map view, no routing, no CarPlay
 or Android Auto, no backend.
+
+<!-- test push #2: re-checking GitHub App access after a revocation attempt - harmless, no functional change. -->
