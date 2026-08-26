@@ -69,7 +69,7 @@ export function RangeSlider({ value, min, max, step, onChange, minLabel, maxLabe
   return (
     <View>
       <View style={styles.touchArea} onLayout={handleLayout} {...panResponder.panHandlers}>
-        <View style={styles.track}>
+        <View style={styles.track} pointerEvents="none">
           <View style={styles.baseLine} />
           <View style={[styles.filledLine, { width: `${fraction * 100}%` }]} />
           <View style={[styles.thumb, { left: thumbLeft }]} />
