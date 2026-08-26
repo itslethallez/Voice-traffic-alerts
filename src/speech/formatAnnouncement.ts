@@ -1,3 +1,4 @@
+import { policeSubtypeLabel } from '../api/waze/policeSubtype';
 import type { WazeAlert, WazeAlertType } from '../api/waze/types';
 import type { AnnounceableAlert } from '../engine/types';
 import { compassDirection, type CompassDirection } from '../geo/bearing';
@@ -21,6 +22,21 @@ const ANNOUNCEMENT_LABELS: Partial<Record<string, string>> = {
  * needs the same spoken label without duplicating this table. */
 export function labelForType(type: WazeAlertType): string {
   return ANNOUNCEMENT_LABELS[type] ?? 'Alert';
+}
+
+/**
+ * Prefers a subtype-specific label for POLICE (e.g. "Visible police") when
+ * Waze's own `subtype` field is present and recognized, falling back to
+ * the generic per-type label - not because subtype support is in doubt
+ * for POLICE generally, only because this specific alert's subtype is
+ * null/missing/unrecognized. See api/waze/policeSubtype.ts.
+ */
+function spokenLabel(alert: WazeAlert): string {
+  if (alert.type === 'POLICE') {
+    const subtypeLabel = policeSubtypeLabel(alert.subtype);
+    if (subtypeLabel) return subtypeLabel;
+  }
+  return labelForType(alert.type);
 }
 
 /** Nearest 100m under 1km, nearest 0.1km at or above 1km. */
@@ -185,7 +201,7 @@ function locationPhrase(
  * trust. The road/route number itself is never spoken - see spokenStreet.
  */
 export function formatAnnouncement(candidate: AnnounceableAlert): string {
-  const label = labelForType(candidate.alert.type);
+  const label = spokenLabel(candidate.alert);
   const distance = formatDistance(candidate.distanceMeters);
   const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
 
@@ -241,7 +257,7 @@ export const NO_BRIEFING_ALERTS_MESSAGE = 'No recent alerts within your briefing
  * formatAnnouncement this never appends "-bound".
  */
 export function formatBriefingAlert(candidate: AnnounceableAlert): string {
-  const label = labelForType(candidate.alert.type);
+  const label = spokenLabel(candidate.alert);
   const age = formatAge(candidate.ageMinutes);
   const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
 

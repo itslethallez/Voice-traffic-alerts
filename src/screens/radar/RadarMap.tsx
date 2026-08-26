@@ -332,7 +332,7 @@ function AlertMarker({
   alert: WazeAlert;
   driverPosition: { latitude: number; longitude: number } | null;
 }) {
-  const meta = useMemo(() => alertTypeMeta(alert.type), [alert.type]);
+  const meta = useMemo(() => alertTypeMeta(alert.type, alert.subtype), [alert.type, alert.subtype]);
   const isPolice = alert.type === 'POLICE';
   const distanceMeters = useMemo(
     () =>
@@ -352,8 +352,8 @@ function AlertMarker({
         style={styles.policeMarker}
         accessibilityLabel={
           distanceMeters !== null
-            ? `Police alert, ${formatCompactDistance(distanceMeters)} ahead`
-            : 'Police alert'
+            ? `${meta.label} alert, ${formatCompactDistance(distanceMeters)} ahead`
+            : `${meta.label} alert`
         }
       >
         <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_MARKER_HEIGHT} />

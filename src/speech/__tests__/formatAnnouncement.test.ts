@@ -21,6 +21,7 @@ import type { AnnounceableAlert } from '../../engine/types';
 function makeCandidate(
   overrides: Partial<AnnounceableAlert> & {
     type?: WazeAlert['type'];
+    subtype?: string | null;
     street?: string | null;
     city?: string | null;
     nearBy?: string | null;
@@ -31,7 +32,7 @@ function makeCandidate(
   const alert: WazeAlert = {
     alert_id: 'wm-test',
     type: overrides.type ?? 'POLICE',
-    subtype: null,
+    subtype: overrides.subtype ?? null,
     reported_by: null,
     description: null,
     image: null,
@@ -88,6 +89,31 @@ describe('formatAnnouncement', () => {
     expect(formatAnnouncement(candidate)).toBe(
       'Police reported on North Terrace, Adelaide, northbound, 800 metres ahead.'
     );
+  });
+
+  it('speaks a subtype-specific label for a POLICE alert when Waze provides one', () => {
+    const candidate = makeCandidate({
+      type: 'POLICE',
+      subtype: 'POLICE_VISIBLE',
+      street: 'North Terrace',
+      city: 'Adelaide',
+      distanceMeters: 800,
+      ageMinutes: 3,
+      driverHeadingDeg: 0,
+    });
+    expect(formatAnnouncement(candidate)).toBe(
+      'Visible police reported on North Terrace, Adelaide, northbound, 800 metres ahead.'
+    );
+  });
+
+  it('falls back to the generic "Police" label when subtype is null', () => {
+    const candidate = makeCandidate({ type: 'POLICE', subtype: null });
+    expect(formatAnnouncement(candidate)).toMatch(/^Police reported/);
+  });
+
+  it('falls back to the generic "Police" label when subtype is the shared NO_SUBTYPE sentinel', () => {
+    const candidate = makeCandidate({ type: 'POLICE', subtype: 'NO_SUBTYPE' });
+    expect(formatAnnouncement(candidate)).toMatch(/^Police reported/);
   });
 
   it('labels an accident report as "Crash"', () => {
@@ -205,6 +231,17 @@ describe('formatAnnouncement', () => {
 });
 
 describe('formatBriefingAlert', () => {
+  it('speaks a subtype-specific label for a POLICE alert when Waze provides one', () => {
+    const candidate = makeCandidate({
+      type: 'POLICE',
+      subtype: 'POLICE_VISIBLE',
+      street: 'Anzac Highway',
+      city: 'Adelaide',
+      ageMinutes: 5,
+    });
+    expect(formatBriefingAlert(candidate)).toBe('Visible police reported on Anzac Highway, Adelaide, 5 minutes ago.');
+  });
+
   it('uses the street and suburb when present, and never appends a direction', () => {
     const candidate = makeCandidate({
       type: 'POLICE',

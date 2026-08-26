@@ -181,7 +181,7 @@ function AlertLedgerRow({
   onPress: () => void;
 }) {
   const { alert, distanceMeters } = nearby;
-  const meta = alertTypeMeta(alert.type);
+  const meta = alertTypeMeta(alert.type, alert.subtype);
   const ageMinutes = ageMinutesOf(alert, nowMs);
   const isStale = ageMinutes > STALE_ANNOUNCEMENT_AGE_MINUTES;
   const place = locationFor(alert, ageMinutes);

@@ -1,3 +1,4 @@
+import { policeSubtypeLabel } from '../api/waze/policeSubtype';
 import type { WazeAlertType } from '../api/waze/types';
 import { colors } from './colors';
 
@@ -32,6 +33,17 @@ const DEFAULT_ALERT_TYPE_META: AlertTypeMeta = {
   letter: '!',
 };
 
-export function alertTypeMeta(type: WazeAlertType): AlertTypeMeta {
-  return ALERT_TYPE_META[type] ?? DEFAULT_ALERT_TYPE_META;
+/**
+ * `subtype` is optional and only ever consulted for POLICE - passing it
+ * for any other type is harmless (policeSubtypeLabel is never called), and
+ * omitting it entirely just means the generic per-type label is used, same
+ * as before this field existed.
+ */
+export function alertTypeMeta(type: WazeAlertType, subtype?: string | null): AlertTypeMeta {
+  const base = ALERT_TYPE_META[type] ?? DEFAULT_ALERT_TYPE_META;
+  if (type === 'POLICE') {
+    const subtypeLabel = policeSubtypeLabel(subtype);
+    if (subtypeLabel) return { ...base, label: subtypeLabel };
+  }
+  return base;
 }

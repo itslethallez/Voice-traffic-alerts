@@ -122,7 +122,7 @@ export function HistoryScreen() {
 function SpokenHistoryRow({ row, nowMs, inverted }: { row: SpokenRow; nowMs: number; inverted: boolean }) {
   const { candidate } = row.announcement;
   const alert = candidate.alert;
-  const meta = alertTypeMeta(alert.type);
+  const meta = alertTypeMeta(alert.type, alert.subtype);
   const location = announcementLocation(candidate);
   const { value, unit } = splitCompactDistance(candidate.distanceMeters);
   const place = location.street && location.area ? `${location.street}, ${location.area}` : (location.street ?? location.area);
