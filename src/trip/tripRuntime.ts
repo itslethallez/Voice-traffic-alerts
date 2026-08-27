@@ -84,6 +84,13 @@ function getActiveFixedCameras(): FixedSpeedCamera[] {
 async function refreshFixedCameras(): Promise<void> {
   try {
     const remote = await fetchFixedCameras();
+    // An empty-but-successful response (table not populated yet, or a
+    // scrape run that genuinely found nothing) must not override the
+    // bundled fallback - `[] ?? FIXED_SPEED_CAMERAS` would otherwise
+    // evaluate to `[]` (empty isn't null/undefined), silently disabling
+    // every fixed-camera warning instead of falling back to the 92 bundled
+    // ones. Only take over once there's real data to take over with.
+    if (remote.length === 0) return;
     fetchedFixedCameras = remote.map((camera) => ({
       id: camera.id,
       label: camera.roadName,
