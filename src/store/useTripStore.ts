@@ -19,6 +19,16 @@ const MAX_RECENT_ANNOUNCEMENTS = 3;
  */
 export interface ManualReport {
   id: string;
+  /**
+   * Stable identity for map markers / feed rows / RadarMap's seenAlertIds
+   * tracking - distinct from `id`, which pushManualReport swaps from a
+   * locally-generated "manual-*" placeholder to the backend's real id once
+   * its background sync succeeds. Using `id` for that instead would make a
+   * successfully-synced report look like a brand new alert (remounted
+   * marker, re-triggered new-alert spotlight) the moment it swaps.
+   * localKey is assigned once at creation and never changes afterwards.
+   */
+  localKey: string;
   createdAtMs: number;
   position: GeoPoint | null;
   headingDeg: number | null;
@@ -99,6 +109,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
     const localId = `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
     const report: ManualReport = {
       id: localId,
+      localKey: localId,
       createdAtMs: Date.now(),
       position,
       headingDeg,

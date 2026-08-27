@@ -116,6 +116,22 @@ describe('pushManualReport', () => {
     expect(manualReports[0].id).not.toBe(localId);
   });
 
+  it('keeps localKey unchanged when the id is swapped for the backend id', async () => {
+    // Regression test (Bugbot: "Id swap retriggers new-alert spotlight"):
+    // manualReportToWazeAlert uses localKey, not id, as alert_id precisely
+    // so that RadarMap's seenAlertIds tracking and React list keys don't
+    // see this swap as a brand new alert.
+    submitManualReport.mockResolvedValueOnce({ id: 'remote-real-id' });
+    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
+
+    useTripStore.getState().pushManualReport();
+    const localKey = useTripStore.getState().manualReports[0].localKey;
+    await flushMicrotasks();
+
+    expect(useTripStore.getState().manualReports[0].id).toBe('remote-real-id');
+    expect(useTripStore.getState().manualReports[0].localKey).toBe(localKey);
+  });
+
   it('does not resurrect a duplicate when hydration resolves after the id has already been reconciled', async () => {
     submitManualReport.mockResolvedValueOnce({ id: 'remote-real-id' });
     useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
@@ -129,6 +145,7 @@ describe('pushManualReport', () => {
     useTripStore.getState().setManualReports([
       {
         id: 'remote-real-id',
+        localKey: 'remote-real-id',
         createdAtMs: syncedReport.createdAtMs,
         position: syncedReport.position,
         headingDeg: syncedReport.headingDeg,
@@ -146,11 +163,23 @@ describe('setManualReports', () => {
 
   it('replaces old hydrated data with freshly-fetched data', () => {
     const first = [
-      { id: 'remote-1', createdAtMs: 100, position: { latitude: -34.9, longitude: 138.6 }, headingDeg: null },
+      {
+        id: 'remote-1',
+        localKey: 'remote-1',
+        createdAtMs: 100,
+        position: { latitude: -34.9, longitude: 138.6 },
+        headingDeg: null,
+      },
     ];
     useTripStore.getState().setManualReports(first);
     const second = [
-      { id: 'remote-2', createdAtMs: 200, position: { latitude: -34.9, longitude: 138.6 }, headingDeg: null },
+      {
+        id: 'remote-2',
+        localKey: 'remote-2',
+        createdAtMs: 200,
+        position: { latitude: -34.9, longitude: 138.6 },
+        headingDeg: null,
+      },
     ];
 
     useTripStore.getState().setManualReports(second);
@@ -169,6 +198,7 @@ describe('setManualReports', () => {
     const hydrated = [
       {
         id: 'remote-1',
+        localKey: 'remote-1',
         createdAtMs: localReport.createdAtMs - 1000,
         position: { latitude: -34.9, longitude: 138.6 },
         headingDeg: null,
@@ -189,6 +219,7 @@ describe('setManualReports', () => {
     const hydrated = [
       {
         id: localReport.id,
+        localKey: localReport.localKey,
         createdAtMs: localReport.createdAtMs,
         position: localReport.position,
         headingDeg: localReport.headingDeg,
@@ -202,11 +233,13 @@ describe('setManualReports', () => {
 
   it('sorts the merged result newest-first', () => {
     useTripStore.setState({
-      manualReports: [{ id: 'manual-old', createdAtMs: 100, position: null, headingDeg: null }],
+      manualReports: [
+        { id: 'manual-old', localKey: 'manual-old', createdAtMs: 100, position: null, headingDeg: null },
+      ],
     });
     const hydrated = [
-      { id: 'remote-1', createdAtMs: 300, position: null, headingDeg: null },
-      { id: 'remote-2', createdAtMs: 200, position: null, headingDeg: null },
+      { id: 'remote-1', localKey: 'remote-1', createdAtMs: 300, position: null, headingDeg: null },
+      { id: 'remote-2', localKey: 'remote-2', createdAtMs: 200, position: null, headingDeg: null },
     ];
 
     useTripStore.getState().setManualReports(hydrated);

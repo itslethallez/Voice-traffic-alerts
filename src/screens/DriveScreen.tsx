@@ -6,7 +6,7 @@ import { haversineDistance } from '../geo/distance';
 import { announcementLocation } from '../speech/formatAnnouncement';
 import { STALE_ANNOUNCEMENT_AGE_MINUTES } from '../speech/constants';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
-import { manualReportToWazeAlert } from '../store/manualReportAlert';
+import { visibleManualReportAlerts } from '../store/manualReportAlert';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { alertTypeMeta } from '../theme/alertTypeMeta';
@@ -112,16 +112,12 @@ export function DriveScreen() {
     // was never read on this screen at all, so a report had no visible
     // trace in the feed.
     const reports = enabledTypes.has('POLICE')
-      ? manualReports
-          .filter((report): report is typeof report & { position: NonNullable<typeof report.position> } =>
-            Boolean(report.position)
-          )
-          .map(manualReportToWazeAlert)
+      ? visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters)
       : [];
     return [...waze, ...reports]
       .map((alert) => ({ alert, distanceMeters: haversineDistance(driverPosition, alert) }))
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [visibleAlerts, manualReports, enabledTypes, driverPosition]);
+  }, [visibleAlerts, manualReports, enabledTypes, driverPosition, now, announceDistanceMeters]);
 
   const status = statusFor({ masterMute, isOffline });
   const metaLine = `${statusLabel(status).toUpperCase()} · ${formatAwarenessKm(announceDistanceMeters)} KM AWARENESS · ${

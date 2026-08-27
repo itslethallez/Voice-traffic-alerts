@@ -7,7 +7,7 @@ import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import type { GeoPoint } from '../../geo/types';
 import { announcementLocation } from '../../speech/formatAnnouncement';
-import { manualReportToWazeAlert } from '../../store/manualReportAlert';
+import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { enabledTypesFromSettings } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
@@ -119,6 +119,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const manualReports = useTripStore((state) => state.manualReports);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
+  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
 
   /** Same enabled-categories state that already drives speech filtering
    * (engine/selectAlerts.ts, engine/selectBriefingAlerts.ts both take this
@@ -134,13 +135,9 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
     // manualReports was never read here at all, so a report had no visible
     // trace on the map.
     if (!enabledTypes.has('POLICE')) return waze;
-    const reports = manualReports
-      .filter((report): report is typeof report & { position: NonNullable<typeof report.position> } =>
-        Boolean(report.position)
-      )
-      .map(manualReportToWazeAlert);
+    const reports = visibleManualReportAlerts(manualReports, driverPosition, Date.now(), announceDistanceMeters);
     return [...waze, ...reports];
-  }, [visibleAlerts, manualReports, enabledTypes]);
+  }, [visibleAlerts, manualReports, enabledTypes, driverPosition, announceDistanceMeters]);
 
   /**
    * Auto-locate for genuinely new alerts (two-zone layout rework): briefly

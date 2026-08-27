@@ -103,6 +103,10 @@ function toManualReport(remote: {
 }): ManualReport {
   return {
     id: remote.id,
+    // A hydrated report's id never changes after this (no local-id swap to
+    // reconcile, unlike pushManualReport's optimistic entries), so it's
+    // already a stable key.
+    localKey: remote.id,
     createdAtMs: new Date(remote.createdAt).getTime(),
     position: { latitude: remote.lat, longitude: remote.lng },
     headingDeg: remote.headingDeg,
