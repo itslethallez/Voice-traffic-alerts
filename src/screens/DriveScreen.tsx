@@ -8,6 +8,7 @@ import { announcementLocation } from '../speech/formatAnnouncement';
 import { STALE_ANNOUNCEMENT_AGE_MINUTES } from '../speech/constants';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
 import { visibleManualReportAlerts } from '../store/manualReportAlert';
+import { visibleNearbyReportAlerts } from '../store/nearbyReportAlert';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { alertTypeMeta } from '../theme/alertTypeMeta';
@@ -82,6 +83,7 @@ export function DriveScreen() {
   const driverPosition = useTripStore((state) => state.driverPosition);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
+  const nearbyReports = useTripStore((state) => state.nearbyReports);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -124,17 +126,21 @@ export function DriveScreen() {
   const nearbyAlerts = useMemo(() => {
     if (!driverPosition) return [];
     const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
-    // A submitted report is inherently a police report, same POLICE-toggle
-    // gating as every other category filter here - previously manualReports
-    // was never read on this screen at all, so a report had no visible
-    // trace in the feed.
-    const reports = enabledTypes.has('POLICE')
-      ? visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters)
-      : [];
-    return [...waze, ...reports]
+    // Each report's own category gates it now, not a blanket POLICE check -
+    // a report can be ACCIDENT/HAZARD since the category picker (Report
+    // button) shipped, so gating all of them on the POLICE toggle would hide
+    // a driver's own accident/hazard reports when POLICE is off, and never
+    // hide them when ACCIDENT/HAZARD themselves are off.
+    const ownReports = visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters).filter(
+      (alert) => enabledTypes.has(alert.type)
+    );
+    const nearby = visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters).filter(
+      (alert) => enabledTypes.has(alert.type)
+    );
+    return [...waze, ...ownReports, ...nearby]
       .map((alert) => ({ alert, distanceMeters: haversineDistance(driverPosition, alert) }))
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [visibleAlerts, manualReports, enabledTypes, driverPosition, now, announceDistanceMeters]);
+  }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, now, announceDistanceMeters]);
 
   const status = statusFor({ masterMute, isOffline });
   const gpsClause = driverPosition ? 'GPS LOCKED' : 'ACQUIRING GPS';

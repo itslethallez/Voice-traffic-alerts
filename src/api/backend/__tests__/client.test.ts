@@ -2,7 +2,7 @@ jest.mock('../../../config/env', () => ({
   env: { backendApiBaseUrl: 'https://shotgun-api.example.com/api/' },
 }));
 
-import { BackendApiError, fetchFixedCameras, fetchOwnReports, submitManualReport } from '../client';
+import { BackendApiError, deleteManualReport, fetchFixedCameras, fetchOwnReports, submitManualReport } from '../client';
 
 const originalFetch = globalThis.fetch;
 
@@ -20,27 +20,42 @@ afterEach(() => {
 
 describe('submitManualReport', () => {
   it('POSTs the report shape the server expects and returns the parsed row', async () => {
-    const remoteReport = { id: 'r1', createdAt: '2026-01-01T00:00:00.000Z', category: 'POLICE', lat: -34.9, lng: 138.6, headingDeg: 90, note: null, confidence: 1, corroborationCount: 0 };
+    const remoteReport = { id: 'r1', createdAt: '2026-01-01T00:00:00.000Z', category: 'POLICE', subtype: null, lat: -34.9, lng: 138.6, headingDeg: 90, note: null, confidence: 1, corroborationCount: 0 };
     mockFetchOnce({ ok: true, json: () => Promise.resolve(remoteReport) });
 
     const result = await submitManualReport({
       deviceId: 'device-1',
       position: { latitude: -34.9, longitude: 138.6 },
       headingDeg: 90,
+      category: 'POLICE',
+      subtype: 'POLICE_VISIBLE',
     });
 
     expect(result).toEqual(remoteReport);
     const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
     expect(url).toBe('https://shotgun-api.example.com/api/reports');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ deviceId: 'device-1', lat: -34.9, lng: 138.6, headingDeg: 90 });
+    expect(JSON.parse(init.body)).toEqual({
+      deviceId: 'device-1',
+      lat: -34.9,
+      lng: 138.6,
+      headingDeg: 90,
+      category: 'POLICE',
+      subtype: 'POLICE_VISIBLE',
+    });
   });
 
   it('throws a BackendApiError with isRateLimited when the server returns 429', async () => {
     mockFetchOnce({ ok: false, status: 429 });
 
     await expect(
-      submitManualReport({ deviceId: 'device-1', position: { latitude: -34.9, longitude: 138.6 }, headingDeg: null })
+      submitManualReport({
+        deviceId: 'device-1',
+        position: { latitude: -34.9, longitude: 138.6 },
+        headingDeg: null,
+        category: 'ACCIDENT',
+        subtype: null,
+      })
     ).rejects.toMatchObject({ name: 'BackendApiError', status: 429, isRateLimited: true });
   });
 
@@ -48,8 +63,35 @@ describe('submitManualReport', () => {
     globalThis.fetch = jest.fn().mockRejectedValue(new Error('network down'));
 
     await expect(
-      submitManualReport({ deviceId: 'device-1', position: { latitude: -34.9, longitude: 138.6 }, headingDeg: null })
+      submitManualReport({
+        deviceId: 'device-1',
+        position: { latitude: -34.9, longitude: 138.6 },
+        headingDeg: null,
+        category: 'ACCIDENT',
+        subtype: null,
+      })
     ).rejects.toMatchObject({ name: 'BackendApiError', status: null, isRateLimited: false });
+  });
+});
+
+describe('deleteManualReport', () => {
+  it('sends a DELETE request keyed by report id and device id', async () => {
+    mockFetchOnce({ ok: true, json: () => Promise.resolve({ id: 'r1' }) });
+
+    await deleteManualReport({ id: 'r1', deviceId: 'device-1' });
+
+    const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('https://shotgun-api.example.com/api/reports?id=r1&deviceId=device-1');
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('throws a BackendApiError when the server rejects the delete', async () => {
+    mockFetchOnce({ ok: false, status: 404 });
+
+    await expect(deleteManualReport({ id: 'r1', deviceId: 'device-1' })).rejects.toMatchObject({
+      name: 'BackendApiError',
+      status: 404,
+    });
   });
 });
 

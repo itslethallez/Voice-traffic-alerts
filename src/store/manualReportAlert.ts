@@ -4,13 +4,19 @@ import type { WazeAlert } from '../api/waze/types';
 import type { ManualReport } from './useTripStore';
 
 /**
- * How long a submitted report is still treated as a live hazard on the map
- * and nearby-alerts feed. manualReports itself stays hydrated from the
- * backend indefinitely (useTripStore.ts, for History's benefit), so
- * without this cutoff a report from an earlier trip would resurface as a
- * current sighting every time the app relaunches near that spot.
+ * How long a report is still treated as a live hazard on the map and
+ * nearby-alerts feed, measured from whichever is more recent: its creation,
+ * or the last time another driver confirmed it's still there
+ * (lastConfirmedAtMs - see ManualReport/NearbyReport in useTripStore.ts).
+ * A confirmation resets this window rather than extending some separate
+ * clock, so an actively-corroborated report can stay visible indefinitely
+ * while an unconfirmed one quietly drops off after this long. Exported for
+ * nearbyReportAlert.ts (the "other devices' reports" counterpart of this
+ * file) and kept in sync with the server's own LIVE_REPORT_WINDOW_MINUTES
+ * (server/api/reports.ts), which stops a stale report from even being
+ * downloaded in the first place.
  */
-const LIVE_REPORT_MAX_AGE_MS = 60 * 60 * 1000;
+export const LIVE_REPORT_WINDOW_MS = 25 * 60 * 1000;
 
 /**
  * Converts a driver-submitted report into the minimal synthetic WazeAlert
@@ -34,8 +40,8 @@ const LIVE_REPORT_MAX_AGE_MS = 60 * 60 * 1000;
 export function manualReportToWazeAlert(report: ManualReport & { position: NonNullable<ManualReport['position']> }): WazeAlert {
   return {
     alert_id: report.localKey,
-    type: 'POLICE',
-    subtype: null,
+    type: report.category,
+    subtype: report.subtype,
     reported_by: null,
     description: null,
     image: null,
@@ -59,15 +65,16 @@ export function manualReportToWazeAlert(report: ManualReport & { position: NonNu
 
 /**
  * The bounded, render-ready view of manualReports for the map and feed:
- * only reports with a known position, still within LIVE_REPORT_MAX_AGE_MS,
- * and within maxDistanceMeters of the driver's current position - the same
- * "nearby and current" scope Waze's own alerts already have for free (each
- * poll fetches only what's within that radius of wherever the driver is
- * right now). manualReports itself has neither bound (it's a
- * backend-hydrated, all-time-by-device list kept for History), so without
- * this, DriveScreen.tsx's feed and RadarMap.tsx's markers/new-alert
- * spotlight would treat every report the device has ever filed - including
- * ones from other trips, in other places - as a live hazard right now.
+ * only reports with a known position, still within LIVE_REPORT_WINDOW_MS of
+ * their last confirmation (or creation, if never confirmed), and within
+ * maxDistanceMeters of the driver's current position - the same "nearby and
+ * current" scope Waze's own alerts already have for free (each poll fetches
+ * only what's within that radius of wherever the driver is right now).
+ * manualReports itself has neither bound (it's a backend-hydrated, all-time-
+ * by-device list kept for History), so without this, DriveScreen.tsx's feed
+ * and RadarMap.tsx's markers/new-alert spotlight would treat every report
+ * the device has ever filed - including ones from other trips, in other
+ * places - as a live hazard right now.
  */
 export function visibleManualReportAlerts(
   manualReports: ManualReport[],
@@ -81,7 +88,7 @@ export function visibleManualReportAlerts(
       (report): report is ManualReport & { position: NonNullable<ManualReport['position']> } =>
         Boolean(report.position)
     )
-    .filter((report) => nowMs - report.createdAtMs <= LIVE_REPORT_MAX_AGE_MS)
+    .filter((report) => nowMs - report.lastConfirmedAtMs <= LIVE_REPORT_WINDOW_MS)
     .filter((report) => haversineDistance(driverPosition, report.position) <= maxDistanceMeters)
     .map(manualReportToWazeAlert);
 }

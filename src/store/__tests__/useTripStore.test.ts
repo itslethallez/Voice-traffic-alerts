@@ -4,13 +4,41 @@ jest.mock('../../config/deviceId', () => ({
 }));
 
 const submitManualReport = jest.fn().mockResolvedValue({ id: 'remote-default-id' });
+const deleteManualReport = jest.fn().mockResolvedValue(undefined);
+const confirmManualReport = jest.fn().mockResolvedValue({ id: 'remote-default-id' });
 jest.mock('../../api/backend/client', () => ({
   submitManualReport: (...args: unknown[]) => submitManualReport(...args),
+  deleteManualReport: (...args: unknown[]) => deleteManualReport(...args),
+  confirmManualReport: (...args: unknown[]) => confirmManualReport(...args),
 }));
 
-import { useTripStore } from '../useTripStore';
+import { useTripStore, type ManualReport, type NearbyReport } from '../useTripStore';
 
 const initialState = useTripStore.getState();
+
+function makeManualReport(overrides: Partial<ManualReport> & Pick<ManualReport, 'id' | 'localKey' | 'createdAtMs'>): ManualReport {
+  return {
+    position: null,
+    headingDeg: null,
+    category: 'POLICE',
+    subtype: null,
+    lastConfirmedAtMs: overrides.createdAtMs,
+    ...overrides,
+  };
+}
+
+function makeNearbyReport(overrides: Partial<NearbyReport> & Pick<NearbyReport, 'id'>): NearbyReport {
+  return {
+    category: 'POLICE',
+    subtype: null,
+    position: { latitude: -34.9, longitude: 138.6 },
+    headingDeg: null,
+    createdAtMs: 1000,
+    lastConfirmedAtMs: 1000,
+    confirmedByThisDevice: false,
+    ...overrides,
+  };
+}
 
 /** pushManualReport's backend sync is fire-and-forget - flush the
  * microtask queue so its awaited getDeviceId()/submitManualReport() calls
@@ -24,6 +52,7 @@ describe('pushManualReport', () => {
     useTripStore.setState(initialState, true);
     getDeviceId.mockClear();
     submitManualReport.mockClear();
+    deleteManualReport.mockClear();
   });
 
   it('prepends a new report carrying the current driver position', () => {
@@ -78,7 +107,30 @@ describe('pushManualReport', () => {
       deviceId: 'test-device-id',
       position: { latitude: -34.9, longitude: 138.6 },
       headingDeg: 90,
+      category: 'POLICE',
+      subtype: null,
     });
+  });
+
+  it('defaults to category POLICE with no subtype when called with no arguments', () => {
+    useTripStore.getState().pushManualReport();
+
+    const { manualReports } = useTripStore.getState();
+    expect(manualReports[0].category).toBe('POLICE');
+    expect(manualReports[0].subtype).toBeNull();
+  });
+
+  it('records the given category and subtype', async () => {
+    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
+
+    useTripStore.getState().pushManualReport('POLICE', 'POLICE_VISIBLE');
+    await flushMicrotasks();
+
+    expect(useTripStore.getState().manualReports[0].category).toBe('POLICE');
+    expect(useTripStore.getState().manualReports[0].subtype).toBe('POLICE_VISIBLE');
+    expect(submitManualReport).toHaveBeenCalledWith(
+      expect.objectContaining({ category: 'POLICE', subtype: 'POLICE_VISIBLE' })
+    );
   });
 
   it('does not attempt to sync when the driver position is not yet known', async () => {
@@ -143,13 +195,13 @@ describe('pushManualReport', () => {
     // Simulate the startup hydration fetch resolving afterwards and already
     // including this same report under the backend's id.
     useTripStore.getState().setManualReports([
-      {
+      makeManualReport({
         id: 'remote-real-id',
         localKey: 'remote-real-id',
         createdAtMs: syncedReport.createdAtMs,
         position: syncedReport.position,
         headingDeg: syncedReport.headingDeg,
-      },
+      }),
     ]);
 
     expect(useTripStore.getState().manualReports).toHaveLength(1);
@@ -163,23 +215,21 @@ describe('setManualReports', () => {
 
   it('replaces old hydrated data with freshly-fetched data', () => {
     const first = [
-      {
+      makeManualReport({
         id: 'remote-1',
         localKey: 'remote-1',
         createdAtMs: 100,
         position: { latitude: -34.9, longitude: 138.6 },
-        headingDeg: null,
-      },
+      }),
     ];
     useTripStore.getState().setManualReports(first);
     const second = [
-      {
+      makeManualReport({
         id: 'remote-2',
         localKey: 'remote-2',
         createdAtMs: 200,
         position: { latitude: -34.9, longitude: 138.6 },
-        headingDeg: null,
-      },
+      }),
     ];
 
     useTripStore.getState().setManualReports(second);
@@ -196,13 +246,12 @@ describe('setManualReports', () => {
     useTripStore.getState().pushManualReport();
     const localReport = useTripStore.getState().manualReports[0];
     const hydrated = [
-      {
+      makeManualReport({
         id: 'remote-1',
         localKey: 'remote-1',
         createdAtMs: localReport.createdAtMs - 1000,
         position: { latitude: -34.9, longitude: 138.6 },
-        headingDeg: null,
-      },
+      }),
     ];
 
     useTripStore.getState().setManualReports(hydrated);
@@ -217,13 +266,13 @@ describe('setManualReports', () => {
     useTripStore.getState().pushManualReport();
     const localReport = useTripStore.getState().manualReports[0];
     const hydrated = [
-      {
+      makeManualReport({
         id: localReport.id,
         localKey: localReport.localKey,
         createdAtMs: localReport.createdAtMs,
         position: localReport.position,
         headingDeg: localReport.headingDeg,
-      },
+      }),
     ];
 
     useTripStore.getState().setManualReports(hydrated);
@@ -233,13 +282,11 @@ describe('setManualReports', () => {
 
   it('sorts the merged result newest-first', () => {
     useTripStore.setState({
-      manualReports: [
-        { id: 'manual-old', localKey: 'manual-old', createdAtMs: 100, position: null, headingDeg: null },
-      ],
+      manualReports: [makeManualReport({ id: 'manual-old', localKey: 'manual-old', createdAtMs: 100 })],
     });
     const hydrated = [
-      { id: 'remote-1', localKey: 'remote-1', createdAtMs: 300, position: null, headingDeg: null },
-      { id: 'remote-2', localKey: 'remote-2', createdAtMs: 200, position: null, headingDeg: null },
+      makeManualReport({ id: 'remote-1', localKey: 'remote-1', createdAtMs: 300 }),
+      makeManualReport({ id: 'remote-2', localKey: 'remote-2', createdAtMs: 200 }),
     ];
 
     useTripStore.getState().setManualReports(hydrated);
@@ -249,6 +296,126 @@ describe('setManualReports', () => {
       'remote-2',
       'manual-old',
     ]);
+  });
+});
+
+describe('removeManualReport', () => {
+  beforeEach(() => {
+    useTripStore.setState(initialState, true);
+    getDeviceId.mockClear();
+    deleteManualReport.mockClear();
+  });
+
+  it('removes the report from local state immediately', () => {
+    useTripStore.getState().pushManualReport();
+    const { localKey } = useTripStore.getState().manualReports[0];
+
+    useTripStore.getState().removeManualReport(localKey);
+
+    expect(useTripStore.getState().manualReports).toHaveLength(0);
+  });
+
+  it('does nothing if the localKey is not found', () => {
+    useTripStore.getState().pushManualReport();
+
+    useTripStore.getState().removeManualReport('not-a-real-key');
+
+    expect(useTripStore.getState().manualReports).toHaveLength(1);
+  });
+
+  it('deletes an already-synced report from the backend', async () => {
+    useTripStore.getState().setManualReports([
+      makeManualReport({ id: 'remote-1', localKey: 'remote-1', createdAtMs: 100 }),
+    ]);
+
+    useTripStore.getState().removeManualReport('remote-1');
+    await flushMicrotasks();
+
+    expect(deleteManualReport).toHaveBeenCalledWith({ id: 'remote-1', deviceId: 'test-device-id' });
+  });
+
+  it('does not call the backend for a report that has not synced yet, but deletes it once its sync resolves', async () => {
+    // Regression: deleting a report the instant after tapping "Report",
+    // before its background submitManualReport call has resolved, must not
+    // let that now-orphaned sync silently recreate the report the driver
+    // just asked to remove.
+    useTripStore.getState().setDriverPosition({ latitude: -34.9, longitude: 138.6 }, 90, 60);
+    submitManualReport.mockResolvedValueOnce({ id: 'remote-real-id' });
+
+    useTripStore.getState().pushManualReport();
+    const { localKey } = useTripStore.getState().manualReports[0];
+    useTripStore.getState().removeManualReport(localKey);
+
+    expect(deleteManualReport).not.toHaveBeenCalled();
+
+    await flushMicrotasks();
+
+    expect(deleteManualReport).toHaveBeenCalledWith({ id: 'remote-real-id', deviceId: 'test-device-id' });
+    expect(useTripStore.getState().manualReports).toHaveLength(0);
+  });
+});
+
+describe('confirmNearbyReport', () => {
+  beforeEach(() => {
+    useTripStore.setState(initialState, true);
+    getDeviceId.mockClear();
+    confirmManualReport.mockClear();
+  });
+
+  it('optimistically marks the report confirmed by this device', () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1' })]);
+
+    useTripStore.getState().confirmNearbyReport('remote-1');
+
+    expect(useTripStore.getState().nearbyReports[0].confirmedByThisDevice).toBe(true);
+  });
+
+  it('resets the report\'s lastConfirmedAtMs to now', () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1', lastConfirmedAtMs: 1000 })]);
+
+    useTripStore.getState().confirmNearbyReport('remote-1');
+
+    expect(useTripStore.getState().nearbyReports[0].lastConfirmedAtMs).toBeGreaterThan(1000);
+  });
+
+  it('syncs the confirmation to the backend in the background', async () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1' })]);
+
+    useTripStore.getState().confirmNearbyReport('remote-1');
+    await flushMicrotasks();
+
+    expect(confirmManualReport).toHaveBeenCalledWith({ id: 'remote-1', deviceId: 'test-device-id' });
+  });
+
+  it('does nothing if the report is not found', () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1' })]);
+
+    useTripStore.getState().confirmNearbyReport('not-a-real-id');
+
+    expect(confirmManualReport).not.toHaveBeenCalled();
+    expect(useTripStore.getState().nearbyReports[0].confirmedByThisDevice).toBe(false);
+  });
+
+  it('does not call the backend again for a report already confirmed by this device', () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1', confirmedByThisDevice: true })]);
+
+    useTripStore.getState().confirmNearbyReport('remote-1');
+
+    expect(confirmManualReport).not.toHaveBeenCalled();
+  });
+});
+
+describe('setNearbyReports', () => {
+  beforeEach(() => {
+    useTripStore.setState(initialState, true);
+  });
+
+  it('replaces nearbyReports wholesale', () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1' })]);
+
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-2' })]);
+
+    expect(useTripStore.getState().nearbyReports.map((r) => r.id)).toEqual(['remote-2']);
   });
 });
 

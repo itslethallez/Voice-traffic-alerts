@@ -1,13 +1,26 @@
 import { create } from 'zustand';
-import { submitManualReport } from '../api/backend/client';
+import { confirmManualReport, deleteManualReport, submitManualReport } from '../api/backend/client';
+import type { ManualReportCategory } from '../api/backend/types';
 import type { WazeAlert } from '../api/waze/types';
 import { getDeviceId } from '../config/deviceId';
 import type { GeoPoint } from '../geo/types';
 import type { RecentAnnouncement } from '../speech/types';
 
+export type { ManualReportCategory };
+
 export type TripStatus = 'listening' | 'muted' | 'offline';
 
 const MAX_RECENT_ANNOUNCEMENTS = 3;
+
+/**
+ * localKeys of reports removed via removeManualReport before their
+ * background submitManualReport sync (pushManualReport) had resolved. Not
+ * store state itself - purely an internal handshake between the two so a
+ * report deleted the instant after it was created doesn't silently
+ * reappear once its now-orphaned sync call finishes and writes a row this
+ * device already asked to have deleted.
+ */
+const pendingDeleteLocalKeys = new Set<string>();
 
 /**
  * A driver-initiated one-tap "Report police". Pushed to local state
@@ -32,6 +45,41 @@ export interface ManualReport {
   createdAtMs: number;
   position: GeoPoint | null;
   headingDeg: number | null;
+  category: ManualReportCategory;
+  /** Only meaningful for category 'POLICE' (e.g. 'POLICE_VISIBLE') - null
+   * for every other category, and for a POLICE report where the driver
+   * didn't pick a sub-choice. */
+  subtype: string | null;
+  /** ms epoch of this report's last confirmation by another device, or its
+   * creation if no one's confirmed it yet - manualReportAlert.ts's
+   * LIVE_REPORT_WINDOW_MS is measured from this, not createdAtMs, so a
+   * corroborated report can stay visible past the base window while an
+   * unconfirmed one ages out on schedule. Only ever updated by re-hydrating
+   * from the backend (this device has no way to learn about another
+   * device's confirmation of its own report mid-trip otherwise). */
+  lastConfirmedAtMs: number;
+}
+
+/**
+ * Another device's report, fetched fresh each poll (trip/tripRuntime.ts's
+ * refreshNearbyReports) so this driver can see and confirm it on their own
+ * map - the counterpart to ManualReport, which is only ever this device's
+ * own reports. Never has a local-id-swap dance (ManualReport's id/localKey
+ * split): a NearbyReport is only ever an already-synced backend row, never
+ * created optimistically here.
+ */
+export interface NearbyReport {
+  id: string;
+  category: ManualReportCategory;
+  subtype: string | null;
+  position: GeoPoint;
+  headingDeg: number | null;
+  createdAtMs: number;
+  lastConfirmedAtMs: number;
+  /** Whether this device has already tapped "confirm" on this report -
+   * greys out the confirm affordance instead of re-offering it, and stops
+   * confirmNearbyReport from making a pointless repeat backend call. */
+  confirmedByThisDevice: boolean;
 }
 
 /**
@@ -65,6 +113,11 @@ interface TripStoreState {
   driverSpeedKmh: number;
   visibleAlerts: WazeAlert[];
   manualReports: ManualReport[];
+  /** Other devices' nearby, still-live reports - refreshed on the same
+   * cadence as the Waze poll (trip/tripRuntime.ts), always a full replace
+   * (unlike manualReports' merge-preserving setManualReports) since these
+   * are never created optimistically on this device. */
+  nearbyReports: NearbyReport[];
   /** ms epoch this trip started - set once from tripRuntime.ts's
    * resetTripRuntime(), the existing "call when a new trip starts" hook.
    * Drives the History header's "THIS TRIP · {n} MIN" line
@@ -72,11 +125,23 @@ interface TripStoreState {
    * starts. */
   tripStartedAtMs: number | null;
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
-  pushManualReport: () => void;
+  pushManualReport: (category?: ManualReportCategory, subtype?: string | null) => void;
+  /** Removes one of this device's own reports, locally and (in the
+   * background) on the backend - identified by localKey since that's the
+   * one identifier that never changes across the local-id-to-backend-id
+   * swap below. */
+  removeManualReport: (localKey: string) => void;
   /** Merges the backend's list into manualReports - used once at startup to
    * hydrate from the backend (trip/tripRuntime.ts), not a general-purpose
    * setter. Not a wholesale overwrite: see its implementation below for why. */
   setManualReports: (reports: ManualReport[]) => void;
+  /** Replaces nearbyReports wholesale - always a fresh poll snapshot, no
+   * merge concerns since nothing here is ever created locally. */
+  setNearbyReports: (reports: NearbyReport[]) => void;
+  /** Optimistically marks a nearby report confirmed by this device and
+   * syncs that in the background - a no-op if already confirmed (the
+   * backend would no-op it too, but this also skips the pointless request). */
+  confirmNearbyReport: (id: string) => void;
   setOffline: (offline: boolean) => void;
   setBannerMessage: (message: string | null) => void;
   setLocationError: (message: string | null) => void;
@@ -95,6 +160,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   driverSpeedKmh: 0,
   visibleAlerts: [],
   manualReports: [],
+  nearbyReports: [],
   tripStartedAtMs: null,
   pushAnnouncement: (announcement) =>
     set((state) => ({
@@ -103,30 +169,47 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         MAX_RECENT_ANNOUNCEMENTS
       ),
     })),
-  pushManualReport: () => {
+  pushManualReport: (category = 'POLICE', subtype = null) => {
     const position = get().driverPosition;
     const headingDeg = position ? get().driverHeadingDeg : null;
     const localId = `manual-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+    const createdAtMs = Date.now();
     const report: ManualReport = {
       id: localId,
       localKey: localId,
-      createdAtMs: Date.now(),
+      createdAtMs,
       position,
       headingDeg,
+      category,
+      subtype,
+      lastConfirmedAtMs: createdAtMs,
     };
     set((state) => ({ manualReports: [report, ...state.manualReports] }));
 
-    // Fire-and-forget: a driver tapping "Report police" gets the same
-    // instant local confirmation regardless of network state. A sync
-    // failure is logged, not surfaced - this app treats background
-    // data/sync issues as non-blocking (Waze cache-on-failure, offline
-    // banner) rather than alarming mid-drive, and there's no location to
-    // report yet if position is null.
+    // Fire-and-forget: a driver tapping "Report" gets the same instant
+    // local confirmation regardless of network state. A sync failure is
+    // logged, not surfaced - this app treats background data/sync issues
+    // as non-blocking (Waze cache-on-failure, offline banner) rather than
+    // alarming mid-drive, and there's no location to report yet if
+    // position is null.
     if (position) {
       void (async () => {
         try {
           const deviceId = await getDeviceId();
-          const remote = await submitManualReport({ deviceId, position, headingDeg });
+          const remote = await submitManualReport({ deviceId, position, headingDeg, category, subtype });
+          if (pendingDeleteLocalKeys.has(localId)) {
+            // removeManualReport already ran for this report before its
+            // sync resolved - there was nothing to delete on the backend
+            // yet at that point, so do it now instead of reinserting a
+            // report the driver already asked to remove.
+            pendingDeleteLocalKeys.delete(localId);
+            try {
+              await deleteManualReport({ id: remote.id, deviceId });
+            } catch (error) {
+              console.warn('[reports] failed to delete manual report from the backend', error);
+            }
+            return;
+          }
           // Swap the optimistic local id for the backend's real one. The
           // backend assigns its own id (never the "manual-" one this
           // function generated), so without this, setManualReports'
@@ -142,6 +225,29 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         }
       })();
     }
+  },
+  removeManualReport: (localKey) => {
+    const report = get().manualReports.find((r) => r.localKey === localKey);
+    if (!report) return;
+    set((state) => ({ manualReports: state.manualReports.filter((r) => r.localKey !== localKey) }));
+
+    if (report.id.startsWith('manual-')) {
+      // Still mid-flight to the backend (or never had a position to sync
+      // at all) - nothing to delete there yet. Flag it so pushManualReport's
+      // sync callback deletes it the moment it lands instead of the report
+      // reappearing next time manualReports is hydrated from the backend.
+      pendingDeleteLocalKeys.add(localKey);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const deviceId = await getDeviceId();
+        await deleteManualReport({ id: report.id, deviceId });
+      } catch (error) {
+        console.warn('[reports] failed to delete manual report from the backend', error);
+      }
+    })();
   },
   setManualReports: (reports) =>
     set((state) => {
@@ -162,6 +268,26 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         manualReports: [...notYetReconciled, ...reports].sort((a, b) => b.createdAtMs - a.createdAtMs),
       };
     }),
+  setNearbyReports: (reports) => set({ nearbyReports: reports }),
+  confirmNearbyReport: (id) => {
+    const report = get().nearbyReports.find((r) => r.id === id);
+    if (!report || report.confirmedByThisDevice) return;
+    const confirmedAtMs = Date.now();
+    set((state) => ({
+      nearbyReports: state.nearbyReports.map((r) =>
+        r.id === id ? { ...r, confirmedByThisDevice: true, lastConfirmedAtMs: confirmedAtMs } : r
+      ),
+    }));
+
+    void (async () => {
+      try {
+        const deviceId = await getDeviceId();
+        await confirmManualReport({ id, deviceId });
+      } catch (error) {
+        console.warn('[reports] failed to confirm a nearby report on the backend', error);
+      }
+    })();
+  },
   setOffline: (offline) => set({ isOffline: offline }),
   setBannerMessage: (message) => set({ bannerMessage: message }),
   setLocationError: (message) => set({ locationError: message }),

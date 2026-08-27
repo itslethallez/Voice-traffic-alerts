@@ -160,17 +160,33 @@ before public release" principle as the Waze key above. See
 endpoints.
 
 - Manual reports (`ReportButton`) sync to `POST /api/reports` in the
-  background and are read back on app start via `GET /api/reports`, so
-  they survive a relaunch - previously they were pure in-memory state.
+  background and are read back on app start via `GET /api/reports?deviceId=`,
+  so they survive a relaunch - previously they were pure in-memory state.
+- Other devices' nearby reports are fetched via
+  `GET /api/reports?deviceId=&lat=&lng=&radiusMeters=` on the same cadence
+  as the Waze poll, so a driver can see - and confirm - another driver's
+  report on their own map. A report a driver made is private to their own
+  device until someone else's app requests this endpoint and it happens to
+  be nearby and still live.
+- A report stays "live" (shown on the map/feed) for `LIVE_REPORT_WINDOW_MS`
+  (25 minutes, `src/store/manualReportAlert.ts`) since it was created or
+  last confirmed, whichever is more recent - after that it simply drops out
+  of both the map/feed and the nearby-reports query, though the row itself
+  is kept (History still shows it for the reporter). Tapping another
+  device's report marker sends `PATCH /api/reports?id=` ("still there?"),
+  which resets that window and increments `corroboration_count`; the
+  backend rejects a device confirming its own report, and a second
+  confirmation from the same device is a no-op (`report_confirmations`'
+  `(report_id, device_id)` primary key).
 - Fixed cameras are fetched from `GET /api/cameras` at trip start,
   falling back to the bundled `src/data/fixedSpeedCameras.ts` snapshot if
   the fetch fails. `scripts/buildFixedCameraDataset.js` ingests SAPOL's
   published fixed-camera list into the `fixed_cameras` table (re-run it
   occasionally; it no longer writes the bundled TS file).
-- Abuse prevention on the public write endpoint is an anonymous
+- Abuse prevention on the public write endpoints is an anonymous
   per-device ID (`src/config/deviceId.ts`) plus server-side rate limiting
-  - no accounts, no corroboration gating. See `server/api/reports.ts` for
-  the current limits.
+  on new reports - no accounts. See `server/api/reports.ts` for the
+  current limits.
 - Voice notes and full user accounts remain explicitly out of scope.
 
 ## Build status

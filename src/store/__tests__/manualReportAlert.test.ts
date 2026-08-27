@@ -11,6 +11,9 @@ function makeReport(overrides: Partial<ManualReport> = {}): ManualReport {
     createdAtMs: NOW_MS,
     position: DRIVER_POSITION,
     headingDeg: null,
+    category: 'POLICE',
+    subtype: null,
+    lastConfirmedAtMs: NOW_MS,
     ...overrides,
   };
 }
@@ -22,6 +25,22 @@ describe('manualReportToWazeAlert', () => {
     const alert = manualReportToWazeAlert(report as ManualReport & { position: NonNullable<ManualReport['position']> });
 
     expect(alert.alert_id).toBe('manual-1');
+  });
+
+  it('carries the report\'s own category and subtype through, not a hardcoded POLICE', () => {
+    const report = makeReport({ category: 'HAZARD', subtype: null });
+
+    const alert = manualReportToWazeAlert(report as ManualReport & { position: NonNullable<ManualReport['position']> });
+
+    expect(alert.type).toBe('HAZARD');
+  });
+
+  it('carries a POLICE report\'s subtype through', () => {
+    const report = makeReport({ category: 'POLICE', subtype: 'POLICE_VISIBLE' });
+
+    const alert = manualReportToWazeAlert(report as ManualReport & { position: NonNullable<ManualReport['position']> });
+
+    expect(alert.subtype).toBe('POLICE_VISIBLE');
   });
 });
 
@@ -45,18 +64,30 @@ describe('visibleManualReportAlerts', () => {
     expect(alerts[0].alert_id).toBe('manual-1');
   });
 
-  it('excludes a report older than the live-report age cutoff', () => {
+  it('excludes a report not confirmed within the live-report window', () => {
     // Regression test (Bugbot: "Stale reports shown as live alerts") - a
     // report from an earlier trip shouldn't resurface as a current hazard.
-    const twoHoursAgo = makeReport({ createdAtMs: NOW_MS - 2 * 60 * 60 * 1000 });
+    const overThirtyMinutesSinceConfirmed = makeReport({ lastConfirmedAtMs: NOW_MS - 30 * 60 * 1000 });
 
-    expect(visibleManualReportAlerts([twoHoursAgo], DRIVER_POSITION, NOW_MS, 5000)).toEqual([]);
+    expect(visibleManualReportAlerts([overThirtyMinutesSinceConfirmed], DRIVER_POSITION, NOW_MS, 5000)).toEqual([]);
   });
 
-  it('includes a report right at the age cutoff boundary', () => {
-    const fiftyNineMinutesAgo = makeReport({ createdAtMs: NOW_MS - 59 * 60 * 1000 });
+  it('includes a report right at the confirmation-window boundary', () => {
+    const twentyFourMinutesSinceConfirmed = makeReport({ lastConfirmedAtMs: NOW_MS - 24 * 60 * 1000 });
 
-    expect(visibleManualReportAlerts([fiftyNineMinutesAgo], DRIVER_POSITION, NOW_MS, 5000)).toHaveLength(1);
+    expect(visibleManualReportAlerts([twentyFourMinutesSinceConfirmed], DRIVER_POSITION, NOW_MS, 5000)).toHaveLength(1);
+  });
+
+  it('stays visible past the base window when confirmed more recently than it was created', () => {
+    // A confirmation resets the window from the moment it happens, not just
+    // extends the original creation time - a report created 2 hours ago but
+    // confirmed 5 minutes ago is still live.
+    const confirmedRecently = makeReport({
+      createdAtMs: NOW_MS - 2 * 60 * 60 * 1000,
+      lastConfirmedAtMs: NOW_MS - 5 * 60 * 1000,
+    });
+
+    expect(visibleManualReportAlerts([confirmedRecently], DRIVER_POSITION, NOW_MS, 5000)).toHaveLength(1);
   });
 
   it('excludes a report outside maxDistanceMeters of the driver', () => {

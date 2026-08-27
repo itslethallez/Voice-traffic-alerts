@@ -1,9 +1,11 @@
-import { fetchFixedCameras, fetchOwnReports } from '../api/backend/client';
+import { fetchFixedCameras, fetchNearbyReports, fetchOwnReports } from '../api/backend/client';
+import type { ManualReportCategory, RemoteManualReport } from '../api/backend/types';
 import { fetchAlertsForBoundingBox } from '../api/waze/fetchAlertsForBoundingBox';
 import { WazeApiError } from '../api/waze/client';
 import { getDeviceId } from '../config/deviceId';
 import { FIXED_SPEED_CAMERAS, type FixedSpeedCamera } from '../data/fixedSpeedCameras';
-import type { ManualReport } from '../store/useTripStore';
+import type { GeoPoint } from '../geo/types';
+import type { ManualReport, NearbyReport } from '../store/useTripStore';
 import { applyFetchResult, initialAlertsCache } from '../engine/cache';
 import { initialMovementState, updateMovementState } from '../engine/movement';
 import { planPoll } from '../engine/pollPlanner';
@@ -101,13 +103,18 @@ async function refreshFixedCameras(): Promise<void> {
   }
 }
 
-function toManualReport(remote: {
-  id: string;
-  createdAt: string;
-  lat: number;
-  lng: number;
-  headingDeg: number | null;
-}): ManualReport {
+const MANUAL_REPORT_CATEGORIES = new Set<ManualReportCategory>(['POLICE', 'ACCIDENT', 'HAZARD']);
+
+/** Falls back to POLICE for any row the category picker's ALLOWED_CATEGORIES
+ * wouldn't recognise (e.g. rows written before it existed) - matches the
+ * backend column's own default. Shared by both toManualReport and
+ * toNearbyReport below, since a remote row's category needs the same
+ * defensive narrowing regardless of whose device it came from. */
+function resolveCategory(category: string): ManualReportCategory {
+  return MANUAL_REPORT_CATEGORIES.has(category as ManualReportCategory) ? (category as ManualReportCategory) : 'POLICE';
+}
+
+function toManualReport(remote: RemoteManualReport): ManualReport {
   return {
     id: remote.id,
     // A hydrated report's id never changes after this (no local-id swap to
@@ -117,6 +124,22 @@ function toManualReport(remote: {
     createdAtMs: new Date(remote.createdAt).getTime(),
     position: { latitude: remote.lat, longitude: remote.lng },
     headingDeg: remote.headingDeg,
+    category: resolveCategory(remote.category),
+    subtype: remote.subtype,
+    lastConfirmedAtMs: new Date(remote.lastConfirmedAt).getTime(),
+  };
+}
+
+function toNearbyReport(remote: RemoteManualReport): NearbyReport {
+  return {
+    id: remote.id,
+    category: resolveCategory(remote.category),
+    subtype: remote.subtype,
+    position: { latitude: remote.lat, longitude: remote.lng },
+    headingDeg: remote.headingDeg,
+    createdAtMs: new Date(remote.createdAt).getTime(),
+    lastConfirmedAtMs: new Date(remote.lastConfirmedAt).getTime(),
+    confirmedByThisDevice: remote.confirmedByRequester ?? false,
   };
 }
 
@@ -130,6 +153,25 @@ async function hydrateManualReportsFromBackend(): Promise<void> {
     useTripStore.getState().setManualReports(remoteReports.map(toManualReport));
   } catch (error) {
     console.warn('[reports] failed to hydrate manual reports from the backend', error);
+  }
+}
+
+/**
+ * Refreshes "other devices' reports near here" (the map's confirmable
+ * layer) on the same cadence as the Waze poll (pollIfDue below) - fire-and-
+ * forget, same as refreshFixedCameras/hydrateManualReportsFromBackend, so a
+ * slow/failed fetch never blocks the poll it rides alongside. A full
+ * replace each call (setNearbyReports), not a merge: unlike manualReports,
+ * nothing here is ever created optimistically on this device, so there's
+ * no in-flight local entry that a plain overwrite could wipe out.
+ */
+async function refreshNearbyReports(position: GeoPoint, radiusMeters: number): Promise<void> {
+  try {
+    const deviceId = await getDeviceId();
+    const remoteReports = await fetchNearbyReports({ deviceId, position, radiusMeters });
+    useTripStore.getState().setNearbyReports(remoteReports.map(toNearbyReport));
+  } catch (error) {
+    console.warn('[reports] failed to fetch nearby reports from other devices', error);
   }
 }
 
@@ -244,6 +286,10 @@ async function pollIfDue(driver: DriverState, nowMs: number, announceDistanceMet
   if (!isDue) return;
 
   await fetchAndApplyAlerts(plan.boundingBox, nowMs);
+  // Fire-and-forget, riding the same cadence gate as the Waze poll above -
+  // no separate polling loop of its own, and a slow/failed fetch here
+  // never delays the Waze alerts this same tick already fetched.
+  void refreshNearbyReports(driver.position, announceDistanceMeters);
 }
 
 /**

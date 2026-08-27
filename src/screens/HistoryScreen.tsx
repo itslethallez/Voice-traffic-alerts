@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Animated, PanResponder, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { compassDirection } from '../geo/bearing';
 import { announcementLocation } from '../speech/formatAnnouncement';
 import type { RecentAnnouncement } from '../speech/types';
 import { useTripStore, type ManualReport } from '../store/useTripStore';
 import { alertTypeMeta } from '../theme/alertTypeMeta';
-import { instrument } from '../theme/colors';
+import { colors, instrument } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { formatRelativeTime } from './formatRelativeTime';
 import { PoliceLightBar } from './radar/PoliceLightBar';
 import { splitCompactDistance } from './radar/formatCompactDistance';
+
+/** How far a report row can be dragged to reveal its delete action - wide
+ * enough for the DELETE label, matching the usual iOS/Android swipe-action
+ * width rather than a bespoke number. */
+const DELETE_REVEAL_WIDTH = 88;
 
 /** "just now" -> "NOW", "6m ago" -> "6M", "45s ago" -> "45S" - the ledger's
  * compact tabular time column, built from the same formatRelativeTime()
@@ -42,6 +47,7 @@ type HistoryRow = SpokenRow | ReportRow;
 export function HistoryScreen() {
   const recentAnnouncements = useTripStore((state) => state.recentAnnouncements);
   const manualReports = useTripStore((state) => state.manualReports);
+  const removeManualReport = useTripStore((state) => state.removeManualReport);
   const tripStartedAtMs = useTripStore((state) => state.tripStartedAtMs);
 
   const [now, setNow] = useState(() => Date.now());
@@ -114,7 +120,9 @@ export function HistoryScreen() {
                   <Text style={styles.groupLabelText}>YOUR REPORTS</Text>
                 </View>
                 {reportRows.map((row, index) => (
-                  <ReportHistoryRow key={row.id} row={row} nowMs={now} inverted={index === 0} />
+                  <SwipeToDeleteRow key={row.id} onDelete={() => removeManualReport(row.report.localKey)}>
+                    <ReportHistoryRow row={row} nowMs={now} inverted={index === 0} />
+                  </SwipeToDeleteRow>
                 ))}
               </>
             ) : null}
@@ -161,6 +169,7 @@ function SpokenHistoryRow({ row, nowMs, inverted }: { row: SpokenRow; nowMs: num
 
 function ReportHistoryRow({ row, nowMs, inverted }: { row: ReportRow; nowMs: number; inverted: boolean }) {
   const { report } = row;
+  const meta = alertTypeMeta(report.category, report.subtype);
   const subtitle =
     report.headingDeg !== null
       ? `${compassDirection(report.headingDeg).toUpperCase()}BOUND · LOCATION ATTACHED`
@@ -168,14 +177,79 @@ function ReportHistoryRow({ row, nowMs, inverted }: { row: ReportRow; nowMs: num
 
   return (
     <View style={[styles.row, inverted && styles.rowInverted]}>
-      <PoliceLightBar orientation="vertical" width={22} height={22} inverted={inverted} />
+      {report.category === 'POLICE' ? (
+        <PoliceLightBar orientation="vertical" width={22} height={22} inverted={inverted} />
+      ) : (
+        <View style={[styles.rowMark, inverted && styles.rowMarkInverted]}>
+          <Text style={[styles.rowMarkLetter, inverted && styles.rowTextInverted]}>{meta.letter}</Text>
+        </View>
+      )}
       <View style={styles.rowText}>
-        <Text style={[styles.rowTitle, inverted && styles.rowTextInverted]}>POLICE REPORTED</Text>
+        <Text style={[styles.rowTitle, inverted && styles.rowTextInverted]}>{meta.label.toUpperCase()} REPORTED</Text>
         <Text style={[styles.rowSubtitle, inverted ? styles.rowSubtitleInverted : styles.rowSubtitleNormal]}>
           {subtitle}
         </Text>
       </View>
       <Text style={[styles.rowTime, inverted && styles.rowTextInverted]}>{formatLedgerTime(row.atMs, nowMs)}</Text>
+    </View>
+  );
+}
+
+/**
+ * Drag-left-to-reveal delete, for a driver's own reports only (spoken rows
+ * aren't deletable - there's nothing to delete, they're just a record of
+ * what was said). Built on core RN Animated/PanResponder rather than adding
+ * a gesture library: this is the only swipeable control in the app so far,
+ * and react-native-gesture-handler isn't a dependency here yet.
+ */
+function SwipeToDeleteRow({ onDelete, children }: { onDelete: () => void; children: ReactNode }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const openRef = useRef(false);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderMove: (_, gesture) => {
+        const base = openRef.current ? -DELETE_REVEAL_WIDTH : 0;
+        translateX.setValue(Math.min(0, Math.max(-DELETE_REVEAL_WIDTH, base + gesture.dx)));
+      },
+      onPanResponderRelease: (_, gesture) => {
+        const base = openRef.current ? -DELETE_REVEAL_WIDTH : 0;
+        const shouldOpen = base + gesture.dx < -DELETE_REVEAL_WIDTH / 2;
+        openRef.current = shouldOpen;
+        setIsOpen(shouldOpen);
+        Animated.spring(translateX, {
+          toValue: shouldOpen ? -DELETE_REVEAL_WIDTH : 0,
+          useNativeDriver: true,
+          bounciness: 0,
+        }).start();
+      },
+    })
+  ).current;
+
+  const closeRow = useCallback(() => {
+    openRef.current = false;
+    setIsOpen(false);
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+  }, [translateX]);
+
+  return (
+    <View style={styles.swipeContainer}>
+      <View style={styles.deleteBacking}>
+        <Pressable
+          onPress={onDelete}
+          style={styles.deleteButton}
+          accessibilityRole="button"
+          accessibilityLabel="Delete this report"
+        >
+          <Text style={styles.deleteButtonText}>DELETE</Text>
+        </Pressable>
+      </View>
+      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
+        <Pressable onPress={isOpen ? closeRow : undefined}>{children}</Pressable>
+      </Animated.View>
     </View>
   );
 }
@@ -321,5 +395,25 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: instrument.paper,
     fontVariant: ['tabular-nums'],
+  },
+  swipeContainer: {
+    overflow: 'hidden',
+  },
+  deleteBacking: {
+    ...StyleSheet.absoluteFill,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  deleteButton: {
+    width: DELETE_REVEAL_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.policeLightRed,
+  },
+  deleteButtonText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 12,
+    letterSpacing: 1,
+    color: instrument.paper,
   },
 });

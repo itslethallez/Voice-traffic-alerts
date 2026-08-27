@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
 import { compassDirection } from '../../geo/bearing';
@@ -8,9 +8,10 @@ import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import type { GeoPoint } from '../../geo/types';
 import { announcementLocation } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
+import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
 import { enabledTypesFromSettings } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
-import { useTripStore } from '../../store/useTripStore';
+import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { hud, instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
@@ -120,6 +121,8 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
+  const nearbyReports = useTripStore((state) => state.nearbyReports);
+  const confirmNearbyReport = useTripStore((state) => state.confirmNearbyReport);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
@@ -133,14 +136,21 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const enabledTypes = useMemo(() => enabledTypesFromSettings(categoriesEnabled), [categoriesEnabled]);
   const mapVisibleAlerts = useMemo(() => {
     const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
-    // A submitted report is inherently a police report - gated on the same
-    // POLICE toggle, same as every other category filter here. Previously
-    // manualReports was never read here at all, so a report had no visible
-    // trace on the map.
-    if (!enabledTypes.has('POLICE')) return waze;
-    const reports = visibleManualReportAlerts(manualReports, driverPosition, Date.now(), announceDistanceMeters);
-    return [...waze, ...reports];
-  }, [visibleAlerts, manualReports, enabledTypes, driverPosition, announceDistanceMeters]);
+    // Each report's own category gates it now, not a blanket POLICE check -
+    // a report can be ACCIDENT/HAZARD since the category picker (Report
+    // button) shipped, so gating all of them on the POLICE toggle would hide
+    // a driver's own accident/hazard reports when POLICE is off, and never
+    // hide them when ACCIDENT/HAZARD themselves are off.
+    const ownReports = visibleManualReportAlerts(manualReports, driverPosition, Date.now(), announceDistanceMeters).filter(
+      (alert) => enabledTypes.has(alert.type)
+    );
+    const nearby = visibleNearbyReportAlerts(nearbyReports, driverPosition, Date.now(), announceDistanceMeters).filter(
+      (alert) => enabledTypes.has(alert.type)
+    );
+    return [...waze, ...ownReports, ...nearby];
+  }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, announceDistanceMeters]);
+
+  const nearbyReportsById = useMemo(() => new Map(nearbyReports.map((report) => [report.id, report])), [nearbyReports]);
 
   /**
    * Auto-locate for genuinely new alerts (two-zone layout rework): briefly
@@ -358,7 +368,12 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
             coordinate={[alert.longitude, alert.latitude]}
             anchor={{ x: 0.5, y: 1 }}
           >
-            <AlertMarker alert={alert} driverPosition={driverPosition} />
+            <AlertMarker
+              alert={alert}
+              driverPosition={driverPosition}
+              nearbyReport={nearbyReportsById.get(alert.alert_id)}
+              onConfirm={confirmNearbyReport}
+            />
           </Mapbox.MarkerView>
         ))}
       </Mapbox.MapView>
@@ -396,9 +411,16 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
 function AlertMarker({
   alert,
   driverPosition,
+  nearbyReport,
+  onConfirm,
 }: {
   alert: WazeAlert;
   driverPosition: { latitude: number; longitude: number } | null;
+  /** Set only when this marker is another device's report (RadarMap's
+   * nearbyReportsById lookup) - undefined for Waze's own alerts and for
+   * this device's own reports, neither of which are confirmable. */
+  nearbyReport?: NearbyReport;
+  onConfirm?: (id: string) => void;
 }) {
   const meta = useMemo(() => alertTypeMeta(alert.type, alert.subtype), [alert.type, alert.subtype]);
   const isPolice = alert.type === 'POLICE';
@@ -410,35 +432,28 @@ function AlertMarker({
     [driverPosition, alert.latitude, alert.longitude]
   );
 
-  if (isPolice) {
+  const baseLabel =
+    distanceMeters !== null
+      ? `${meta.label} alert, ${formatCompactDistance(distanceMeters)} ahead`
+      : `${meta.label} alert`;
+  const canConfirm = nearbyReport !== undefined && !nearbyReport.confirmedByThisDevice;
+  const accessibilityLabel = nearbyReport
+    ? nearbyReport.confirmedByThisDevice
+      ? `${baseLabel}, reported by another driver, confirmed`
+      : `${baseLabel}, reported by another driver - double tap to confirm it's still there`
+    : baseLabel;
+
+  const marker = isPolice ? (
     // Just the flashing blue/red light bar - no letter, no distance chip.
     // A real police car doesn't wear a label or a range-finder, just its
     // lights; the other alert types still get the letter+distance
     // treatment since they have no equivalent "just show what it is" glyph.
-    return (
-      <View
-        style={styles.policeMarker}
-        accessibilityLabel={
-          distanceMeters !== null
-            ? `${meta.label} alert, ${formatCompactDistance(distanceMeters)} ahead`
-            : `${meta.label} alert`
-        }
-      >
-        <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_MARKER_HEIGHT} />
-      </View>
-    );
-  }
-
-  return (
+    <View style={styles.policeMarker}>
+      <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_MARKER_HEIGHT} />
+    </View>
+  ) : (
     <View style={styles.alertMarker}>
-      <View
-        style={styles.alertPin}
-        accessibilityLabel={
-          distanceMeters !== null
-            ? `${meta.label} alert, ${formatCompactDistance(distanceMeters)} ahead`
-            : `${meta.label} alert`
-        }
-      >
+      <View style={styles.alertPin}>
         <Text style={styles.alertPinLetter}>{meta.letter}</Text>
       </View>
       {distanceMeters !== null ? (
@@ -447,6 +462,27 @@ function AlertMarker({
         </View>
       ) : null}
     </View>
+  );
+
+  if (!nearbyReport) {
+    return <View accessibilityLabel={accessibilityLabel}>{marker}</View>;
+  }
+
+  // Another device's report: tappable to confirm ("still there?"), with a
+  // small chip below the usual marker showing whether this device already
+  // has. Waze's own alerts and this device's own reports never reach this
+  // branch (nearbyReport is only set for the map's other-devices layer).
+  return (
+    <Pressable
+      onPress={canConfirm && onConfirm ? () => onConfirm(nearbyReport.id) : undefined}
+      accessibilityRole={canConfirm ? 'button' : undefined}
+      accessibilityLabel={accessibilityLabel}
+    >
+      {marker}
+      <View style={[styles.confirmChip, nearbyReport.confirmedByThisDevice && styles.confirmChipDone]}>
+        <Text style={styles.confirmChipText}>{nearbyReport.confirmedByThisDevice ? 'CONFIRMED' : 'STILL THERE?'}</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -561,6 +597,23 @@ const styles = StyleSheet.create({
   alertDistanceText: {
     fontFamily: fontFamily.bold,
     fontSize: 10,
+    letterSpacing: 0.5,
+    color: instrument.paper,
+  },
+  confirmChip: {
+    marginTop: 3,
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+    backgroundColor: hud.accent,
+  },
+  confirmChipDone: {
+    backgroundColor: instrument.ink,
+    opacity: 0.7,
+  },
+  confirmChipText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 9,
     letterSpacing: 0.5,
     color: instrument.paper,
   },

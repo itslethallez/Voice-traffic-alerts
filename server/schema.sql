@@ -26,13 +26,40 @@ CREATE TABLE user_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   category TEXT NOT NULL DEFAULT 'POLICE',
+  subtype TEXT,
   lat DOUBLE PRECISION NOT NULL,
   lng DOUBLE PRECISION NOT NULL,
   heading_deg DOUBLE PRECISION,
   note TEXT,
   confidence INTEGER NOT NULL DEFAULT 1,
   corroboration_count INTEGER NOT NULL DEFAULT 0,
-  device_id TEXT NOT NULL
+  device_id TEXT NOT NULL,
+  -- Starts equal to created_at (both DEFAULT now()) and is bumped by a
+  -- confirmation from another device (see report_confirmations below) - the
+  -- single source of truth for whether a report is still "live" (within
+  -- LIVE_REPORT_WINDOW_MS of it, client-side) or has aged out with no one
+  -- else corroborating it.
+  last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX user_reports_device_id_created_at_idx ON user_reports (device_id, created_at DESC);
+
+-- Added after the table above first shipped (report-category picker: Police
+-- gets a Visible/Hidden subtype, Accident/Hazard don't) - there's still no
+-- migration runner, so this is the idempotent way for an already-provisioned
+-- database to pick up the new column without re-running the CREATE TABLE.
+ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS subtype TEXT;
+ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+-- One row per device that has confirmed a given report ("still there?"),
+-- and the thing that makes a confirmation idempotent per device - the
+-- (report_id, device_id) primary key is what stops a single device from
+-- confirming the same report over and over to keep it alive by itself.
+-- ON DELETE CASCADE: if a report is ever deleted (removeManualReport /
+-- DELETE /api/reports), its confirmation rows have no reason to survive it.
+CREATE TABLE IF NOT EXISTS report_confirmations (
+  report_id UUID NOT NULL REFERENCES user_reports(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (report_id, device_id)
+);
