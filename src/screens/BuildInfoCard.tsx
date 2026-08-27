@@ -29,7 +29,7 @@ type CheckState = 'idle' | 'checking' | 'downloading' | 'upToDate' | 'ready' | '
 /**
  * Answers "what's actually running on this device right now" directly,
  * rather than inferring it from "did I relaunch enough times." Most of
- * the confusion in getting OTA updates (ElevenLabs key, distance default,
+ * the confusion in getting OTA updates (Google TTS key, distance default,
  * etc.) to actually show up traced back to not being able to tell,
  * on-device, whether a push had landed yet - this makes that observable,
  * and lets the driver force a check/apply instead of blindly relaunching.

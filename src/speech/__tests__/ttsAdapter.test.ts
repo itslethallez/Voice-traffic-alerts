@@ -14,39 +14,39 @@ jest.mock('expo-speech', () => ({
   stop: () => stop(),
 }));
 
-const speakWithElevenLabsAsync = jest.fn<Promise<void>, [string, Record<string, unknown>?]>();
-const stopElevenLabsSpeech = jest.fn();
+const speakWithGoogleTtsAsync = jest.fn<Promise<void>, [string, Record<string, unknown>?]>();
+const stopGoogleTtsSpeech = jest.fn();
 
-jest.mock('../elevenLabsTts', () => ({
-  speakWithElevenLabsAsync: (...args: [string, Record<string, unknown>?]) =>
-    speakWithElevenLabsAsync(...args),
-  stopElevenLabsSpeech: () => stopElevenLabsSpeech(),
+jest.mock('../googleTts', () => ({
+  speakWithGoogleTtsAsync: (...args: [string, Record<string, unknown>?]) =>
+    speakWithGoogleTtsAsync(...args),
+  stopGoogleTtsSpeech: () => stopGoogleTtsSpeech(),
 }));
 
-import { getLastElevenLabsError, speakAsync, stopSpeaking } from '../ttsAdapter';
+import { getLastGoogleTtsError, speakAsync, stopSpeaking } from '../ttsAdapter';
 
 describe('speakAsync', () => {
   beforeEach(() => {
     speak.mockClear();
     stop.mockClear();
-    speakWithElevenLabsAsync.mockReset();
-    stopElevenLabsSpeech.mockClear();
+    speakWithGoogleTtsAsync.mockReset();
+    stopGoogleTtsSpeech.mockClear();
   });
 
-  it('speaks via ElevenLabs and never touches the device voice when it succeeds', async () => {
-    speakWithElevenLabsAsync.mockResolvedValue(undefined);
+  it('speaks via Google TTS and never touches the device voice when it succeeds', async () => {
+    speakWithGoogleTtsAsync.mockResolvedValue(undefined);
 
     await speakAsync('Police reported, 800 metres ahead.', { rate: 1.1, volume: 0.8 });
 
-    expect(speakWithElevenLabsAsync).toHaveBeenCalledWith(
+    expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith(
       'Police reported, 800 metres ahead.',
       { rate: 1.1, volume: 0.8 }
     );
     expect(speak).not.toHaveBeenCalled();
   });
 
-  it('falls back to the on-device voice when ElevenLabs fails', async () => {
-    speakWithElevenLabsAsync.mockRejectedValue(new Error('ElevenLabs down'));
+  it('falls back to the on-device voice when Google TTS fails', async () => {
+    speakWithGoogleTtsAsync.mockRejectedValue(new Error('Google TTS down'));
     speak.mockImplementation((_text, options) => options?.onDone?.());
 
     await speakAsync('hello', { rate: 1.1, volume: 0.8 });
@@ -55,21 +55,21 @@ describe('speakAsync', () => {
   });
 
   it('resolves once the device fallback finishes (onDone)', async () => {
-    speakWithElevenLabsAsync.mockRejectedValue(new Error('ElevenLabs down'));
+    speakWithGoogleTtsAsync.mockRejectedValue(new Error('Google TTS down'));
     speak.mockImplementation((_text, options) => options?.onDone?.());
 
     await expect(speakAsync('hello')).resolves.toBeUndefined();
   });
 
   it('resolves once the device fallback finishes (onStopped)', async () => {
-    speakWithElevenLabsAsync.mockRejectedValue(new Error('ElevenLabs down'));
+    speakWithGoogleTtsAsync.mockRejectedValue(new Error('Google TTS down'));
     speak.mockImplementation((_text, options) => options?.onStopped?.());
 
     await expect(speakAsync('hello')).resolves.toBeUndefined();
   });
 
-  it('rejects only once both ElevenLabs and the device fallback have failed', async () => {
-    speakWithElevenLabsAsync.mockRejectedValue(new Error('ElevenLabs down'));
+  it('rejects only once both Google TTS and the device fallback have failed', async () => {
+    speakWithGoogleTtsAsync.mockRejectedValue(new Error('Google TTS down'));
     const deviceError = new Error('device tts failed too');
     speak.mockImplementation((_text, options) => options?.onError?.(deviceError));
 
@@ -77,34 +77,34 @@ describe('speakAsync', () => {
   });
 });
 
-describe('getLastElevenLabsError', () => {
-  it('records the failure message when ElevenLabs falls back to the device voice', async () => {
-    speakWithElevenLabsAsync.mockRejectedValue(new Error('ElevenLabs TTS request failed with status 401'));
+describe('getLastGoogleTtsError', () => {
+  it('records the failure message when Google TTS falls back to the device voice', async () => {
+    speakWithGoogleTtsAsync.mockRejectedValue(new Error('Google TTS request failed with status 401'));
     speak.mockImplementation((_text, options) => options?.onDone?.());
 
     await speakAsync('hello');
 
-    expect(getLastElevenLabsError()).toBe('ElevenLabs TTS request failed with status 401');
+    expect(getLastGoogleTtsError()).toBe('Google TTS request failed with status 401');
   });
 
   it('clears back to null once a later call succeeds', async () => {
-    speakWithElevenLabsAsync.mockRejectedValueOnce(new Error('ElevenLabs TTS request failed with status 401'));
+    speakWithGoogleTtsAsync.mockRejectedValueOnce(new Error('Google TTS request failed with status 401'));
     speak.mockImplementation((_text, options) => options?.onDone?.());
     await speakAsync('hello');
-    expect(getLastElevenLabsError()).not.toBeNull();
+    expect(getLastGoogleTtsError()).not.toBeNull();
 
-    speakWithElevenLabsAsync.mockResolvedValueOnce(undefined);
+    speakWithGoogleTtsAsync.mockResolvedValueOnce(undefined);
     await speakAsync('hello again');
 
-    expect(getLastElevenLabsError()).toBeNull();
+    expect(getLastGoogleTtsError()).toBeNull();
   });
 });
 
 describe('stopSpeaking', () => {
-  it('stops both the ElevenLabs and on-device backends unconditionally', async () => {
+  it('stops both the Google TTS and on-device backends unconditionally', async () => {
     await stopSpeaking();
 
-    expect(stopElevenLabsSpeech).toHaveBeenCalledTimes(1);
+    expect(stopGoogleTtsSpeech).toHaveBeenCalledTimes(1);
     expect(stop).toHaveBeenCalledTimes(1);
   });
 });

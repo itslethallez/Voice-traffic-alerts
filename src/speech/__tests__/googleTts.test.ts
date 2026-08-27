@@ -44,26 +44,26 @@ jest.mock('expo-audio', () => ({
   createAudioPlayer: (...args: unknown[]) => createAudioPlayer(...args),
 }));
 
-let elevenLabsApiKey = 'test-key';
+let googleTtsApiKey = 'test-key';
 jest.mock('../../config/env', () => ({
   get env() {
-    return { elevenLabsApiKey };
+    return { googleTtsApiKey };
   },
 }));
 
-import { speakWithElevenLabsAsync, stopElevenLabsSpeech } from '../elevenLabsTts';
+import { speakWithGoogleTtsAsync, stopGoogleTtsSpeech } from '../googleTts';
 
 function makeFetchResponse(ok: boolean, status = 200): Response {
   return {
     ok,
     status,
-    arrayBuffer: async () => new Uint8Array([1, 2, 3, 4, 5]).buffer,
+    json: async () => ({ audioContent: 'AAECAwQ=' }),
   } as unknown as Response;
 }
 
-describe('speakWithElevenLabsAsync', () => {
+describe('speakWithGoogleTtsAsync', () => {
   beforeEach(() => {
-    elevenLabsApiKey = 'test-key';
+    googleTtsApiKey = 'test-key';
     mockPlayer = createMockPlayer();
     createAudioPlayer.mockClear();
     globalThis.fetch = jest.fn();
@@ -72,7 +72,7 @@ describe('speakWithElevenLabsAsync', () => {
   it('fetches audio, plays it, and resolves when playback finishes', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-    const promise = speakWithElevenLabsAsync('Police reported, 800 metres ahead.');
+    const promise = speakWithGoogleTtsAsync('Police reported, 800 metres ahead.');
     // Let the fetch/createAudioPlayer microtasks settle before emitting.
     await Promise.resolve();
     await Promise.resolve();
@@ -84,10 +84,10 @@ describe('speakWithElevenLabsAsync', () => {
     expect(mockPlayer.remove).toHaveBeenCalledTimes(1);
   });
 
-  it('sends the text, xi-api-key header, and voice ID in the request', async () => {
+  it('sends the text, API key, and voice in the request', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-    const promise = speakWithElevenLabsAsync('hello');
+    const promise = speakWithGoogleTtsAsync('hello');
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -95,16 +95,17 @@ describe('speakWithElevenLabsAsync', () => {
     await promise;
 
     const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('https://api.elevenlabs.io/v1/text-to-speech/HE0XlnHeqQoWUBWhwUa3');
+    expect(url).toBe('https://texttospeech.googleapis.com/v1/text:synthesize?key=test-key');
     expect(init.method).toBe('POST');
-    expect(init.headers['xi-api-key']).toBe('test-key');
-    expect(JSON.parse(init.body).text).toBe('hello');
+    const body = JSON.parse(init.body);
+    expect(body.input.text).toBe('hello');
+    expect(body.voice).toEqual({ languageCode: 'en-AU', name: 'en-AU-Chirp3-HD-Charon' });
   });
 
   it('applies volume and rate to the player before playing', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-    const promise = speakWithElevenLabsAsync('hello', { volume: 0.6, rate: 1.4 });
+    const promise = speakWithGoogleTtsAsync('hello', { volume: 0.6, rate: 1.4 });
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -115,29 +116,29 @@ describe('speakWithElevenLabsAsync', () => {
   });
 
   it('rejects without touching the device fallback when the API key is missing', async () => {
-    elevenLabsApiKey = '';
-    await expect(speakWithElevenLabsAsync('hello')).rejects.toThrow(
-      'EXPO_PUBLIC_ELEVENLABS_API_KEY is not set'
+    googleTtsApiKey = '';
+    await expect(speakWithGoogleTtsAsync('hello')).rejects.toThrow(
+      'EXPO_PUBLIC_GOOGLE_TTS_API_KEY is not set'
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('rejects when the fetch response is not ok', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(false, 429));
-    await expect(speakWithElevenLabsAsync('hello')).rejects.toThrow(
-      'ElevenLabs TTS request failed with status 429'
+    await expect(speakWithGoogleTtsAsync('hello')).rejects.toThrow(
+      'Google TTS request failed with status 429'
     );
   });
 
   it('rejects when the network request itself throws', async () => {
     (globalThis.fetch as jest.Mock).mockRejectedValue(new Error('network down'));
-    await expect(speakWithElevenLabsAsync('hello')).rejects.toThrow('network down');
+    await expect(speakWithGoogleTtsAsync('hello')).rejects.toThrow('network down');
   });
 
   it('rejects when the player reports a playback error', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-    const promise = speakWithElevenLabsAsync('hello');
+    const promise = speakWithGoogleTtsAsync('hello');
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -150,11 +151,11 @@ describe('speakWithElevenLabsAsync', () => {
   it('resolves (does not reject) when stopped while audio is already playing', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-    const promise = speakWithElevenLabsAsync('hello');
+    const promise = speakWithGoogleTtsAsync('hello');
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
-    stopElevenLabsSpeech();
+    stopGoogleTtsSpeech();
 
     await expect(promise).resolves.toBeUndefined();
     expect(mockPlayer.pause).toHaveBeenCalledTimes(1);
@@ -169,8 +170,8 @@ describe('speakWithElevenLabsAsync', () => {
       })
     );
 
-    const promise = speakWithElevenLabsAsync('hello');
-    stopElevenLabsSpeech();
+    const promise = speakWithGoogleTtsAsync('hello');
+    stopGoogleTtsSpeech();
     resolveFetch(makeFetchResponse(true));
 
     await expect(promise).resolves.toBeUndefined();
@@ -183,8 +184,8 @@ describe('speakWithElevenLabsAsync', () => {
     try {
       (globalThis.fetch as jest.Mock).mockReturnValue(new Promise(() => {})); // never resolves
 
-      const promise = speakWithElevenLabsAsync('hello');
-      const expectation = expect(promise).rejects.toThrow('ElevenLabs TTS timed out');
+      const promise = speakWithGoogleTtsAsync('hello');
+      const expectation = expect(promise).rejects.toThrow('Google TTS timed out');
       await jest.advanceTimersByTimeAsync(20_000);
       await expectation;
 
@@ -199,8 +200,8 @@ describe('speakWithElevenLabsAsync', () => {
     try {
       (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-      const promise = speakWithElevenLabsAsync('hello');
-      const expectation = expect(promise).rejects.toThrow('ElevenLabs TTS timed out');
+      const promise = speakWithGoogleTtsAsync('hello');
+      const expectation = expect(promise).rejects.toThrow('Google TTS timed out');
       // Let the fetch .then() microtask create the player before the clock advances.
       await Promise.resolve();
       await Promise.resolve();
@@ -219,15 +220,15 @@ describe('speakWithElevenLabsAsync', () => {
   it('preempts (resolves, not hangs) an in-flight call when a second one starts with no explicit stop', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-    // No stopElevenLabsSpeech() call in between - this is the shape of a
-    // UI replay button racing the live announcer queue, which has no
+    // No stopGoogleTtsSpeech() call in between - this is the shape of the
+    // speed-camera warning racing the live announcer queue, which has no
     // reason to know about (or call stop on behalf of) the other caller.
-    const first = speakWithElevenLabsAsync('first');
+    const first = speakWithGoogleTtsAsync('first');
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
-    const second = speakWithElevenLabsAsync('second');
+    const second = speakWithGoogleTtsAsync('second');
 
     await expect(first).resolves.toBeUndefined();
     expect(mockPlayer.pause).toHaveBeenCalledTimes(1);
@@ -251,8 +252,8 @@ describe('speakWithElevenLabsAsync', () => {
         })
       );
 
-      const promise = speakWithElevenLabsAsync('hello');
-      const expectation = expect(promise).rejects.toThrow('ElevenLabs TTS timed out');
+      const promise = speakWithGoogleTtsAsync('hello');
+      const expectation = expect(promise).rejects.toThrow('Google TTS timed out');
       await jest.advanceTimersByTimeAsync(20_000);
       await expectation;
 
@@ -284,13 +285,13 @@ describe('speakWithElevenLabsAsync', () => {
       );
       fetchMock.mockImplementationOnce(() => new Promise(() => {})); // second utterance hangs too
 
-      const first = speakWithElevenLabsAsync('first');
-      const firstExpectation = expect(first).rejects.toThrow('ElevenLabs TTS timed out');
+      const first = speakWithGoogleTtsAsync('first');
+      const firstExpectation = expect(first).rejects.toThrow('Google TTS timed out');
       await jest.advanceTimersByTimeAsync(20_000); // first's own watchdog fires
       await firstExpectation;
 
-      const second = speakWithElevenLabsAsync('second');
-      const secondExpectation = expect(second).rejects.toThrow('ElevenLabs TTS timed out');
+      const second = speakWithGoogleTtsAsync('second');
+      const secondExpectation = expect(second).rejects.toThrow('Google TTS timed out');
 
       // The first request was hung, not dead - it "arrives" now, well
       // after its own timeout already rejected, and while the second
@@ -313,9 +314,9 @@ describe('speakWithElevenLabsAsync', () => {
   it('a stale utterance stopped mid-flight does not resolve a newer one early', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
-    const stale = speakWithElevenLabsAsync('first');
-    stopElevenLabsSpeech();
-    const fresh = speakWithElevenLabsAsync('second');
+    const stale = speakWithGoogleTtsAsync('first');
+    stopGoogleTtsSpeech();
+    const fresh = speakWithGoogleTtsAsync('second');
 
     await expect(stale).resolves.toBeUndefined();
 

@@ -1,67 +1,51 @@
 import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import { env } from '../config/env';
 
-const ELEVENLABS_VOICE_ID = 'HE0XlnHeqQoWUBWhwUa3';
 /**
- * ElevenLabs' lowest-latency model. The whole point of speaking an alert
- * out loud is minimizing the gap between "alert became announceable" and
- * "driver heard it" - a slower, higher-fidelity model isn't worth that
- * delay for short safety announcements.
+ * Google's current flagship "Chirp3 HD" tier - Australian English, verified
+ * live against the real API while planning this (GET /v1/voices and a real
+ * /v1/text:synthesize call both confirmed against the user's own GCP
+ * project, not assumed from docs).
  */
-const ELEVENLABS_MODEL_ID = 'eleven_flash_v2_5';
-
-const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-/**
- * Hermes doesn't ship btoa, and pulling in expo-file-system just to write
- * a temp file - when the player can take a data: URI directly - isn't
- * worth another native dependency and another native rebuild.
- */
-function bytesToBase64(bytes: Uint8Array): string {
-  let result = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i];
-    const b1 = bytes[i + 1];
-    const b2 = bytes[i + 2];
-    result += BASE64_CHARS[b0 >> 2];
-    result += BASE64_CHARS[((b0 & 0x03) << 4) | (b1 === undefined ? 0 : b1 >> 4)];
-    result += b1 === undefined ? '=' : BASE64_CHARS[((b1 & 0x0f) << 2) | (b2 === undefined ? 0 : b2 >> 6)];
-    result += b2 === undefined ? '=' : BASE64_CHARS[b2 & 0x3f];
-  }
-  return result;
-}
+const GOOGLE_TTS_LANGUAGE_CODE = 'en-AU';
+const GOOGLE_TTS_VOICE_NAME = 'en-AU-Chirp3-HD-Charon';
 
 async function fetchAudioDataUri(text: string, signal: AbortSignal): Promise<string> {
-  if (!env.elevenLabsApiKey) {
-    throw new Error('EXPO_PUBLIC_ELEVENLABS_API_KEY is not set');
+  if (!env.googleTtsApiKey) {
+    throw new Error('EXPO_PUBLIC_GOOGLE_TTS_API_KEY is not set');
   }
 
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`, {
-    method: 'POST',
-    headers: {
-      'xi-api-key': env.elevenLabsApiKey,
-      'Content-Type': 'application/json',
-      Accept: 'audio/mpeg',
-    },
-    body: JSON.stringify({ text, model_id: ELEVENLABS_MODEL_ID }),
-    signal,
-  });
+  const response = await fetch(
+    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${env.googleTtsApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: GOOGLE_TTS_LANGUAGE_CODE, name: GOOGLE_TTS_VOICE_NAME },
+        audioConfig: { audioEncoding: 'MP3' },
+      }),
+      signal,
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(`ElevenLabs TTS request failed with status ${response.status}`);
+    throw new Error(`Google TTS request failed with status ${response.status}`);
   }
 
-  const arrayBuffer = await response.arrayBuffer();
-  return `data:audio/mpeg;base64,${bytesToBase64(new Uint8Array(arrayBuffer))}`;
+  // Unlike ElevenLabs (raw binary, needing a hand-rolled base64 encode -
+  // Hermes has no btoa), Google's response is already a base64 JSON string.
+  const { audioContent } = (await response.json()) as { audioContent: string };
+  return `data:audio/mp3;base64,${audioContent}`;
 }
 
-export interface ElevenLabsSpeakOptions {
+export interface GoogleTtsSpeakOptions {
   rate?: number;
   volume?: number;
 }
 
 /**
- * Bumped on every speakWithElevenLabsAsync()/stopElevenLabsSpeech() call -
+ * Bumped on every speakWithGoogleTtsAsync()/stopGoogleTtsSpeech() call -
  * lets a stop() that arrives while a fetch is still in flight (or after
  * playback already moved on to a newer utterance) invalidate the stale
  * one's callbacks instead of having them resolve/reject a promise nobody
@@ -70,7 +54,7 @@ export interface ElevenLabsSpeakOptions {
 let currentUtteranceId = 0;
 let activePlayer: AudioPlayer | null = null;
 let activeAbortController: AbortController | null = null;
-/** The pending call's own resolve - stopElevenLabsSpeech() invokes this
+/** The pending call's own resolve - stopGoogleTtsSpeech() invokes this
  * directly, since tearing down the player doesn't by itself guarantee a
  * final playbackStatusUpdate event (e.g. after pause()+remove()) that
  * would otherwise be the only thing settling the promise. */
@@ -80,13 +64,12 @@ let activeTimeoutId: ReturnType<typeof setTimeout> | null = null;
 /**
  * Safety net for the whole fetch+playback round trip. A driving-safety
  * announcement is a short sentence - a couple of seconds of audio plus a
- * fast Flash-model fetch - so a request still outstanding this long is
- * stuck, not just slow: a fetch with no server response (no timeout of
- * its own otherwise), or a playbackStatusUpdate that never arrives.
- * Without this, ttsAdapter's on-device fallback only triggers on an
- * explicit rejection, so a hang here would silently block every later
- * announcement forever - tick() awaits this promise before dequeuing the
- * next alert.
+ * fast fetch - so a request still outstanding this long is stuck, not just
+ * slow: a fetch with no server response (no timeout of its own otherwise),
+ * or a playbackStatusUpdate that never arrives. Without this, ttsAdapter's
+ * on-device fallback only triggers on an explicit rejection, so a hang
+ * here would silently block every later announcement forever - tick()
+ * awaits this promise before dequeuing the next alert.
  */
 const OVERALL_TIMEOUT_MS = 20_000;
 
@@ -105,12 +88,13 @@ function clearActiveTimeout(): void {
 }
 
 /**
- * Fetches speech audio from ElevenLabs and plays it, resolving once
- * playback finishes - naturally, or because stopElevenLabsSpeech() cut it
- * off (matching expo-speech's onStopped -> resolve, not reject). Rejects
- * only on a genuine failure (network/API error, player error) - the
- * caller (ttsAdapter.ts) falls back to the on-device voice when that
- * happens, so a network hiccup never means the driver hears nothing.
+ * Fetches speech audio from Google Cloud Text-to-Speech and plays it,
+ * resolving once playback finishes - naturally, or because
+ * stopGoogleTtsSpeech() cut it off (matching expo-speech's onStopped ->
+ * resolve, not reject). Rejects only on a genuine failure (network/API
+ * error, player error) - the caller (ttsAdapter.ts) falls back to the
+ * on-device voice when that happens, so a network hiccup never means the
+ * driver hears nothing.
  *
  * Self-preempting: calling this while a previous call is still in flight
  * (fetching or playing) - e.g. tripRuntime.ts's speed-camera warning
@@ -124,8 +108,8 @@ function clearActiveTimeout(): void {
  * live announcement queue could never recover, since nothing else here
  * calls that first call's resolve.
  */
-export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakOptions = {}): Promise<void> {
-  stopElevenLabsSpeech();
+export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOptions = {}): Promise<void> {
+  stopGoogleTtsSpeech();
   const utteranceId = ++currentUtteranceId;
   const isCurrent = () => utteranceId === currentUtteranceId;
 
@@ -141,7 +125,7 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
     // see the activeTimeoutId-clearing guard below).
     const timeoutId = setTimeout(() => {
       if (!isCurrent()) return;
-      // Bump the id, same as stopElevenLabsSpeech - without this, a fetch
+      // Bump the id, same as stopGoogleTtsSpeech - without this, a fetch
       // that was hung but eventually resolves after this timeout has
       // already rejected (and ttsAdapter has already started the device
       // fallback) would still pass isCurrent() and go on to create a
@@ -152,7 +136,7 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
         activePlayer.pause();
       }
       releaseActivePlayer();
-      settleReject(new Error('ElevenLabs TTS timed out'));
+      settleReject(new Error('Google TTS timed out'));
     }, OVERALL_TIMEOUT_MS);
     activeTimeoutId = timeoutId;
 
@@ -216,12 +200,12 @@ export function speakWithElevenLabsAsync(text: string, options: ElevenLabsSpeakO
   });
 }
 
-/** Cuts off whatever speakWithElevenLabsAsync() call is currently in
+/** Cuts off whatever speakWithGoogleTtsAsync() call is currently in
  * flight - fetching or playing - resolving its promise directly (tearing
  * down the player doesn't by itself guarantee a final status event) so
  * it settles instead of hanging, and invalidating it so any callback
  * that does still land afterward is a no-op. */
-export function stopElevenLabsSpeech(): void {
+export function stopGoogleTtsSpeech(): void {
   currentUtteranceId += 1;
   clearActiveTimeout();
   activeAbortController?.abort();

@@ -1,6 +1,6 @@
 const WAZE_API_KEY = process.env.EXPO_PUBLIC_WAZE_API_KEY;
 const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN;
-const ELEVENLABS_API_KEY = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY;
+const GOOGLE_TTS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_TTS_API_KEY;
 const BACKEND_API_URL = process.env.EXPO_PUBLIC_BACKEND_API_URL;
 
 if (!WAZE_API_KEY) {
@@ -15,9 +15,9 @@ if (!MAPBOX_ACCESS_TOKEN) {
   );
 }
 
-if (!ELEVENLABS_API_KEY) {
+if (!GOOGLE_TTS_API_KEY) {
   console.warn(
-    '[env] EXPO_PUBLIC_ELEVENLABS_API_KEY is not set. Copy .env.example to .env and add your ElevenLabs API key - announcements will fall back to the on-device voice.'
+    '[env] EXPO_PUBLIC_GOOGLE_TTS_API_KEY is not set. Copy .env.example to .env and add your Google Cloud Text-to-Speech API key - announcements will fall back to the on-device voice.'
   );
 }
 
@@ -45,6 +45,6 @@ export const env = {
   wazeApiKey: WAZE_API_KEY ?? '',
   wazeApiBaseUrl: 'https://api.openwebninja.com/waze/',
   mapboxAccessToken: MAPBOX_ACCESS_TOKEN ?? '',
-  elevenLabsApiKey: ELEVENLABS_API_KEY ?? '',
+  googleTtsApiKey: GOOGLE_TTS_API_KEY ?? '',
   backendApiBaseUrl: BACKEND_API_URL ? withTrailingSlash(BACKEND_API_URL) : '',
 };

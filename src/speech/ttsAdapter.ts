@@ -1,5 +1,5 @@
 import * as Speech from 'expo-speech';
-import { speakWithElevenLabsAsync, stopElevenLabsSpeech } from './elevenLabsTts';
+import { speakWithGoogleTtsAsync, stopGoogleTtsSpeech } from './googleTts';
 
 export interface SpeakOptions {
   rate?: number;
@@ -8,7 +8,7 @@ export interface SpeakOptions {
 
 /**
  * Promise wrapper around expo-speech's callback-based speak() - the
- * on-device fallback voice, used when ElevenLabs is unavailable.
+ * on-device fallback voice, used when Google TTS is unavailable.
  */
 function speakWithDeviceAsync(text: string, options: SpeakOptions = {}): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -23,36 +23,36 @@ function speakWithDeviceAsync(text: string, options: SpeakOptions = {}): Promise
 }
 
 /**
- * The most recent reason ElevenLabs fell back to the on-device voice, or
+ * The most recent reason Google TTS fell back to the on-device voice, or
  * null if the last attempt succeeded (or none has happened yet).
  * speakAsync()'s whole point is to never let a TTS failure reach the
  * caller - the driver always hears something - but that same design
  * makes the failure itself invisible to anyone debugging why the voice
- * doesn't sound like ElevenLabs. This is a lightweight escape hatch: the
- * UI (DriveScreen) polls it to show the exact error on-screen, without
- * ttsAdapter/elevenLabsTts needing to know about the store or UI layer.
+ * doesn't sound like Google's. A lightweight escape hatch for that,
+ * without ttsAdapter/googleTts needing to know about the store or UI
+ * layer.
  */
-let lastElevenLabsError: string | null = null;
+let lastGoogleTtsError: string | null = null;
 
-export function getLastElevenLabsError(): string | null {
-  return lastElevenLabsError;
+export function getLastGoogleTtsError(): string | null {
+  return lastGoogleTtsError;
 }
 
 /**
- * Speaks via ElevenLabs first, falling back to the on-device voice if the
- * request or playback fails - offline, an ElevenLabs outage, a missing
- * key, a rate limit. This is a driving-safety feature: a network hiccup
- * must never mean the driver hears nothing, so a TTS failure only
- * reaches the caller (see announcer.ts's "never crash the loop" handling)
- * once both voices have failed.
+ * Speaks via Google Cloud Text-to-Speech first, falling back to the
+ * on-device voice if the request or playback fails - offline, a Google
+ * TTS outage, a missing key, a rate limit. This is a driving-safety
+ * feature: a network hiccup must never mean the driver hears nothing, so
+ * a TTS failure only reaches the caller (see announcer.ts's "never crash
+ * the loop" handling) once both voices have failed.
  */
 export async function speakAsync(text: string, options: SpeakOptions = {}): Promise<void> {
   try {
-    await speakWithElevenLabsAsync(text, options);
-    lastElevenLabsError = null;
+    await speakWithGoogleTtsAsync(text, options);
+    lastGoogleTtsError = null;
   } catch (error) {
-    lastElevenLabsError = error instanceof Error ? error.message : String(error);
-    console.warn('[speech] ElevenLabs TTS failed, falling back to the on-device voice', error);
+    lastGoogleTtsError = error instanceof Error ? error.message : String(error);
+    console.warn('[speech] Google TTS failed, falling back to the on-device voice', error);
     await speakWithDeviceAsync(text, options);
   }
 }
@@ -63,6 +63,6 @@ export async function speakAsync(text: string, options: SpeakOptions = {}): Prom
  * doesn't need to track which one actually spoke last.
  */
 export function stopSpeaking(): Promise<void> {
-  stopElevenLabsSpeech();
+  stopGoogleTtsSpeech();
   return Speech.stop();
 }
