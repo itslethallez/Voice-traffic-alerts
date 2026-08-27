@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { WazeAlert } from '../api/waze/types';
 import type { AnnounceableAlert } from '../engine/types';
 import { haversineDistance } from '../geo/distance';
@@ -10,7 +11,7 @@ import { visibleManualReportAlerts } from '../store/manualReportAlert';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { alertTypeMeta } from '../theme/alertTypeMeta';
-import { instrument } from '../theme/colors';
+import { hud, instrument } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { confidenceLabel } from '../theme/confidence';
 import { PoliceLightBar } from './radar/PoliceLightBar';
@@ -18,6 +19,22 @@ import { RadarMap } from './radar/RadarMap';
 import { ReportButton } from './radar/ReportButton';
 import { splitCompactDistance } from './radar/formatCompactDistance';
 import { Speedometer } from './radar/Speedometer';
+
+/** Row severity is a simple two-tier system for this colour pass, not a
+ * per-category scale: the nearest row, or any POLICE row, is "high" -
+ * everything else is "medium," regardless of its actual alert type. */
+function isHighSeverity(alert: WazeAlert, index: number): boolean {
+  return index === 0 || alert.type === 'POLICE';
+}
+
+const HIGH_ROW_GRADIENT = {
+  colors: ['rgba(224,27,36,0.20)', 'rgba(224,27,36,0.03)', 'rgba(224,27,36,0)'] as const,
+  locations: [0, 0.62, 1] as const,
+};
+const MEDIUM_ROW_GRADIENT = {
+  colors: ['rgba(232,147,12,0.12)', 'rgba(232,147,12,0.02)', 'rgba(232,147,12,0)'] as const,
+  locations: [0, 0.58, 1] as const,
+};
 
 /** How long a tapped ledger row keeps the map focused on it before the
  * camera returns to following the driver (Step 12 #25). */
@@ -120,9 +137,7 @@ export function DriveScreen() {
   }, [visibleAlerts, manualReports, enabledTypes, driverPosition, now, announceDistanceMeters]);
 
   const status = statusFor({ masterMute, isOffline });
-  const metaLine = `${statusLabel(status).toUpperCase()} · ${formatAwarenessKm(announceDistanceMeters)} KM AWARENESS · ${
-    driverPosition ? 'GPS LOCKED' : 'ACQUIRING GPS'
-  }`;
+  const gpsClause = driverPosition ? 'GPS LOCKED' : 'ACQUIRING GPS';
 
   return (
     <View style={styles.root}>
@@ -134,10 +149,15 @@ export function DriveScreen() {
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>LIVE</Text>
           </View>
+          <Text style={styles.motto}>EVERYTHING IS IN SIGHT</Text>
           {locationError ? (
             <Text style={styles.metaLine}>{locationError}</Text>
           ) : (
-            <Text style={styles.metaLine}>{metaLine}</Text>
+            <Text style={styles.metaLine}>
+              {statusLabel(status).toUpperCase()} ·{' '}
+              <Text style={styles.metaLineAccent}>{formatAwarenessKm(announceDistanceMeters)} KM</Text> AWARENESS ·{' '}
+              <Text style={styles.metaLineAccent}>{gpsClause}</Text>
+            </Text>
           )}
           {bannerMessage ? <Text style={styles.bannerLine}>{bannerMessage}</Text> : null}
         </View>
@@ -149,7 +169,7 @@ export function DriveScreen() {
         <View style={styles.ledger}>
           <View style={styles.ledgerHeaderRow}>
             <Text style={styles.ledgerHeaderLabel}>NEARBY ALERTS</Text>
-            <Text style={styles.ledgerHeaderLabel}>{nearbyAlerts.length} ALERTS</Text>
+            <Text style={styles.ledgerHeaderCount}>{nearbyAlerts.length} ALERTS</Text>
           </View>
           {/* Persistent, uncapped feed (two-zone layout rework) - can run
            * long in a dense area, so this scrolls instead of the fixed
@@ -161,7 +181,7 @@ export function DriveScreen() {
                   key={nearby.alert.alert_id}
                   nearby={nearby}
                   nowMs={now}
-                  inverted={index === 0}
+                  index={index}
                   onPress={() => handleFocusAlert(nearby.alert)}
                 />
               ))}
@@ -181,15 +201,16 @@ export function DriveScreen() {
 function AlertLedgerRow({
   nearby,
   nowMs,
-  inverted,
+  index,
   onPress,
 }: {
   nearby: { alert: WazeAlert; distanceMeters: number };
   nowMs: number;
-  inverted: boolean;
+  index: number;
   onPress: () => void;
 }) {
   const { alert, distanceMeters } = nearby;
+  const isHigh = isHighSeverity(alert, index);
   const meta = alertTypeMeta(alert.type, alert.subtype);
   const ageMinutes = ageMinutesOf(alert, nowMs);
   const isStale = ageMinutes > STALE_ANNOUNCEMENT_AGE_MINUTES;
@@ -197,39 +218,45 @@ function AlertLedgerRow({
   const detail = isStale ? `${Math.round(ageMinutes)} MIN AGO` : confidenceLabel(alert.alert_reliability).toUpperCase();
   const subtitle = place ? `${place.toUpperCase()} · ${detail}` : detail;
   const { value, unit } = splitCompactDistance(distanceMeters);
+  const gradient = isHigh ? HIGH_ROW_GRADIENT : MEDIUM_ROW_GRADIENT;
 
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.ledgerRow, inverted && styles.ledgerRowInverted]}
+      style={[styles.ledgerRow, isHigh ? styles.ledgerRowHigh : styles.ledgerRowMedium]}
       accessibilityRole="button"
       accessibilityLabel={`${meta.label} alert, ${value} ${unit} ahead, ${subtitle.toLowerCase()}`}
     >
-      {inverted && alert.type === 'POLICE' ? (
-        <PoliceLightBar orientation="vertical" width={26} height={26} inverted />
+      <LinearGradient
+        colors={gradient.colors}
+        locations={gradient.locations}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {alert.type === 'POLICE' ? (
+        <PoliceLightBar orientation="horizontal" width={30} height={13} />
       ) : null}
       <View style={styles.ledgerRowText}>
-        <Text style={[styles.ledgerRowTitle, inverted && styles.ledgerRowTextInverted]}>
+        <Text style={styles.ledgerRowTitle} numberOfLines={1}>
           {meta.label.toUpperCase()}
         </Text>
         <Text
-          style={[
-            styles.ledgerRowSubtitle,
-            inverted ? styles.ledgerRowSubtitleInverted : styles.ledgerRowSubtitleNormal,
-          ]}
+          style={[styles.ledgerRowSubtitle, isHigh ? styles.ledgerRowSubtitleHigh : styles.ledgerRowSubtitleMedium]}
+          numberOfLines={1}
         >
-          {subtitle}
+          {place ? `${place.toUpperCase()} · ` : ''}
+          <Text style={isHigh ? styles.ledgerRowDetailHigh : styles.ledgerRowDetailMedium}>{detail}</Text>
         </Text>
       </View>
-      <Text style={[styles.ledgerRowValue, inverted && styles.ledgerRowTextInverted]}>{value}</Text>
-      <Text
-        style={[
-          styles.ledgerRowUnit,
-          inverted ? styles.ledgerRowSubtitleInverted : styles.ledgerRowSubtitleNormal,
-        ]}
-      >
-        {unit}
-      </Text>
+      <View style={styles.ledgerRowValueBlock}>
+        <Text style={[styles.ledgerRowValue, isHigh ? styles.ledgerRowSevHighText : styles.ledgerRowSevMedText]}>
+          {value}
+        </Text>
+        <Text style={[styles.ledgerRowUnit, isHigh ? styles.ledgerRowSevHighText : styles.ledgerRowSevMedText]}>
+          {unit}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -245,11 +272,11 @@ const styles = StyleSheet.create({
   header: {
     flexGrow: 0,
     flexShrink: 0,
-    paddingTop: 16,
+    paddingTop: 6,
     paddingHorizontal: 20,
     paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
   },
   headerRow: {
     flexDirection: 'row',
@@ -268,20 +295,30 @@ const styles = StyleSheet.create({
   liveDot: {
     width: 9,
     height: 9,
-    backgroundColor: instrument.paper,
+    backgroundColor: hud.accent,
   },
   liveText: {
     fontFamily: fontFamily.bold,
     fontSize: 12,
     letterSpacing: 1.5,
-    color: instrument.paper,
+    color: hud.accentInk,
+  },
+  motto: {
+    marginTop: 5,
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 2.5,
+    color: hud.sevMed,
   },
   metaLine: {
-    marginTop: 6,
+    marginTop: 8,
     fontFamily: fontFamily.medium,
     fontSize: 12,
     letterSpacing: 1.5,
-    color: instrument.mutedOnInk,
+    color: hud.muted,
+  },
+  metaLineAccent: {
+    color: hud.accent,
   },
   bannerLine: {
     marginTop: 2,
@@ -294,8 +331,8 @@ const styles = StyleSheet.create({
     height: 268,
     flexGrow: 0,
     flexShrink: 0,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
     backgroundColor: instrument.mapGround,
   },
   ledger: {
@@ -317,23 +354,34 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 2,
-    color: instrument.mutedOnInk,
+    color: hud.mutedLabel,
+  },
+  ledgerHeaderCount: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 2,
+    color: hud.accent,
   },
   ledgerRule: {
-    borderTopWidth: 2,
-    borderTopColor: instrument.paper,
+    borderTopWidth: 1,
+    borderTopColor: hud.rule,
   },
   ledgerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
+    gap: 8,
+    paddingLeft: 20,
+    paddingRight: 14,
     paddingVertical: 12,
+    borderLeftWidth: 6,
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
+    borderBottomColor: hud.rowRule,
   },
-  ledgerRowInverted: {
-    backgroundColor: instrument.paper,
+  ledgerRowHigh: {
+    borderLeftColor: hud.sevHigh,
+  },
+  ledgerRowMedium: {
+    borderLeftColor: hud.sevMed,
   },
   ledgerRowText: {
     flex: 1,
@@ -341,30 +389,39 @@ const styles = StyleSheet.create({
   },
   ledgerRowTitle: {
     fontFamily: fontFamily.black,
-    fontSize: 19,
-    letterSpacing: 0.5,
-    color: instrument.paper,
+    fontSize: 17,
+    letterSpacing: 0,
+    color: hud.rowTitle,
   },
   ledgerRowSubtitle: {
     marginTop: 1,
     fontFamily: fontFamily.medium,
     fontSize: 12,
-    letterSpacing: 0.5,
+    letterSpacing: 0,
   },
-  ledgerRowSubtitleNormal: {
-    color: instrument.mutedOnInk,
+  ledgerRowSubtitleHigh: {
+    color: hud.rowSubHigh,
   },
-  ledgerRowSubtitleInverted: {
-    color: instrument.ink,
-    opacity: 0.85,
+  ledgerRowSubtitleMedium: {
+    color: hud.rowSubMed,
   },
-  ledgerRowTextInverted: {
-    color: instrument.ink,
+  ledgerRowDetailHigh: {
+    color: hud.sevHighText,
+  },
+  ledgerRowDetailMedium: {
+    color: hud.sevMed,
+  },
+  ledgerRowValueBlock: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'flex-end',
+    gap: 4,
+    flexShrink: 0,
+    minWidth: 44,
   },
   ledgerRowValue: {
     fontFamily: fontFamily.black,
     fontSize: 24,
-    color: instrument.paper,
     fontVariant: ['tabular-nums'],
   },
   ledgerRowUnit: {
@@ -372,12 +429,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1,
   },
+  ledgerRowSevHighText: {
+    color: hud.sevHighText,
+  },
+  ledgerRowSevMedText: {
+    color: hud.sevMed,
+  },
   speedReportRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
     flexGrow: 0,
     flexShrink: 0,
-    borderTopWidth: 2,
-    borderTopColor: instrument.paper,
+    borderTopWidth: 1,
+    borderTopColor: hud.rule,
   },
 });

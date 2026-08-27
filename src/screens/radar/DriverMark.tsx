@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { instrument } from '../../theme/colors';
+import { hud, instrument } from '../../theme/colors';
 
 /**
  * The driver's position on the radar map (design_handoff_instrument_face) -
@@ -9,7 +9,8 @@ import { instrument } from '../../theme/colors';
  * driver is travelling" - same reasoning PulseRings documented for its own
  * fixed-up arrow. No animation - the redesign's one rule is that motion in
  * a driving UI should mean something, and the police light bar is the only
- * thing that still moves.
+ * thing that still moves. HUD face colour pass adds a static glow, still
+ * the same white triangle underneath.
  */
 export function DriverMark() {
   return <View style={styles.triangle} />;
@@ -25,5 +26,9 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderBottomColor: instrument.paper,
+    shadowColor: hud.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 12,
+    shadowOpacity: 0.9,
   },
 });

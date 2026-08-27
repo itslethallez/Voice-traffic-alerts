@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
+  interpolate,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
@@ -53,11 +54,16 @@ export function PoliceLightBar({
   const offBlue = inverted ? instrument.ink : OFF_BLUE;
   const offRed = inverted ? instrument.ink : OFF_RED;
 
+  // Glow is animated in antiphase with each cell's own colour: lit -> glow
+  // on, off -> glow off, using the same phase value so they never drift
+  // out of sync with the colour swap itself.
   const blueCellStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(phase.value, [0, 1], [colors.policeLightBlue, offBlue]),
+    shadowOpacity: interpolate(phase.value, [0, 1], [0.85, 0]),
   }));
   const redCellStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(phase.value, [0, 1], [offRed, colors.policeLightRed]),
+    shadowOpacity: interpolate(phase.value, [0, 1], [0, 0.85]),
   }));
 
   return (
@@ -67,8 +73,8 @@ export function PoliceLightBar({
         { width, height, flexDirection: orientation === 'horizontal' ? 'row' : 'column' },
       ]}
     >
-      <Animated.View style={[styles.cell, blueCellStyle]} />
-      <Animated.View style={[styles.cell, redCellStyle]} />
+      <Animated.View style={[styles.cell, styles.blueCell, blueCellStyle]} />
+      <Animated.View style={[styles.cell, styles.redCell, redCellStyle]} />
     </View>
   );
 }
@@ -76,8 +82,18 @@ export function PoliceLightBar({
 const styles = StyleSheet.create({
   bar: {
     flexShrink: 0,
+    gap: 2,
   },
   cell: {
     flex: 1,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  blueCell: {
+    shadowColor: colors.policeLightBlue,
+  },
+  redCell: {
+    shadowColor: colors.policeLightRed,
   },
 });

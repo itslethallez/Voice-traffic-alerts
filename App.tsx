@@ -8,7 +8,7 @@ import {
   Archivo_700Bold,
   Archivo_900Black,
 } from '@expo-google-fonts/archivo';
-import { instrument } from './src/theme/colors';
+import { hud } from './src/theme/colors';
 import { BottomNav, type NavTab } from './src/navigation/BottomNav';
 import { DriveScreen } from './src/screens/DriveScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
@@ -75,7 +75,7 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: instrument.ink,
+    backgroundColor: hud.ground,
   },
   content: {
     flex: 1,
@@ -92,6 +92,6 @@ const styles = StyleSheet.create({
   },
   loading: {
     flex: 1,
-    backgroundColor: instrument.ink,
+    backgroundColor: hud.ground,
   },
 });

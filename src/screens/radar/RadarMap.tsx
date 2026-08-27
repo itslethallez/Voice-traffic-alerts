@@ -12,7 +12,7 @@ import { enabledTypesFromSettings } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { colors, instrument } from '../../theme/colors';
+import { hud, instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
@@ -69,9 +69,12 @@ const FOCUSED_ALERT_ZOOM = 16;
  * rework - reused here as a reasonable, already-designed-for-this-screen
  * starting point. A deliberate, scoped exception to the Instrument
  * redesign's "no accent colour" rule (theme/colors.ts) - confirmed with
- * the user directly rather than assumed.
+ * the user directly rather than assumed. HUD face colour pass adds a
+ * third, middle ring and moves the colour from `colors.accent` to
+ * `hud.accent`.
  */
 const RADAR_RING_OUTER_SIZE = 236;
+const RADAR_RING_MID_SIZE = 178;
 const RADAR_RING_INNER_SIZE = 120;
 const RADAR_RING_PULSE_DURATION_MS = 1000;
 
@@ -367,6 +370,10 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
             pointerEvents="none"
           />
           <Animated.View
+            style={[styles.radarRingMid, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+            pointerEvents="none"
+          />
+          <Animated.View
             style={[styles.radarRingInner, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
             pointerEvents="none"
           />
@@ -463,7 +470,7 @@ const styles = StyleSheet.create({
   unsupported: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: instrument.mapGround,
+    backgroundColor: hud.mapGround,
     paddingHorizontal: 32,
   },
   unsupportedText: {
@@ -483,7 +490,19 @@ const styles = StyleSheet.create({
     marginTop: -RADAR_RING_OUTER_SIZE / 2,
     borderRadius: RADAR_RING_OUTER_SIZE / 2,
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: hud.accent,
+  },
+  radarRingMid: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: RADAR_RING_MID_SIZE,
+    height: RADAR_RING_MID_SIZE,
+    marginLeft: -RADAR_RING_MID_SIZE / 2,
+    marginTop: -RADAR_RING_MID_SIZE / 2,
+    borderRadius: RADAR_RING_MID_SIZE / 2,
+    borderWidth: 1,
+    borderColor: hud.accent,
   },
   radarRingInner: {
     position: 'absolute',
@@ -495,15 +514,15 @@ const styles = StyleSheet.create({
     marginTop: -RADAR_RING_INNER_SIZE / 2,
     borderRadius: RADAR_RING_INNER_SIZE / 2,
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: hud.accent,
   },
   headingChip: {
     position: 'absolute',
     top: 12,
     left: 20,
-    backgroundColor: instrument.ink,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
+    backgroundColor: hud.ground,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
   },
   headingChipText: {
     fontFamily: fontFamily.bold,

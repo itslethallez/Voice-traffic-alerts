@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { instrument } from '../theme/colors';
+import { LinearGradient } from 'expo-linear-gradient';
+import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 
 export type NavTab = 'radio' | 'history' | 'settings';
@@ -23,7 +24,8 @@ interface BottomNavProps {
 /**
  * Primary navigation (Step 11), restyled for the Instrument redesign
  * (design_handoff_instrument_face): no icons - three equal ruled cells,
- * the active tab marked by a 5px top bar instead of an icon/colour change.
+ * the active tab marked by a top bar. HUD face colour pass adds the
+ * active-tab glow (gradient wash + glow bar) on top of that layout.
  * Always mounted (in App.tsx, alongside whichever screen is active) so
  * switching tabs never unmounts/remounts the Drive screen's
  * location/briefing/announcement lifecycle. Always sits on `instrument.ink`
@@ -44,7 +46,16 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
             accessibilityState={{ selected: isActive }}
             accessibilityLabel={tab.label}
           >
+            {isActive ? (
+              <LinearGradient
+                colors={['rgba(47,155,224,0.16)', 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : null}
             <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
+            {isActive ? <View style={styles.activeGlowBar} /> : null}
           </Pressable>
         );
       })}
@@ -55,8 +66,8 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
 const styles = StyleSheet.create({
   root: {
     flexDirection: 'row',
-    borderTopWidth: 2,
-    borderTopColor: instrument.paper,
+    borderTopWidth: 1,
+    borderTopColor: hud.rule,
   },
   tab: {
     flex: 1,
@@ -65,22 +76,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabDivider: {
-    borderLeftWidth: 2,
-    borderLeftColor: instrument.paper,
+    borderLeftWidth: 1,
+    borderLeftColor: hud.rule,
   },
   tabActive: {
-    borderTopWidth: 5,
-    borderTopColor: instrument.paper,
-    marginTop: -2,
+    borderTopWidth: 2,
+    borderTopColor: hud.accent,
+    marginTop: -1,
   },
   label: {
     fontFamily: fontFamily.bold,
     fontSize: 12,
     letterSpacing: 1.5,
-    color: instrument.mutedOnInk,
+    color: hud.muted,
   },
   labelActive: {
     fontFamily: fontFamily.black,
-    color: instrument.paper,
+    color: hud.accent,
+  },
+  activeGlowBar: {
+    position: 'absolute',
+    bottom: 16,
+    left: '50%',
+    marginLeft: -22,
+    width: 44,
+    height: 2,
+    backgroundColor: hud.accent,
+    shadowColor: hud.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 2,
+    elevation: 2,
   },
 });

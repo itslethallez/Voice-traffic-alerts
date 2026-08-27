@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTripStore } from '../../store/useTripStore';
-import { instrument } from '../../theme/colors';
+import { hud } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
 
 /**
@@ -13,13 +14,13 @@ export function Speedometer() {
   const speedKmh = useTripStore((state) => state.driverSpeedKmh);
 
   return (
-    <View style={styles.container}>
+    <LinearGradient colors={['#0A1E30', '#060D16']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.container}>
       <Text style={styles.caption}>SPEED</Text>
       <View style={styles.valueRow}>
         <Text style={styles.value}>{Math.round(speedKmh)}</Text>
         <Text style={styles.unit}>KM/H</Text>
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -34,7 +35,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 2,
-    color: instrument.mutedOnInk,
+    color: hud.accent,
   },
   valueRow: {
     flexDirection: 'row',
@@ -46,13 +47,13 @@ const styles = StyleSheet.create({
     fontSize: 76,
     lineHeight: 72,
     letterSpacing: -3,
-    color: instrument.paper,
+    color: hud.ink,
     fontVariant: ['tabular-nums'],
   },
   unit: {
     fontFamily: fontFamily.bold,
     fontSize: 14,
     letterSpacing: 1.5,
-    color: instrument.mutedOnInk,
+    color: hud.accent,
   },
 });
