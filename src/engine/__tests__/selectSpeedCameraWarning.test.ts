@@ -32,7 +32,6 @@ function makeCamera(distanceMeters: number, overrides: Partial<FixedSpeedCamera>
   return {
     id: 'sapol-test',
     label: 'Test St, TESTVILLE',
-    type: 'MID_BLOCK',
     position: pointAhead(distanceMeters),
     ...overrides,
   };

@@ -191,5 +191,3 @@ endpoints.
 
 No accounts, no routing, no CarPlay or Android Auto, no centralized voice
 note storage, no social-media scraping.
-
-<!-- test push #2: re-checking GitHub App access after a revocation attempt - harmless, no functional change. -->

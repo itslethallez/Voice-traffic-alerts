@@ -113,9 +113,10 @@ function clearActiveTimeout(): void {
  * happens, so a network hiccup never means the driver hears nothing.
  *
  * Self-preempting: calling this while a previous call is still in flight
- * (fetching or playing) - e.g. the Nearby Transmission card's replay
- * button firing while the live announcer queue is mid-utterance, or vice
- * versa - stops that previous call first, exactly as if stopSpeaking()
+ * (fetching or playing) - e.g. tripRuntime.ts's speed-camera warning
+ * (which bypasses the announcer's priority queue and calls speakAsync
+ * directly) firing while the live announcer queue is mid-utterance, or
+ * vice versa - stops that previous call first, exactly as if stopSpeaking()
  * had been called on it (its promise resolves, not hangs). Without this,
  * a second concurrent caller would just bump currentUtteranceId out from
  * under the first one without settling it, leaving the first call's

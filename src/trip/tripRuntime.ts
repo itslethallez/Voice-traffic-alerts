@@ -87,7 +87,6 @@ async function refreshFixedCameras(): Promise<void> {
     fetchedFixedCameras = remote.map((camera) => ({
       id: camera.id,
       label: camera.roadName,
-      type: 'MID_BLOCK', // the live table only distinguishes fixed/mobile_zone - see server/schema.sql
       position: { latitude: camera.lat, longitude: camera.lng },
     }));
   } catch (error) {

@@ -102,7 +102,7 @@ jest.mock('../../geo/speedLimitLookup', () => ({
  * MOCK_DRIVER's San Francisco test coordinates - mocked to an empty array
  * by default, overridable per test for the dedicated speed-camera-warning
  * cases below. */
-let mockCameras: Array<{ id: string; label: string; type: string; position: { latitude: number; longitude: number } }> =
+let mockCameras: Array<{ id: string; label: string; position: { latitude: number; longitude: number } }> =
   [];
 jest.mock('../../data/fixedSpeedCameras', () => ({
   get FIXED_SPEED_CAMERAS() {
@@ -406,7 +406,6 @@ describe('speed camera warning', () => {
   const TEST_CAMERA = {
     id: 'sapol-test',
     label: 'Test Rd, TESTVILLE',
-    type: 'MID_BLOCK',
     position: MOCK_DRIVER_POSITION,
   };
 

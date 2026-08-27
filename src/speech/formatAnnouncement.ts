@@ -18,8 +18,8 @@ const ANNOUNCEMENT_LABELS: Partial<Record<string, string>> = {
   JAM: 'Traffic jam',
 };
 
-/** Exported for the radar UI's Nearby Transmission card (Step 11b), which
- * needs the same spoken label without duplicating this table. */
+/** Exported for direct testing and reuse - used internally by spokenLabel
+ * below for the non-POLICE case. */
 export function labelForType(type: WazeAlertType): string {
   return ANNOUNCEMENT_LABELS[type] ?? 'Alert';
 }
@@ -231,8 +231,8 @@ export interface AnnouncementLocation {
 
 /**
  * The structured pieces formatAnnouncement()'s sentence is built from -
- * exported for the radar UI's Nearby Transmission card (Step 11b), which
- * wants street/suburb/direction as separate fields to lay out rather than
+ * exported for DriveScreen.tsx, HistoryScreen.tsx and RadarMap.tsx, which
+ * want street/suburb/direction as separate fields to lay out rather than
  * one spoken sentence, without re-implementing spokenStreet's route-number
  * detection or compassDirection's quantizing itself.
  */
