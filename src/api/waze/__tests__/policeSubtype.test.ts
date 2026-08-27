@@ -1,12 +1,12 @@
 import { policeSubtypeLabel } from '../policeSubtype';
 
 describe('policeSubtypeLabel', () => {
-  it('humanizes a confirmed real subtype', () => {
-    expect(policeSubtypeLabel('POLICE_VISIBLE')).toBe('Visible police');
+  it('humanizes a confirmed real subtype, "Police" first', () => {
+    expect(policeSubtypeLabel('POLICE_VISIBLE')).toBe('Police Visible');
   });
 
-  it('humanizes a multi-word subtype', () => {
-    expect(policeSubtypeLabel('POLICE_HIDING_UNMANNED')).toBe('Hiding Unmanned police');
+  it('humanizes a multi-word subtype, "Police" first', () => {
+    expect(policeSubtypeLabel('POLICE_HIDING_UNMANNED')).toBe('Police Hiding Unmanned');
   });
 
   it('returns null for null', () => {

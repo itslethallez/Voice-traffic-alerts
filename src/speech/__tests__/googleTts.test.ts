@@ -99,7 +99,7 @@ describe('speakWithGoogleTtsAsync', () => {
     expect(init.method).toBe('POST');
     const body = JSON.parse(init.body);
     expect(body.input.text).toBe('hello');
-    expect(body.voice).toEqual({ languageCode: 'en-AU', name: 'en-AU-Chirp3-HD-Charon' });
+    expect(body.voice).toEqual({ languageCode: 'en-GB', name: 'en-GB-Chirp3-HD-Kore' });
   });
 
   it('applies volume and rate to the player before playing', async () => {

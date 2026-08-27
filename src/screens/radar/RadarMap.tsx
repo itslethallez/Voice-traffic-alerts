@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
 import { compassDirection } from '../../geo/bearing';
@@ -7,11 +7,12 @@ import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import type { GeoPoint } from '../../geo/types';
 import { announcementLocation } from '../../speech/formatAnnouncement';
+import { manualReportToWazeAlert } from '../../store/manualReportAlert';
 import { enabledTypesFromSettings } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { instrument } from '../../theme/colors';
+import { colors, instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
@@ -60,6 +61,21 @@ const DEFAULT_CLOSE_ZOOM = 16;
 const FOCUSED_ALERT_ZOOM = 16;
 
 /**
+ * Decorative "actively scanning" cue, reinstated on top of the map (not
+ * replacing it, and not tied to any real-world distance the way the old
+ * pre-two-zone rings were - re-coupling ring size to announceDistanceMeters
+ * would recouple zoom to it too, undoing the two-zone rework). Same fixed
+ * pixel sizes the old rings used, before they were removed in the two-zone
+ * rework - reused here as a reasonable, already-designed-for-this-screen
+ * starting point. A deliberate, scoped exception to the Instrument
+ * redesign's "no accent colour" rule (theme/colors.ts) - confirmed with
+ * the user directly rather than assumed.
+ */
+const RADAR_RING_OUTER_SIZE = 236;
+const RADAR_RING_INNER_SIZE = 120;
+const RADAR_RING_PULSE_DURATION_MS = 1000;
+
+/**
  * How long the camera lingers on a genuinely-new alert's exact location
  * before returning to the close driver-following view - a brief
  * interruption, not a tour. "Genuinely new" means an alert_id not already
@@ -100,6 +116,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
+  const manualReports = useTripStore((state) => state.manualReports);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
 
@@ -110,10 +127,20 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
    * Settings disappears from the map the same instant it stops being
    * announced, via the exact same source of truth. */
   const enabledTypes = useMemo(() => enabledTypesFromSettings(categoriesEnabled), [categoriesEnabled]);
-  const mapVisibleAlerts = useMemo(
-    () => visibleAlerts.filter((alert) => enabledTypes.has(alert.type)),
-    [visibleAlerts, enabledTypes]
-  );
+  const mapVisibleAlerts = useMemo(() => {
+    const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
+    // A submitted report is inherently a police report - gated on the same
+    // POLICE toggle, same as every other category filter here. Previously
+    // manualReports was never read here at all, so a report had no visible
+    // trace on the map.
+    if (!enabledTypes.has('POLICE')) return waze;
+    const reports = manualReports
+      .filter((report): report is typeof report & { position: NonNullable<typeof report.position> } =>
+        Boolean(report.position)
+      )
+      .map(manualReportToWazeAlert);
+    return [...waze, ...reports];
+  }, [visibleAlerts, manualReports, enabledTypes]);
 
   /**
    * Auto-locate for genuinely new alerts (two-zone layout rework): briefly
@@ -163,6 +190,30 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   );
 
   const displayFocus = focusedAlert ?? newAlertSpotlight;
+
+  /** Loops continuously for the lifetime of this component - a glanceable
+   * "listening" cue, not driven by any data, so it never needs resetting. */
+  const ringPulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ringPulse, {
+          toValue: 1,
+          duration: RADAR_RING_PULSE_DURATION_MS,
+          useNativeDriver: true,
+        }),
+        Animated.timing(ringPulse, {
+          toValue: 0,
+          duration: RADAR_RING_PULSE_DURATION_MS,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [ringPulse]);
+  const ringScale = ringPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const ringOpacity = ringPulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.15] });
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
   /** Skips the very first run - there's no meaningful "from" state on
@@ -312,6 +363,19 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         ))}
       </Mapbox.MapView>
 
+      {!displayFocus ? (
+        <>
+          <Animated.View
+            style={[styles.radarRingOuter, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+            pointerEvents="none"
+          />
+          <Animated.View
+            style={[styles.radarRingInner, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+            pointerEvents="none"
+          />
+        </>
+      ) : null}
+
       <View style={styles.headingChip} pointerEvents="none">
         <Text style={styles.headingChipText}>
           {displayFocus && focusLabel
@@ -411,6 +475,30 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: instrument.mutedOnInk,
     textAlign: 'center',
+  },
+  radarRingOuter: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: RADAR_RING_OUTER_SIZE,
+    height: RADAR_RING_OUTER_SIZE,
+    marginLeft: -RADAR_RING_OUTER_SIZE / 2,
+    marginTop: -RADAR_RING_OUTER_SIZE / 2,
+    borderRadius: RADAR_RING_OUTER_SIZE / 2,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  radarRingInner: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: RADAR_RING_INNER_SIZE,
+    height: RADAR_RING_INNER_SIZE,
+    marginLeft: -RADAR_RING_INNER_SIZE / 2,
+    marginTop: -RADAR_RING_INNER_SIZE / 2,
+    borderRadius: RADAR_RING_INNER_SIZE / 2,
+    borderWidth: 1,
+    borderColor: colors.accent,
   },
   headingChip: {
     position: 'absolute',

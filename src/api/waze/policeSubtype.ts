@@ -3,11 +3,12 @@
  * driver picked a more specific category (e.g. "POLICE_VISIBLE" for a
  * visible patrol car) - confirmed present in OpenWeb Ninja's live
  * response/dashboard data, not just inferred from the Waze app's own UI.
- * Humanized generically (strip the POLICE_ prefix, title-case each word)
- * rather than mapped through a hardcoded enum: "POLICE_VISIBLE" is the
- * only exact subtype string independently confirmed so far, and guessing
- * the rest of Waze's enum wrong would silently mislabel a real subtype
- * instead of falling back cleanly.
+ * Humanized generically (strip the POLICE_ prefix, title-case each word,
+ * "Police" first - e.g. "POLICE_VISIBLE" -> "Police Visible") rather than
+ * mapped through a hardcoded enum: "POLICE_VISIBLE" is the only exact
+ * subtype string independently confirmed so far, and guessing the rest of
+ * Waze's enum wrong would silently mislabel a real subtype instead of
+ * falling back cleanly.
  *
  * Returns null - callers fall back to the generic "Police" label - for a
  * null/missing subtype, the shared "NO_SUBTYPE" sentinel Waze uses across
@@ -27,5 +28,5 @@ export function policeSubtypeLabel(subtype: string | null | undefined): string |
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 
-  return words.length > 0 ? `${words.join(' ')} police` : null;
+  return words.length > 0 ? `Police ${words.join(' ')}` : null;
 }

@@ -6,6 +6,7 @@ import { haversineDistance } from '../geo/distance';
 import { announcementLocation } from '../speech/formatAnnouncement';
 import { STALE_ANNOUNCEMENT_AGE_MINUTES } from '../speech/constants';
 import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
+import { manualReportToWazeAlert } from '../store/manualReportAlert';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { alertTypeMeta } from '../theme/alertTypeMeta';
@@ -63,6 +64,7 @@ export function DriveScreen() {
   const locationError = useTripStore((state) => state.locationError);
   const driverPosition = useTripStore((state) => state.driverPosition);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
+  const manualReports = useTripStore((state) => state.manualReports);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -104,11 +106,22 @@ export function DriveScreen() {
   // every poll, same as before.
   const nearbyAlerts = useMemo(() => {
     if (!driverPosition) return [];
-    return visibleAlerts
-      .filter((alert) => enabledTypes.has(alert.type))
+    const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
+    // A submitted report is inherently a police report, same POLICE-toggle
+    // gating as every other category filter here - previously manualReports
+    // was never read on this screen at all, so a report had no visible
+    // trace in the feed.
+    const reports = enabledTypes.has('POLICE')
+      ? manualReports
+          .filter((report): report is typeof report & { position: NonNullable<typeof report.position> } =>
+            Boolean(report.position)
+          )
+          .map(manualReportToWazeAlert)
+      : [];
+    return [...waze, ...reports]
       .map((alert) => ({ alert, distanceMeters: haversineDistance(driverPosition, alert) }))
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [visibleAlerts, enabledTypes, driverPosition]);
+  }, [visibleAlerts, manualReports, enabledTypes, driverPosition]);
 
   const status = statusFor({ masterMute, isOffline });
   const metaLine = `${statusLabel(status).toUpperCase()} · ${formatAwarenessKm(announceDistanceMeters)} KM AWARENESS · ${

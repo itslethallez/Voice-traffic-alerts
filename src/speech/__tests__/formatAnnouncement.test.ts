@@ -102,7 +102,7 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Visible police reported on North Terrace, Adelaide, northbound, 800 metres ahead.'
+      'Police Visible reported on North Terrace, Adelaide, northbound, 800 metres ahead.'
     );
   });
 
@@ -239,7 +239,7 @@ describe('formatBriefingAlert', () => {
       city: 'Adelaide',
       ageMinutes: 5,
     });
-    expect(formatBriefingAlert(candidate)).toBe('Visible police reported on Anzac Highway, Adelaide, 5 minutes ago.');
+    expect(formatBriefingAlert(candidate)).toBe('Police Visible reported on Anzac Highway, Adelaide, 5 minutes ago.');
   });
 
   it('uses the street and suburb when present, and never appends a direction', () => {

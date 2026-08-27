@@ -6,7 +6,7 @@ describe('alertTypeMeta', () => {
   });
 
   it('prefers a subtype-specific label for POLICE when one is recognized', () => {
-    expect(alertTypeMeta('POLICE', 'POLICE_VISIBLE').label).toBe('Visible police');
+    expect(alertTypeMeta('POLICE', 'POLICE_VISIBLE').label).toBe('Police Visible');
   });
 
   it('falls back to the generic label when the POLICE subtype is null', () => {

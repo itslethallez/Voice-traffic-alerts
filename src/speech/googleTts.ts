@@ -2,13 +2,16 @@ import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audi
 import { env } from '../config/env';
 
 /**
- * Google's current flagship "Chirp3 HD" tier - Australian English, verified
- * live against the real API while planning this (GET /v1/voices and a real
+ * Google's current flagship "Chirp3 HD" tier - UK English, female, verified
+ * live against the real API before wiring it in (GET /v1/voices and a real
  * /v1/text:synthesize call both confirmed against the user's own GCP
- * project, not assumed from docs).
+ * project, not assumed from docs). If a cheaper TTS provider swap happens
+ * later, this voice preference (UK English, female, Chirp3 HD tier or
+ * equivalent) should carry over rather than reset to whatever that
+ * provider's own default is.
  */
-const GOOGLE_TTS_LANGUAGE_CODE = 'en-AU';
-const GOOGLE_TTS_VOICE_NAME = 'en-AU-Chirp3-HD-Charon';
+const GOOGLE_TTS_LANGUAGE_CODE = 'en-GB';
+const GOOGLE_TTS_VOICE_NAME = 'en-GB-Chirp3-HD-Kore';
 
 async function fetchAudioDataUri(text: string, signal: AbortSignal): Promise<string> {
   if (!env.googleTtsApiKey) {
