@@ -51,6 +51,33 @@ CREATE INDEX user_reports_device_id_created_at_idx ON user_reports (device_id, c
 ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS subtype TEXT;
 ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
+-- Waze's own alerts (police/accident/hazard/road-closed/jam), mirrored
+-- server-side by scripts/refreshWazeAlerts.js on a schedule (GitHub
+-- Actions, not a Vercel Cron - see that script's header comment for why).
+-- Nothing in the app reads this table yet: the mobile client still polls
+-- OpenWeb Ninja directly (src/api/waze/client.ts) for its live alert
+-- pipeline, unchanged. This is a passive, continuously-refreshed copy of
+-- what Waze is reporting, independent of any one device's trip.
+CREATE TABLE IF NOT EXISTS waze_alerts (
+  id TEXT PRIMARY KEY, -- Waze's own alert_id
+  type TEXT NOT NULL,
+  subtype TEXT,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  street TEXT,
+  city TEXT,
+  reported_at TIMESTAMPTZ, -- Waze's publish_datetime_utc
+  reliability INTEGER,
+  confidence INTEGER,
+  num_thumbs_up INTEGER,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Lets a cleanup query cheaply find alerts no run has seen in a while,
+-- without a full table scan.
+CREATE INDEX IF NOT EXISTS waze_alerts_last_seen_at_idx ON waze_alerts (last_seen_at);
+
 -- One row per device that has confirmed a given report ("still there?"),
 -- and the thing that makes a confirmation idempotent per device - the
 -- (report_id, device_id) primary key is what stops a single device from

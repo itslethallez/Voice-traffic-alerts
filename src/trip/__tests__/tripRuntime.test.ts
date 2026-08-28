@@ -12,6 +12,7 @@ const pushAnnouncement = jest.fn();
 const setOffline = jest.fn();
 const setDriverPosition = jest.fn();
 const setVisibleAlerts = jest.fn();
+const setFixedCameras = jest.fn();
 const setTripStartedAtMs = jest.fn();
 const setManualReports = jest.fn();
 let tripBannerMessage: string | null = null;
@@ -32,6 +33,7 @@ jest.mock('../../store/useTripStore', () => ({
       setBannerMessage,
       setDriverPosition,
       setVisibleAlerts,
+      setFixedCameras,
       setTripStartedAtMs,
       setManualReports,
       get bannerMessage() {
@@ -416,7 +418,7 @@ describe('speed camera warning', () => {
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
     expect(speakAsync).toHaveBeenCalledWith(
-      expect.stringContaining('Speed camera ahead'),
+      expect.stringContaining('Speed camera 500 metres ahead'),
       expect.anything()
     );
   });
@@ -441,13 +443,16 @@ describe('speed camera warning', () => {
     expect(prefetchSpeedLimit).not.toHaveBeenCalled(); // shouldn't even bother resolving the limit
   });
 
-  it('does not warn while the speed limit is still unresolved, but does trigger a prefetch', async () => {
+  it('still warns (unconfirmed, no "over the limit" claim) while the speed limit is unresolved, and triggers a prefetch', async () => {
     mockCameras = [TEST_CAMERA];
     // mockSpeedLimitKmh left undefined - simulates "prefetch in flight, not back yet"
 
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
-    expect(speakAsync).not.toHaveBeenCalled();
+    expect(speakAsync).toHaveBeenCalledWith(
+      'Speed camera 500 metres ahead.',
+      expect.anything()
+    );
     expect(prefetchSpeedLimit).toHaveBeenCalledTimes(1);
   });
 
@@ -527,7 +532,7 @@ describe('speed camera warning', () => {
     await handleDriverUpdate({ position: destinationPoint(MOCK_DRIVER_POSITION, 480, 180), headingDeg: 0, speedKmh: 100 }, Date.now());
 
     expect(speakAsync).toHaveBeenCalledWith(
-      expect.stringContaining('Police reported ahead'),
+      expect.stringContaining('Police reported 500 metres ahead'),
       expect.anything()
     );
   });

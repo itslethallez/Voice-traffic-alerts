@@ -1,0 +1,34 @@
+name: Refresh fixed camera dataset
+
+# Weekly, not on every push: SAPOL's own camera list changes rarely, and
+# this scrapes a live third-party page + geocodes every address via
+# Mapbox, so there's no reason to run it more often than that. See
+# scripts/buildFixedCameraDataset.js's header comment for the full
+# rationale (including why this runs on GitHub Actions rather than a
+# Vercel Cron function - the script shells out to curl, which Vercel's
+# Node runtime doesn't reliably provide, to get past SAPOL's WAF).
+on:
+  schedule:
+    - cron: '0 3 * * 1' # Monday 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write .env for the ingest script
+        run: |
+          echo "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=${{ secrets.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN }}" >> .env
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+
+      - name: Run SAPOL fixed-camera ingest
+        run: node scripts/buildFixedCameraDataset.js

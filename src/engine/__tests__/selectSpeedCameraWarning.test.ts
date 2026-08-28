@@ -99,7 +99,7 @@ describe('selectSpeedCameraWarning - speeding buffer', () => {
     expect(result).toBeNull();
   });
 
-  it('fires at exactly the buffer (66 in a 60 zone)', () => {
+  it('fires at exactly the buffer (66 in a 60 zone), confirmed speeding', () => {
     const result = selectSpeedCameraWarning({
       driver: makeDriver({ speedKmh: 66 }),
       speedLimitKmh: 60,
@@ -109,18 +109,20 @@ describe('selectSpeedCameraWarning - speeding buffer', () => {
       nowMs: NOW_MS,
     });
     expect(result).not.toBeNull();
+    expect(result?.confirmedSpeeding).toBe(true);
   });
 
-  it('never fires when the speed limit is unresolved (null)', () => {
+  it('still fires, unconfirmed, when the speed limit is unresolved (null) - a driver should still hear "camera ahead"', () => {
     const result = selectSpeedCameraWarning({
-      driver: makeDriver({ speedKmh: 120 }),
+      driver: makeDriver({ speedKmh: 30 }), // even well under any plausible limit
       speedLimitKmh: null,
       cameras: [makeCamera(400)],
       alerts: [],
       firedCheckpoints: NO_FIRED_CHECKPOINTS,
       nowMs: NOW_MS,
     });
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result?.confirmedSpeeding).toBe(false);
   });
 });
 

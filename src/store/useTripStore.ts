@@ -3,6 +3,7 @@ import { confirmManualReport, deleteManualReport, submitManualReport } from '../
 import type { ManualReportCategory } from '../api/backend/types';
 import type { WazeAlert } from '../api/waze/types';
 import { getDeviceId } from '../config/deviceId';
+import type { FixedSpeedCamera } from '../data/fixedSpeedCameras';
 import type { GeoPoint } from '../geo/types';
 import type { RecentAnnouncement } from '../speech/types';
 
@@ -112,6 +113,12 @@ interface TripStoreState {
    * driverPosition/driverHeadingDeg above. */
   driverSpeedKmh: number;
   visibleAlerts: WazeAlert[];
+  /** Read-only mirror of tripRuntime.ts's getActiveFixedCameras() (the
+   * live central-DB fetch, falling back to the bundled SAPOL snapshot) -
+   * same "radar UI mirror" pattern as driverPosition above. Never filtered
+   * by distance here; RadarMap.tsx does that itself the same way it
+   * already does for manualReports/nearbyReports, with announceDistanceMeters. */
+  fixedCameras: FixedSpeedCamera[];
   manualReports: ManualReport[];
   /** Other devices' nearby, still-live reports - refreshed on the same
    * cadence as the Waze poll (trip/tripRuntime.ts), always a full replace
@@ -147,6 +154,7 @@ interface TripStoreState {
   setLocationError: (message: string | null) => void;
   setDriverPosition: (position: GeoPoint, headingDeg: number, speedKmh: number) => void;
   setVisibleAlerts: (alerts: WazeAlert[]) => void;
+  setFixedCameras: (cameras: FixedSpeedCamera[]) => void;
   setTripStartedAtMs: (atMs: number) => void;
 }
 
@@ -159,6 +167,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   driverHeadingDeg: 0,
   driverSpeedKmh: 0,
   visibleAlerts: [],
+  fixedCameras: [],
   manualReports: [],
   nearbyReports: [],
   tripStartedAtMs: null,
@@ -294,6 +303,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   setDriverPosition: (position, headingDeg, speedKmh) =>
     set({ driverPosition: position, driverHeadingDeg: headingDeg, driverSpeedKmh: speedKmh }),
   setVisibleAlerts: (alerts) => set({ visibleAlerts: alerts }),
+  setFixedCameras: (cameras) => set({ fixedCameras: cameras }),
   setTripStartedAtMs: (atMs) => set({ tripStartedAtMs: atMs }),
 }));
 

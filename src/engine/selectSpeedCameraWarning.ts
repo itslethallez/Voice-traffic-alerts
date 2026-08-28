@@ -112,23 +112,34 @@ export interface SpeedCameraWarningResult {
   target: WarningTarget;
   checkpoint: SpeedWarningCheckpoint;
   distanceMeters: number;
+  /** True when speedLimitKmh was resolved and driver.speedKmh actually
+   * cleared it + SPEED_WARNING_BUFFER_KMH - false when the limit is
+   * unresolved/unavailable (speedLimitKmh === null), in which case this
+   * still fires rather than staying silent just because the lookup
+   * failed, but formatSpeedCameraWarning must not claim the driver is
+   * confirmed speeding. */
+  confirmedSpeeding: boolean;
 }
 
 /**
- * The full decision, given a resolved speed limit. Returns the
- * nearest-target, farthest-unfired-checkpoint match, or null if nothing
- * qualifies. Checkpoints are checked farthest first ([500, 200]) per
- * target: if GPS sampling is sparse enough to jump straight from outside
- * 500m to inside 200m in one update, 500 fires first (slightly "late" but
- * simple and self-correcting - 200 fires on the very next update once 500
- * is marked fired). Never fires twice for the same (target, checkpoint)
- * pair, and never fires at all when driver.speedKmh is under
- * speedLimitKmh + SPEED_WARNING_BUFFER_KMH.
+ * The full decision. Returns the nearest-target, farthest-unfired-checkpoint
+ * match, or null if nothing qualifies. Checkpoints are checked farthest
+ * first ([500, 200]) per target: if GPS sampling is sparse enough to jump
+ * straight from outside 500m to inside 200m in one update, 500 fires first
+ * (slightly "late" but simple and self-correcting - 200 fires on the very
+ * next update once 500 is marked fired). Never fires twice for the same
+ * (target, checkpoint) pair. When speedLimitKmh is resolved, never fires at
+ * all while driver.speedKmh is under speedLimitKmh + SPEED_WARNING_BUFFER_KMH
+ * - but an unresolved limit (null - not yet fetched, or genuinely
+ * unavailable there, e.g. off the major-road classes roadSpeedLimit.ts
+ * queries) does NOT suppress the warning; a driver should still hear
+ * "camera ahead" even when this app can't confirm they're over the limit,
+ * rather than staying silent because a lookup happened to fail.
  */
 export function selectSpeedCameraWarning(input: SelectSpeedCameraWarningInput): SpeedCameraWarningResult | null {
   const { driver, speedLimitKmh, cameras, alerts, firedCheckpoints, nowMs } = input;
-  if (speedLimitKmh === null) return null;
-  if (driver.speedKmh < speedLimitKmh + SPEED_WARNING_BUFFER_KMH) return null;
+  if (speedLimitKmh !== null && driver.speedKmh < speedLimitKmh + SPEED_WARNING_BUFFER_KMH) return null;
+  const confirmedSpeeding = speedLimitKmh !== null;
 
   const targets = gatherTargets(cameras, alerts).filter((target) =>
     isGeometricallyEligible(driver, target, alerts, nowMs)
@@ -144,7 +155,7 @@ export function selectSpeedCameraWarning(input: SelectSpeedCameraWarningInput): 
       if (distanceMeters > checkpoint) continue;
 
       if (!best || distanceMeters < best.distanceMeters) {
-        best = { target, checkpoint, distanceMeters };
+        best = { target, checkpoint, distanceMeters, confirmedSpeeding };
       }
       break; // farthest-first: this is the checkpoint to fire for this target
     }

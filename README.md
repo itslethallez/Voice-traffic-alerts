@@ -188,6 +188,50 @@ endpoints.
   on new reports - no accounts. See `server/api/reports.ts` for the
   current limits.
 - Voice notes and full user accounts remain explicitly out of scope.
+- `fixed_cameras` and the new `waze_alerts` table (below) are both kept
+  fresh by scheduled GitHub Actions workflows, not a Vercel Cron - see
+  "Scheduled data refresh" below for why, and what secrets they need.
+
+### Waze alert mirror
+
+`waze_alerts` (`server/schema.sql`) is a passive, continuously-refreshed
+copy of what OpenWeb Ninja's Waze proxy is currently reporting for South
+Australia. **The app itself does not read this table** - `src/api/waze/client.ts`
+still polls OpenWeb Ninja directly, per device, per trip, exactly as
+before. This table exists independently of any one device being on a
+trip, for future use (history, analytics, or eventually replacing the
+client's direct Waze calls - see "API key" above for why that'd also be
+worth doing eventually). `scripts/refreshWazeAlerts.js` does the fetch +
+upsert + stale-row cleanup, on the same pattern as
+`buildFixedCameraDataset.js`.
+
+### Scheduled data refresh
+
+Both ingest scripts (`scripts/buildFixedCameraDataset.js`,
+`scripts/refreshWazeAlerts.js`) run on **GitHub Actions**
+(`.github/workflows/refresh-fixed-cameras.yml`,
+`.github/workflows/refresh-waze-alerts.yml`), not a Vercel Cron:
+
+- The camera scraper shells out to `curl` to get past SAPOL's WAF (see
+  that script's header comment) - Vercel's Node serverless runtime doesn't
+  reliably provide a `curl` binary, while a GitHub Actions runner always
+  does.
+- Vercel Cron's minimum interval depends on the linked project's plan;
+  GitHub Actions' `schedule` trigger doesn't, which matters for the Waze
+  mirror running every 5 minutes.
+
+Both workflows read secrets from the repo's Settings → Secrets and
+variables → Actions, then write them into a throwaway `.env` file before
+running the script (both scripts already only know how to read `.env`,
+not `process.env` directly - this keeps them identical whether run
+locally or in CI). Required secrets:
+
+- `DATABASE_URL` - same Neon connection string `server/`'s API functions use.
+- `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` - for the camera workflow's geocoding.
+- `EXPO_PUBLIC_WAZE_API_KEY` - for the Waze mirror workflow.
+
+Both also support `workflow_dispatch`, so either can be run on demand from
+the Actions tab instead of waiting for the schedule.
 
 ## Build status
 

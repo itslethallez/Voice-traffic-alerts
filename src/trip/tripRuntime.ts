@@ -100,6 +100,12 @@ async function refreshFixedCameras(): Promise<void> {
     }));
   } catch (error) {
     console.warn('[cameras] failed to fetch live fixed camera data, using bundled fallback', error);
+  } finally {
+    // Radar UI mirror (RadarMap.tsx) - published regardless of which branch
+    // above ran, so the map always reflects whatever getActiveFixedCameras()
+    // would return right now (live data if the fetch just succeeded, the
+    // bundled fallback otherwise).
+    useTripStore.getState().setFixedCameras(getActiveFixedCameras());
   }
 }
 
@@ -194,6 +200,12 @@ export function resetTripRuntime(): void {
   useTripStore.getState().setVisibleAlerts([]);
   // History header's "THIS TRIP · {n} MIN" line (design_handoff_instrument_face).
   useTripStore.getState().setTripStartedAtMs(Date.now());
+
+  // Synchronous first: the map has something to render (the bundled
+  // fallback, or whatever live data an earlier trip this session already
+  // fetched) before refreshFixedCameras' own fetch below has even started,
+  // rather than an empty map for however long that fetch takes.
+  useTripStore.getState().setFixedCameras(getActiveFixedCameras());
 
   // Both fire-and-forget: neither blocks trip start, both fall back to
   // already-in-memory/bundled data on failure (Central Database brief).
@@ -316,10 +328,13 @@ export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<
 }
 
 /**
- * Speed-camera / corroborated-police-report warning (Step 12 Part 4): only
- * fires while the driver is speedLimitKmh + SPEED_WARNING_BUFFER_KMH or
- * more, and only for a target within the live announce distance - never a
- * proximity-only "camera here" callout. Gated on the POLICE category
+ * Speed-camera / corroborated-police-report warning (Step 12 Part 4): fires
+ * while the driver is confirmed speedLimitKmh + SPEED_WARNING_BUFFER_KMH or
+ * more, OR the speed limit couldn't be resolved at all there
+ * (selectSpeedCameraWarning.ts's confirmedSpeeding) - a driver still hears
+ * "camera ahead" rather than nothing just because this app doesn't know
+ * the posted limit. Only for a target within the live announce distance.
+ * Gated on the POLICE category
  * toggle, since a SAPOL camera is police-adjacent enforcement
  * infrastructure and a driver who's turned POLICE off has said "don't tell
  * me about police." The (comparatively expensive, rate-limited) OSM speed
@@ -354,7 +369,7 @@ async function checkSpeedCameraWarning(
   if (!warning) return;
 
   try {
-    await speakAsync(formatSpeedCameraWarning(warning.target.kind), {
+    await speakAsync(formatSpeedCameraWarning(warning.target.kind, warning.checkpoint, warning.confirmedSpeeding), {
       rate: settings.voiceRate,
       volume: settings.voiceVolume,
     });

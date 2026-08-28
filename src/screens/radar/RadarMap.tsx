@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
+import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
 import { compassDirection } from '../../geo/bearing';
 import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
@@ -120,6 +121,7 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
+  const fixedCameras = useTripStore((state) => state.fixedCameras);
   const manualReports = useTripStore((state) => state.manualReports);
   const nearbyReports = useTripStore((state) => state.nearbyReports);
   const confirmNearbyReport = useTripStore((state) => state.confirmNearbyReport);
@@ -149,6 +151,26 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
     );
     return [...waze, ...ownReports, ...nearby];
   }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, announceDistanceMeters]);
+
+  /**
+   * Fixed speed cameras (SAPOL data via the central database, or the
+   * bundled fallback - tripRuntime.ts's getActiveFixedCameras) as their own
+   * map layer, distinct from mapVisibleAlerts above: a camera is permanent
+   * infrastructure, not a live Waze/report alert, so it has no `type` to
+   * run through enabledTypes - gated on the POLICE toggle instead, matching
+   * checkSpeedCameraWarning's own gating in tripRuntime.ts (a driver who's
+   * turned POLICE off has said "don't tell me about police", and a SAPOL
+   * camera is police-adjacent enforcement infrastructure). Bounded to
+   * announceDistanceMeters of the driver, the same "nearby and current"
+   * radius the manual/nearby report layers above already use, rather than
+   * every camera in the whole (statewide) dataset at once.
+   */
+  const mapVisibleCameras = useMemo(() => {
+    if (!driverPosition || !categoriesEnabled.POLICE) return [];
+    return fixedCameras.filter(
+      (camera) => haversineDistance(driverPosition, camera.position) <= announceDistanceMeters
+    );
+  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, announceDistanceMeters]);
 
   const nearbyReportsById = useMemo(() => new Map(nearbyReports.map((report) => [report.id, report])), [nearbyReports]);
 
@@ -362,6 +384,16 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
           </Mapbox.MarkerView>
         ) : null}
 
+        {mapVisibleCameras.map((camera) => (
+          <Mapbox.MarkerView
+            key={camera.id}
+            coordinate={[camera.position.longitude, camera.position.latitude]}
+            anchor={{ x: 0.5, y: 1 }}
+          >
+            <FixedCameraMarker camera={camera} driverPosition={driverPosition} />
+          </Mapbox.MarkerView>
+        ))}
+
         {mapVisibleAlerts.map((alert) => (
           <Mapbox.MarkerView
             key={alert.alert_id}
@@ -486,6 +518,47 @@ function AlertMarker({
   );
 }
 
+/**
+ * Deliberately visually distinct from AlertMarker's pins: an outline-only
+ * badge (ink fill, no border) rather than a filled pin, so permanent
+ * enforcement infrastructure doesn't read as "something is happening right
+ * now" the way a live Waze/report alert does. 'S' for "speed camera" -
+ * this app has no other camera type to disambiguate from (see
+ * fixedSpeedCameras.ts's doc comment: PAC/Rail/MPDC types were never
+ * ingested). Not tappable/confirmable - a camera is a fact, not a report -
+ * so unlike AlertMarker this never wraps itself in a Pressable.
+ */
+function FixedCameraMarker({
+  camera,
+  driverPosition,
+}: {
+  camera: FixedSpeedCamera;
+  driverPosition: { latitude: number; longitude: number } | null;
+}) {
+  const distanceMeters = useMemo(
+    () => (driverPosition ? haversineDistance(driverPosition, camera.position) : null),
+    [driverPosition, camera.position]
+  );
+
+  const accessibilityLabel =
+    distanceMeters !== null
+      ? `Fixed speed camera, ${formatCompactDistance(distanceMeters)} ahead, ${camera.label}`
+      : `Fixed speed camera, ${camera.label}`;
+
+  return (
+    <View accessibilityLabel={accessibilityLabel} style={styles.cameraMarker}>
+      <View style={styles.cameraPin}>
+        <Text style={styles.cameraPinLetter}>S</Text>
+      </View>
+      {distanceMeters !== null ? (
+        <View style={styles.cameraDistanceChip}>
+          <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters).replace(/km$/, ' KM')}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function Unsupported({ message }: { message: string }) {
   return (
     <View style={[styles.root, styles.unsupported]}>
@@ -599,6 +672,30 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.5,
     color: instrument.paper,
+  },
+  cameraMarker: {
+    alignItems: 'flex-start',
+    gap: 3,
+  },
+  cameraPin: {
+    width: ALERT_PIN_SIZE,
+    height: ALERT_PIN_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: ALERT_PIN_BORDER_WIDTH,
+    borderColor: hud.accent,
+  },
+  cameraPinLetter: {
+    fontFamily: fontFamily.black,
+    fontSize: 15,
+    lineHeight: 15,
+    color: hud.accent,
+  },
+  cameraDistanceChip: {
+    paddingVertical: 1,
+    paddingHorizontal: 4,
+    backgroundColor: hud.ground,
   },
   confirmChip: {
     marginTop: 3,
