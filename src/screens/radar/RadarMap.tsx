@@ -127,9 +127,15 @@ interface RadarMapProps {
    * needs sub-render-cycle freshness. Falls back to a one-shot Date.now() if
    * omitted, which just means that display won't tick on its own. */
   now?: number;
+  /** Notified whenever the auto-locate new-alert spotlight (below) starts
+   * or ends - DriveScreen.tsx uses this to suppress its own `closest`
+   * ledger exclusion for exactly as long as this component suppresses its
+   * own focus panel, since the spotlight is internal state here that
+   * DriveScreen has no other way to know about. */
+  onSpotlightChange?: (active: boolean) => void;
 }
 
-export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProps) {
+export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightChange }: RadarMapProps) {
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const driverSpeedKmh = useTripStore((state) => state.driverSpeedKmh);
@@ -156,14 +162,21 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     // button) shipped, so gating all of them on the POLICE toggle would hide
     // a driver's own accident/hazard reports when POLICE is off, and never
     // hide them when ACCIDENT/HAZARD themselves are off.
-    const ownReports = visibleManualReportAlerts(manualReports, driverPosition, Date.now(), announceDistanceMeters).filter(
+    // `now`, not Date.now() - DriveScreen.tsx's rawAlerts rebuilds every
+    // second from its own ticking `now` state and passes it down as a prop
+    // for exactly this reason; calling Date.now() here instead would only
+    // re-evaluate the live-report age/distance window when this memo's
+    // other deps change, not every second, so a report the ledger has
+    // already aged out could linger on the map (and in `closest`/the
+    // auto-locate spotlight below) until something unrelated re-renders it.
+    const ownReports = visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters).filter(
       (alert) => enabledTypes.has(alert.type)
     );
-    const nearby = visibleNearbyReportAlerts(nearbyReports, driverPosition, Date.now(), announceDistanceMeters).filter(
+    const nearby = visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters).filter(
       (alert) => enabledTypes.has(alert.type)
     );
     return [...waze, ...ownReports, ...nearby];
-  }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, announceDistanceMeters]);
+  }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, announceDistanceMeters, now]);
 
   /**
    * Fixed speed cameras (SAPOL data via the central database, or the
@@ -233,6 +246,13 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     },
     []
   );
+  // Only newAlertSpotlight, not the full displayFocus below - focusedAlert
+  // is DriveScreen's own state already, so it has no need to be told about
+  // itself; it's newAlertSpotlight (private to this component) that it
+  // otherwise has no way to know about.
+  useEffect(() => {
+    onSpotlightChange?.(newAlertSpotlight !== null);
+  }, [newAlertSpotlight, onSpotlightChange]);
 
   const displayFocus = focusedAlert ?? newAlertSpotlight;
 

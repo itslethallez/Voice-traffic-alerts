@@ -49,7 +49,20 @@ CREATE INDEX user_reports_device_id_created_at_idx ON user_reports (device_id, c
 -- migration runner, so this is the idempotent way for an already-provisioned
 -- database to pick up the new column without re-running the CREATE TABLE.
 ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS subtype TEXT;
-ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now();
+-- Deliberately not `ADD COLUMN ... NOT NULL DEFAULT now()` in one step: on
+-- an already-provisioned database with existing rows, Postgres backfills a
+-- new column from a column default with a single now() evaluated at ALTER
+-- time, not each row's own created_at - stamping every pre-existing report,
+-- however old, as freshly confirmed and making it look live again for
+-- LIVE_REPORT_WINDOW_MS the next time a client reads it. Backfilling from
+-- created_at instead means an old, unconfirmed report starts out already
+-- stale, as it should. Safe to re-run: the UPDATE only touches rows still
+-- NULL, which is none on a second run or on a freshly created table (its
+-- CREATE TABLE column above already has NOT NULL DEFAULT now()).
+ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS last_confirmed_at TIMESTAMPTZ;
+UPDATE user_reports SET last_confirmed_at = created_at WHERE last_confirmed_at IS NULL;
+ALTER TABLE user_reports ALTER COLUMN last_confirmed_at SET DEFAULT now();
+ALTER TABLE user_reports ALTER COLUMN last_confirmed_at SET NOT NULL;
 
 -- Waze's own alerts (police/accident/hazard/road-closed/jam), mirrored
 -- server-side by scripts/refreshWazeAlerts.js on a schedule (GitHub

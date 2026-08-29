@@ -413,11 +413,34 @@ describe('confirmNearbyReport', () => {
 
     expect(confirmManualReport).not.toHaveBeenCalled();
   });
+
+  it('rolls back the optimistic confirm if the backend call fails', async () => {
+    // Regression test (Bugbot: "Optimistic confirm wiped by poll") - the
+    // confirm PATCH's result was previously discarded entirely, so a
+    // failure left confirmedByThisDevice: true stuck forever, permanently
+    // disagreeing with a backend that never recorded the confirm.
+    confirmManualReport.mockRejectedValueOnce(new Error('network down'));
+    useTripStore
+      .getState()
+      .setNearbyReports([
+        makeNearbyReport({ id: 'remote-1', confirmedByThisDevice: false, corroborationCount: 2, lastConfirmedAtMs: 1000 }),
+      ]);
+
+    useTripStore.getState().confirmNearbyReport('remote-1');
+    await flushMicrotasks();
+
+    const report = useTripStore.getState().nearbyReports[0];
+    expect(report.confirmedByThisDevice).toBe(false);
+    expect(report.corroborationCount).toBe(2);
+    expect(report.lastConfirmedAtMs).toBe(1000);
+  });
 });
 
 describe('setNearbyReports', () => {
   beforeEach(() => {
     useTripStore.setState(initialState, true);
+    getDeviceId.mockClear();
+    confirmManualReport.mockClear();
   });
 
   it('replaces nearbyReports wholesale', () => {
@@ -426,6 +449,40 @@ describe('setNearbyReports', () => {
     useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-2' })]);
 
     expect(useTripStore.getState().nearbyReports.map((r) => r.id)).toEqual(['remote-2']);
+  });
+
+  it('re-applies an in-flight optimistic confirm instead of letting a stale poll snapshot wipe it', () => {
+    // Regression test (Bugbot: "Optimistic confirm wiped by poll") -
+    // refreshNearbyReports (tripRuntime.ts) replaces nearbyReports wholesale
+    // on the same cadence as the Waze poll; a snapshot fetched before this
+    // device's own confirm committed server-side would otherwise silently
+    // re-enable "STILL THERE?" for a report the driver already confirmed.
+    useTripStore
+      .getState()
+      .setNearbyReports([makeNearbyReport({ id: 'remote-1', confirmedByThisDevice: false, corroborationCount: 0 })]);
+    useTripStore.getState().confirmNearbyReport('remote-1');
+
+    // A poll snapshot that started before the confirm committed - still
+    // shows the server's pre-confirm state.
+    useTripStore
+      .getState()
+      .setNearbyReports([makeNearbyReport({ id: 'remote-1', confirmedByThisDevice: false, corroborationCount: 0 })]);
+
+    const report = useTripStore.getState().nearbyReports[0];
+    expect(report.confirmedByThisDevice).toBe(true);
+    expect(report.corroborationCount).toBe(1);
+  });
+
+  it('trusts a fresh snapshot again once the confirm has resolved', async () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1', confirmedByThisDevice: false })]);
+    useTripStore.getState().confirmNearbyReport('remote-1');
+    await flushMicrotasks();
+
+    useTripStore
+      .getState()
+      .setNearbyReports([makeNearbyReport({ id: 'remote-1', confirmedByThisDevice: true, corroborationCount: 5 })]);
+
+    expect(useTripStore.getState().nearbyReports[0].corroborationCount).toBe(5);
   });
 });
 

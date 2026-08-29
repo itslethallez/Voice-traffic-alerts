@@ -95,6 +95,11 @@ export function DriveScreen() {
 
   const [focusedAlert, setFocusedAlert] = useState<WazeAlert | null>(null);
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // RadarMap's own auto-locate spotlight is private state there - this
+  // mirrors just its active/inactive flag so `closest` below can suppress
+  // itself for exactly as long as RadarMap suppresses its own focus panel,
+  // not only while a tapped ledger row (focusedAlert) is set.
+  const [spotlightActive, setSpotlightActive] = useState(false);
 
   const handleFocusAlert = useCallback((alert: WazeAlert) => {
     if (focusTimeoutRef.current !== null) {
@@ -149,15 +154,17 @@ export function DriveScreen() {
    * from the identical rawAlerts set (mirrors RadarMap.tsx's
    * mapVisibleAlerts) so both agree on exactly which alert that is, without
    * one having to pass it to the other as a prop. Suppressed while
-   * focusedAlert (a tapped ledger row) is set, matching RadarMap.tsx's own
-   * displayFocus gating - once a row is focused, the map shows that row's
-   * own label instead of the focus panel, so nothing should be excluded
-   * from this ledger on its account either.
+   * focusedAlert (a tapped ledger row) or spotlightActive (RadarMap's own
+   * auto-locate spotlight, mirrored back here via onSpotlightChange) is
+   * set, matching RadarMap.tsx's own displayFocus gating exactly - whenever
+   * the map is showing a row's or a new alert's own label instead of the
+   * focus panel, nothing should be excluded from this ledger on that
+   * alert's account either.
    */
   const closest = useMemo(() => {
-    if (!driverPosition || focusedAlert) return null;
+    if (!driverPosition || focusedAlert || spotlightActive) return null;
     return selectClosestOnPathAlert(rawAlerts, driverPosition, driverHeadingDeg, announceDistanceMeters);
-  }, [rawAlerts, driverPosition, focusedAlert, driverHeadingDeg, announceDistanceMeters]);
+  }, [rawAlerts, driverPosition, focusedAlert, spotlightActive, driverHeadingDeg, announceDistanceMeters]);
 
   // Sorted, distance-tagged, and - the one thing rawAlerts doesn't already
   // do - excludes `closest` when it's set, since that alert has its own
@@ -198,7 +205,7 @@ export function DriveScreen() {
         </View>
 
         <View style={styles.mapArea}>
-          <RadarMap focusedAlert={focusedAlert} now={now} />
+          <RadarMap focusedAlert={focusedAlert} now={now} onSpotlightChange={setSpotlightActive} />
         </View>
 
         <View style={styles.ledger}>

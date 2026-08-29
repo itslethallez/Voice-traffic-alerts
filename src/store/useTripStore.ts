@@ -24,6 +24,18 @@ const MAX_RECENT_ANNOUNCEMENTS = 3;
 const pendingDeleteLocalKeys = new Set<string>();
 
 /**
+ * ids of nearby reports with a confirmManualReport call still in flight.
+ * refreshNearbyReports (tripRuntime.ts) replaces nearbyReports wholesale on
+ * every poll, same cadence as the Waze poll - a poll that started before
+ * this device's own confirm had committed server-side would otherwise
+ * overwrite the optimistic confirmedByThisDevice: true right back to false,
+ * silently re-enabling "STILL THERE?" for a report the driver already
+ * confirmed. setNearbyReports below re-applies the optimistic confirm state
+ * for any id still in this set instead of trusting a stale fetched snapshot.
+ */
+const pendingConfirmIds = new Set<string>();
+
+/**
  * A driver-initiated one-tap "Report police". Pushed to local state
  * immediately (so the UI's "REPORTED" confirmation and History screen are
  * never waiting on a network round trip) and separately synced to the
@@ -287,11 +299,34 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         manualReports: [...notYetReconciled, ...reports].sort((a, b) => b.createdAtMs - a.createdAtMs),
       };
     }),
-  setNearbyReports: (reports) => set({ nearbyReports: reports }),
+  // A full replace, but re-applies any still-in-flight optimistic confirm
+  // (pendingConfirmIds) on top of the fresh snapshot - see confirmNearbyReport
+  // and pendingConfirmIds' own doc comment above for why a plain overwrite
+  // here would be a race.
+  setNearbyReports: (reports) =>
+    set((state) => {
+      if (pendingConfirmIds.size === 0) return { nearbyReports: reports };
+      const previousById = new Map(state.nearbyReports.map((r) => [r.id, r]));
+      return {
+        nearbyReports: reports.map((r) => {
+          if (!pendingConfirmIds.has(r.id)) return r;
+          const previous = previousById.get(r.id);
+          if (!previous) return r;
+          return {
+            ...r,
+            confirmedByThisDevice: previous.confirmedByThisDevice,
+            lastConfirmedAtMs: previous.lastConfirmedAtMs,
+            corroborationCount: previous.corroborationCount,
+          };
+        }),
+      };
+    }),
   confirmNearbyReport: (id) => {
     const report = get().nearbyReports.find((r) => r.id === id);
     if (!report || report.confirmedByThisDevice) return;
+    const previous = report;
     const confirmedAtMs = Date.now();
+    pendingConfirmIds.add(id);
     set((state) => ({
       nearbyReports: state.nearbyReports.map((r) =>
         r.id === id
@@ -306,6 +341,26 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         await confirmManualReport({ id, deviceId });
       } catch (error) {
         console.warn('[reports] failed to confirm a nearby report on the backend', error);
+        // Roll back: the backend never recorded this confirm, so leaving
+        // confirmedByThisDevice: true would permanently disagree with the
+        // server (with no retry) and grey out "STILL THERE?" for a
+        // confirmation that never actually happened. Only rolls back a
+        // report still present locally - it's harmless to skip if a poll
+        // already aged it out of nearbyReports entirely.
+        set((state) => ({
+          nearbyReports: state.nearbyReports.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  confirmedByThisDevice: previous.confirmedByThisDevice,
+                  lastConfirmedAtMs: previous.lastConfirmedAtMs,
+                  corroborationCount: previous.corroborationCount,
+                }
+              : r
+          ),
+        }));
+      } finally {
+        pendingConfirmIds.delete(id);
       }
     })();
   },
