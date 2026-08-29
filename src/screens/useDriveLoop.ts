@@ -9,6 +9,8 @@ import { FirstFixGate } from '../location/firstFixGate';
 import { BACKGROUND_DENIED_EXPLANATION, ensureLocationPermissions } from '../location/permissions';
 import { toDriverState } from '../location/toDriverState';
 import { configureDuckingAudioSession } from '../speech/audioSession';
+import { addCallStateListener, startCallStateMonitoring, stopCallStateMonitoring } from '../speech/callState';
+import { stopSpeaking } from '../speech/ttsAdapter';
 import { handleDriverUpdate, resetTripRuntime, runBriefing } from '../trip/tripRuntime';
 import { useTripStore } from '../store/useTripStore';
 
@@ -77,6 +79,22 @@ export function useDriveLoop(): void {
     configureDuckingAudioSession().catch((error) => {
       console.warn('[speech] failed to configure audio session', error);
     });
+
+    void startCallStateMonitoring();
+    // Cuts off whatever's already mid-utterance the instant a call starts,
+    // rather than waiting out the rest of that announcement first -
+    // ttsAdapter.ts's speakAsync() separately refuses to *start* any new
+    // one for as long as isPhoneCallActive() stays true.
+    const unsubscribeCallState = addCallStateListener((event) => {
+      if (event === 'active') {
+        stopSpeaking().catch(() => {});
+      }
+    });
+
+    return () => {
+      unsubscribeCallState();
+      stopCallStateMonitoring();
+    };
   }, []);
 
   useEffect(() => {

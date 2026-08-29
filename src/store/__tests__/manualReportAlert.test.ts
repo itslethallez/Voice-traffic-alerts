@@ -14,6 +14,7 @@ function makeReport(overrides: Partial<ManualReport> = {}): ManualReport {
     category: 'POLICE',
     subtype: null,
     lastConfirmedAtMs: NOW_MS,
+    corroborationCount: 0,
     ...overrides,
   };
 }

@@ -23,16 +23,36 @@ jest.mock('../googleTts', () => ({
   stopGoogleTtsSpeech: () => stopGoogleTtsSpeech(),
 }));
 
-import { getLastGoogleTtsError, speakAsync, stopSpeaking } from '../ttsAdapter';
+let phoneCallActive = false;
+jest.mock('../callState', () => ({
+  isPhoneCallActive: () => phoneCallActive,
+}));
+
+import { GOOGLE_TTS_RETRY_COOLDOWN_MS } from '../constants';
+import type { getLastGoogleTtsError as GetLastGoogleTtsError, speakAsync as SpeakAsync, stopSpeaking as StopSpeaking } from '../ttsAdapter';
+
+let speakAsync: typeof SpeakAsync;
+let stopSpeaking: typeof StopSpeaking;
+let getLastGoogleTtsError: typeof GetLastGoogleTtsError;
+
+// A fresh module instance per test - ttsAdapter.ts tracks its Google TTS
+// cooldown (see GOOGLE_TTS_RETRY_COOLDOWN_MS) and lastGoogleTtsError as
+// module-level state with no reset hook of its own, so without this a
+// cooldown set by one test would silently skip Google TTS in a later,
+// unrelated test.
+beforeEach(() => {
+  speak.mockClear();
+  stop.mockClear();
+  speakWithGoogleTtsAsync.mockReset();
+  stopGoogleTtsSpeech.mockClear();
+  phoneCallActive = false;
+  jest.useRealTimers();
+  jest.resetModules();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  ({ speakAsync, stopSpeaking, getLastGoogleTtsError } = require('../ttsAdapter'));
+});
 
 describe('speakAsync', () => {
-  beforeEach(() => {
-    speak.mockClear();
-    stop.mockClear();
-    speakWithGoogleTtsAsync.mockReset();
-    stopGoogleTtsSpeech.mockClear();
-  });
-
   it('speaks via Google TTS and never touches the device voice when it succeeds', async () => {
     speakWithGoogleTtsAsync.mockResolvedValue(undefined);
 
@@ -75,6 +95,48 @@ describe('speakAsync', () => {
 
     await expect(speakAsync('hello')).rejects.toThrow('device tts failed too');
   });
+
+  it('rejects without touching either backend while a phone call is active', async () => {
+    phoneCallActive = true;
+
+    await expect(speakAsync('hello')).rejects.toThrow('Phone call in progress');
+
+    expect(speakWithGoogleTtsAsync).not.toHaveBeenCalled();
+    expect(speak).not.toHaveBeenCalled();
+  });
+
+  it('sticks with the device voice for a cooldown after a Google TTS failure, instead of retrying Google on every alert', async () => {
+    speakWithGoogleTtsAsync.mockRejectedValueOnce(new Error('Google TTS down'));
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+
+    await speakAsync('first alert');
+    expect(speakWithGoogleTtsAsync).toHaveBeenCalledTimes(1);
+
+    speakWithGoogleTtsAsync.mockClear();
+    await speakAsync('second alert, moments later');
+
+    // Still within the cooldown - never even attempted, so it can't flip
+    // back to the Google voice for just one alert before failing again.
+    expect(speakWithGoogleTtsAsync).not.toHaveBeenCalled();
+    expect(speak).toHaveBeenCalledWith('second alert, moments later', expect.anything());
+  });
+
+  it('retries Google TTS again once the cooldown elapses', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.setSystemTime(0);
+
+    speakWithGoogleTtsAsync.mockRejectedValueOnce(new Error('Google TTS down'));
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+    await speakAsync('first alert');
+
+    jest.setSystemTime(GOOGLE_TTS_RETRY_COOLDOWN_MS + 1);
+    speakWithGoogleTtsAsync.mockReset();
+    speakWithGoogleTtsAsync.mockResolvedValueOnce(undefined);
+
+    await speakAsync('an alert after the cooldown');
+
+    expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith('an alert after the cooldown', expect.anything());
+  });
 });
 
 describe('getLastGoogleTtsError', () => {
@@ -88,11 +150,17 @@ describe('getLastGoogleTtsError', () => {
   });
 
   it('clears back to null once a later call succeeds', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.setSystemTime(0);
+
     speakWithGoogleTtsAsync.mockRejectedValueOnce(new Error('Google TTS request failed with status 401'));
     speak.mockImplementation((_text, options) => options?.onDone?.());
     await speakAsync('hello');
     expect(getLastGoogleTtsError()).not.toBeNull();
 
+    // Past the post-failure cooldown, otherwise this next call would stick
+    // with the device voice and never touch Google TTS at all.
+    jest.setSystemTime(GOOGLE_TTS_RETRY_COOLDOWN_MS + 1);
     speakWithGoogleTtsAsync.mockResolvedValueOnce(undefined);
     await speakAsync('hello again');
 

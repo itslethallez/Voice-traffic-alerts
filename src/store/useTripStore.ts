@@ -59,6 +59,13 @@ export interface ManualReport {
    * from the backend (this device has no way to learn about another
    * device's confirmation of its own report mid-trip otherwise). */
   lastConfirmedAtMs: number;
+  /** How many other devices have tapped "STILL THERE?" on this report
+   * (server/api/reports.ts's corroboration_count) - RadarMap.tsx's closest-
+   * alert focus panel shows this as "HIGH · 3×" alongside the confidence
+   * tier. 0 until the next backend hydration for a report just created
+   * locally (pushManualReport below) - a report can't have been confirmed
+   * by anyone before this device has even finished submitting it. */
+  corroborationCount: number;
 }
 
 /**
@@ -81,6 +88,8 @@ export interface NearbyReport {
    * greys out the confirm affordance instead of re-offering it, and stops
    * confirmNearbyReport from making a pointless repeat backend call. */
   confirmedByThisDevice: boolean;
+  /** See ManualReport.corroborationCount above - same field, same source. */
+  corroborationCount: number;
 }
 
 /**
@@ -192,6 +201,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
       category,
       subtype,
       lastConfirmedAtMs: createdAtMs,
+      corroborationCount: 0,
     };
     set((state) => ({ manualReports: [report, ...state.manualReports] }));
 
@@ -284,7 +294,9 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
     const confirmedAtMs = Date.now();
     set((state) => ({
       nearbyReports: state.nearbyReports.map((r) =>
-        r.id === id ? { ...r, confirmedByThisDevice: true, lastConfirmedAtMs: confirmedAtMs } : r
+        r.id === id
+          ? { ...r, confirmedByThisDevice: true, lastConfirmedAtMs: confirmedAtMs, corroborationCount: r.corroborationCount + 1 }
+          : r
       ),
     }));
 

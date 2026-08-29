@@ -1,4 +1,4 @@
-import { bearingBetween, bearingDifference } from '../bearing';
+import { bearingBetween, bearingDifference, signedBearingOffset } from '../bearing';
 
 // All coordinates are Adelaide-area (lat approx -34.9, southern hemisphere).
 const ORIGIN = { latitude: -34.9, longitude: 138.6 };
@@ -66,6 +66,36 @@ describe('bearingDifference', () => {
       for (let bearing = 0; bearing < 360; bearing += 15) {
         expect(bearingDifference(heading, bearing)).toBeLessThanOrEqual(180);
         expect(bearingDifference(heading, bearing)).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+});
+
+describe('signedBearingOffset', () => {
+  it('is positive (right) for a bearing clockwise of the heading', () => {
+    expect(signedBearingOffset(0, 90)).toBeCloseTo(90);
+  });
+
+  it('is negative (left) for a bearing counter-clockwise of the heading', () => {
+    expect(signedBearingOffset(0, 270)).toBeCloseTo(-90);
+  });
+
+  it('is 0 for identical heading and bearing', () => {
+    expect(signedBearingOffset(45, 45)).toBeCloseTo(0);
+  });
+
+  it('handles the 0/360 seam going right: heading 350, bearing 10 is +20, not -340', () => {
+    expect(signedBearingOffset(350, 10)).toBeCloseTo(20);
+  });
+
+  it('handles the 0/360 seam going left: heading 10, bearing 350 is -20, not +340', () => {
+    expect(signedBearingOffset(10, 350)).toBeCloseTo(-20);
+  });
+
+  it('the magnitude always matches bearingDifference', () => {
+    for (let heading = 0; heading < 360; heading += 15) {
+      for (let bearing = 0; bearing < 360; bearing += 15) {
+        expect(Math.abs(signedBearingOffset(heading, bearing))).toBeCloseTo(bearingDifference(heading, bearing));
       }
     }
   });

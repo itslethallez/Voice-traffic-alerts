@@ -32,6 +32,18 @@ export function bearingDifference(headingDeg: number, alertBearingDeg: number): 
   return diff > 180 ? 360 - diff : diff;
 }
 
+/**
+ * Signed version of bearingDifference: positive means the bearing is to the
+ * right of the heading, negative to the left, in (-180, 180]. Used for
+ * "12° LEFT"/"8° RIGHT" wording (RadarMap.tsx's closest-alert focus panel)
+ * where bearingDifference's unsigned 0-180 range can't tell which side the
+ * alert is on.
+ */
+export function signedBearingOffset(headingDeg: number, alertBearingDeg: number): number {
+  const diff = (((alertBearingDeg - headingDeg) % 360) + 540) % 360;
+  return diff - 180;
+}
+
 const COMPASS_DIRECTIONS = ['north', 'east', 'south', 'west'] as const;
 export type CompassDirection = (typeof COMPASS_DIRECTIONS)[number];
 

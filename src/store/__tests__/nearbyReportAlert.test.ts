@@ -14,6 +14,7 @@ function makeReport(overrides: Partial<NearbyReport> = {}): NearbyReport {
     createdAtMs: NOW_MS,
     lastConfirmedAtMs: NOW_MS,
     confirmedByThisDevice: false,
+    corroborationCount: 0,
     ...overrides,
   };
 }

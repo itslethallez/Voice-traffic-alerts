@@ -23,6 +23,7 @@ function makeManualReport(overrides: Partial<ManualReport> & Pick<ManualReport, 
     category: 'POLICE',
     subtype: null,
     lastConfirmedAtMs: overrides.createdAtMs,
+    corroborationCount: 0,
     ...overrides,
   };
 }
@@ -36,6 +37,7 @@ function makeNearbyReport(overrides: Partial<NearbyReport> & Pick<NearbyReport, 
     createdAtMs: 1000,
     lastConfirmedAtMs: 1000,
     confirmedByThisDevice: false,
+    corroborationCount: 0,
     ...overrides,
   };
 }
@@ -368,6 +370,14 @@ describe('confirmNearbyReport', () => {
     useTripStore.getState().confirmNearbyReport('remote-1');
 
     expect(useTripStore.getState().nearbyReports[0].confirmedByThisDevice).toBe(true);
+  });
+
+  it('optimistically bumps corroborationCount by one', () => {
+    useTripStore.getState().setNearbyReports([makeNearbyReport({ id: 'remote-1', corroborationCount: 2 })]);
+
+    useTripStore.getState().confirmNearbyReport('remote-1');
+
+    expect(useTripStore.getState().nearbyReports[0].corroborationCount).toBe(3);
   });
 
   it('resets the report\'s lastConfirmedAtMs to now', () => {

@@ -133,6 +133,7 @@ function toManualReport(remote: RemoteManualReport): ManualReport {
     category: resolveCategory(remote.category),
     subtype: remote.subtype,
     lastConfirmedAtMs: new Date(remote.lastConfirmedAt).getTime(),
+    corroborationCount: remote.corroborationCount,
   };
 }
 
@@ -146,6 +147,7 @@ function toNearbyReport(remote: RemoteManualReport): NearbyReport {
     createdAtMs: new Date(remote.createdAt).getTime(),
     lastConfirmedAtMs: new Date(remote.lastConfirmedAt).getTime(),
     confirmedByThisDevice: remote.confirmedByRequester ?? false,
+    corroborationCount: remote.corroborationCount,
   };
 }
 

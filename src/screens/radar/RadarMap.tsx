@@ -3,6 +3,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
 import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
+import { selectClosestOnPathAlert } from '../../engine/selectClosestOnPathAlert';
 import { compassDirection } from '../../geo/bearing';
 import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
@@ -16,6 +17,7 @@ import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { hud, instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
+import { ClosestReportPanel } from './ClosestReportPanel';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
 import { PoliceLightBar } from './PoliceLightBar';
@@ -46,17 +48,20 @@ try {
 
 /** Used only until the first GPS fix arrives, when there's no latitude yet
  * to compute a to-scale zoom from - matches the existing "no center
- * coordinate until driverPosition exists" fallback below. */
-const DEFAULT_ZOOM = 15;
+ * coordinate until driverPosition exists" fallback below. Matches
+ * DEFAULT_CLOSE_ZOOM so the map doesn't visibly jump zoom level the moment
+ * the first fix lands. */
+const DEFAULT_ZOOM = 13;
 /**
- * Two-zone layout (Step 12/13 rework): the map's default view is now a
- * close, tightly-zoomed "where am I right now" view centered on the
- * driver, decoupled from announceDistanceMeters entirely - it no longer
- * tours out to a wide survey. The old awareness rings, which visualised
- * the announce radius to scale, are gone along with the wide default zoom
- * they depended on.
+ * Two-zone layout (Step 12/13 rework): the map's default view centers on
+ * the driver, decoupled from announceDistanceMeters entirely - it no
+ * longer tours out to a wide survey. The old awareness rings, which
+ * visualised the announce radius to scale, are gone along with the wide
+ * default zoom they depended on. Widened from 16 to 13 (user feedback: the
+ * original close, ~1-2 block view didn't give enough surrounding-road
+ * context at a glance).
  */
-const DEFAULT_CLOSE_ZOOM = 16;
+const DEFAULT_CLOSE_ZOOM = 13;
 /** Fixed zoom for a focused alert (Step 12 #25) - close enough to read the
  * marker clearly, not derived from announceDistanceMeters since a focused
  * view isn't about the driver's awareness radius. */
@@ -115,11 +120,19 @@ interface RadarMapProps {
    * deliberate zoom-to-an-alert trigger; takes priority over the
    * automatic new-alert spotlight below if both are somehow active. */
   focusedAlert?: WazeAlert | null;
+  /** Drives the closest-alert focus panel's live "REPORTED {n} MIN AGO" and
+   * closing-time text (Step 12 #25's `Voice Traffic Alerts - Current UI.dc.html`
+   * turn 6) - passed down from DriveScreen.tsx's own 1s ticker rather than
+   * this component running a second one, since only one subscriber actually
+   * needs sub-render-cycle freshness. Falls back to a one-shot Date.now() if
+   * omitted, which just means that display won't tick on its own. */
+  now?: number;
 }
 
-export function RadarMap({ focusedAlert = null }: RadarMapProps) {
+export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProps) {
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
+  const driverSpeedKmh = useTripStore((state) => state.driverSpeedKmh);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const fixedCameras = useTripStore((state) => state.fixedCameras);
   const manualReports = useTripStore((state) => state.manualReports);
@@ -222,6 +235,23 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
   );
 
   const displayFocus = focusedAlert ?? newAlertSpotlight;
+
+  /**
+   * Closest-alert focus panel (`Voice Traffic Alerts - Current UI.dc.html`
+   * turn 6) - the same `closest` value DriveScreen.tsx's "ALSO AHEAD"
+   * ledger uses to exclude this alert from its own list, computed
+   * independently there from the same unified alert set so both agree
+   * without one passing the other props. null (falls back to the plain
+   * compass heading chip below) whenever there's no driver position yet,
+   * or nothing within the announce distance window - and deliberately
+   * suppressed while displayFocus (tap-to-focus or the new-alert
+   * spotlight) is active, so this never fights that feature's own
+   * heading-chip override for the same screen real estate.
+   */
+  const closest = useMemo(() => {
+    if (!driverPosition || displayFocus) return null;
+    return selectClosestOnPathAlert(mapVisibleAlerts, driverPosition, driverHeadingDeg, announceDistanceMeters);
+  }, [driverPosition, displayFocus, mapVisibleAlerts, driverHeadingDeg, announceDistanceMeters]);
 
   /** Loops continuously for the lifetime of this component - a glanceable
    * "listening" cue, not driven by any data, so it never needs resetting. */
@@ -427,15 +457,33 @@ export function RadarMap({ focusedAlert = null }: RadarMapProps) {
         </>
       ) : null}
 
-      <View style={styles.headingChip} pointerEvents="none">
-        <Text style={styles.headingChipText}>
-          {displayFocus && focusLabel
-            ? focusLabel
-            : `${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
+      {displayFocus ? (
+        <View style={styles.headingChip} pointerEvents="none">
+          <Text style={styles.headingChipText}>
+            {focusLabel ??
+              `${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
                 headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''
               }`}
-        </Text>
-      </View>
+          </Text>
+        </View>
+      ) : closest ? (
+        <ClosestReportPanel
+          closest={closest}
+          driverHeadingDeg={driverHeadingDeg}
+          driverSpeedKmh={driverSpeedKmh}
+          nowMs={now}
+          nearbyReport={nearbyReportsById.get(closest.alert.alert_id)}
+          onConfirm={confirmNearbyReport}
+        />
+      ) : (
+        <View style={styles.headingChip} pointerEvents="none">
+          <Text style={styles.headingChipText}>
+            {`${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
+              headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''
+            }`}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }

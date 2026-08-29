@@ -64,6 +64,12 @@ export async function startBackgroundLocationUpdatesAsync(): Promise<void> {
     foregroundService: {
       notificationTitle: 'Voice Traffic Alerts',
       notificationBody: 'Listening for alerts on your route.',
+      // Without this, swiping the app away in Android's recent-apps
+      // switcher leaves the foreground service (and this task, and every
+      // announcement it triggers) running indefinitely in the background -
+      // the OS only tears it down on `killServiceOnDestroy: true`, via
+      // LocationTaskService.onTaskRemoved(). Defaults to false upstream.
+      killServiceOnDestroy: true,
     },
   });
 }

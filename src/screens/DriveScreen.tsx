@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { WazeAlert } from '../api/waze/types';
+import { selectClosestOnPathAlert } from '../engine/selectClosestOnPathAlert';
 import type { AnnounceableAlert } from '../engine/types';
 import { haversineDistance } from '../geo/distance';
 import { announcementLocation } from '../speech/formatAnnouncement';
@@ -81,6 +82,7 @@ export function DriveScreen() {
   const bannerMessage = useTripStore((state) => state.bannerMessage);
   const locationError = useTripStore((state) => state.locationError);
   const driverPosition = useTripStore((state) => state.driverPosition);
+  const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
   const nearbyReports = useTripStore((state) => state.nearbyReports);
@@ -117,13 +119,14 @@ export function DriveScreen() {
   // so a category switched off in Settings disappears from this feed the
   // same instant it stops being announced/shown on the map.
   const enabledTypes = useMemo(() => enabledTypesFromSettings(categoriesEnabled), [categoriesEnabled]);
-  // Two-zone layout rework: this feed now mirrors exactly what the map
-  // plots (mapVisibleAlerts there, the same enabledTypes filter here) -
-  // no cap, no forward-facing bearing cone. selectNearbyAlerts.ts (the old
+  // Two-zone layout rework: mirrors exactly what the map plots
+  // (mapVisibleAlerts there, the same enabledTypes filter here) - no cap,
+  // no forward-facing bearing cone. selectNearbyAlerts.ts (the old
   // top-3/90-degree-cone logic) is gone; "expiring" needs no extra
   // handling, since this simply re-derives from live visibleAlerts on
-  // every poll, same as before.
-  const nearbyAlerts = useMemo(() => {
+  // every poll, same as before. Unsorted and un-excluded (see `closest` and
+  // `nearbyAlerts` below) - this is the shared base both derive from.
+  const rawAlerts = useMemo(() => {
     if (!driverPosition) return [];
     const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
     // Each report's own category gates it now, not a blanket POLICE check -
@@ -137,10 +140,36 @@ export function DriveScreen() {
     const nearby = visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters).filter(
       (alert) => enabledTypes.has(alert.type)
     );
-    return [...waze, ...ownReports, ...nearby]
+    return [...waze, ...ownReports, ...nearby];
+  }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, now, announceDistanceMeters]);
+
+  /**
+   * The same "closest" alert RadarMap.tsx's focus panel shows
+   * (`Voice Traffic Alerts - Current UI.dc.html` turn 6) - computed here
+   * from the identical rawAlerts set (mirrors RadarMap.tsx's
+   * mapVisibleAlerts) so both agree on exactly which alert that is, without
+   * one having to pass it to the other as a prop. Suppressed while
+   * focusedAlert (a tapped ledger row) is set, matching RadarMap.tsx's own
+   * displayFocus gating - once a row is focused, the map shows that row's
+   * own label instead of the focus panel, so nothing should be excluded
+   * from this ledger on its account either.
+   */
+  const closest = useMemo(() => {
+    if (!driverPosition || focusedAlert) return null;
+    return selectClosestOnPathAlert(rawAlerts, driverPosition, driverHeadingDeg, announceDistanceMeters);
+  }, [rawAlerts, driverPosition, focusedAlert, driverHeadingDeg, announceDistanceMeters]);
+
+  // Sorted, distance-tagged, and - the one thing rawAlerts doesn't already
+  // do - excludes `closest` when it's set, since that alert has its own
+  // focus panel on the map now and "ALSO AHEAD" below should list
+  // everything else instead of repeating it.
+  const nearbyAlerts = useMemo(() => {
+    if (!driverPosition) return [];
+    return rawAlerts
+      .filter((alert) => alert.alert_id !== closest?.alert.alert_id)
       .map((alert) => ({ alert, distanceMeters: haversineDistance(driverPosition, alert) }))
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, now, announceDistanceMeters]);
+  }, [rawAlerts, closest, driverPosition]);
 
   const status = statusFor({ masterMute, isOffline });
   const gpsClause = driverPosition ? 'GPS LOCKED' : 'ACQUIRING GPS';
@@ -169,13 +198,17 @@ export function DriveScreen() {
         </View>
 
         <View style={styles.mapArea}>
-          <RadarMap focusedAlert={focusedAlert} />
+          <RadarMap focusedAlert={focusedAlert} now={now} />
         </View>
 
         <View style={styles.ledger}>
           <View style={styles.ledgerHeaderRow}>
-            <Text style={styles.ledgerHeaderLabel}>NEARBY ALERTS</Text>
-            <Text style={styles.ledgerHeaderCount}>{nearbyAlerts.length} ALERTS</Text>
+            {/* closest !== null means the map's focus panel is showing that
+             * one alert on its own (RadarMap.tsx) - "ALSO AHEAD"/"N MORE"
+             * makes clear this list is everything besides it, not the
+             * driver's whole nearby picture. */}
+            <Text style={styles.ledgerHeaderLabel}>{closest ? 'ALSO AHEAD' : 'NEARBY ALERTS'}</Text>
+            <Text style={styles.ledgerHeaderCount}>{nearbyAlerts.length} {closest ? 'MORE' : 'ALERTS'}</Text>
           </View>
           {/* Persistent, uncapped feed (two-zone layout rework) - can run
            * long in a dense area, so this scrolls instead of the fixed
