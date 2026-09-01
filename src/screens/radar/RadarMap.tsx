@@ -8,6 +8,7 @@ import { compassDirection } from '../../geo/bearing';
 import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import { awarenessCircleCoordinates, awarenessZoomLevel } from '../../geo/mapScale';
+import { nearestAlertToDriver } from '../../geo/nearestAlert';
 import type { GeoPoint } from '../../geo/types';
 import { announcementLocation } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
@@ -111,7 +112,13 @@ interface RadarMapProps {
   onSpotlightChange?: (active: boolean) => void;
 }
 
+type MapPresentation = 'nearest' | 'range' | 'free';
+
 export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightChange }: RadarMapProps) {
+  // Start in overview mode: show the driver's travel arrow and the closest
+  // visible report. A single tap switches to the exact Warn me from radius;
+  // a pan or pinch leaves the camera entirely in the driver's control.
+  const [mapPresentation, setMapPresentation] = useState<MapPresentation>('nearest');
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const driverSpeedKmh = useTripStore((state) => state.driverSpeedKmh);
@@ -153,6 +160,15 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     );
     return [...waze, ...ownReports, ...nearby];
   }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, announceDistanceMeters, now]);
+
+  // The map is intentionally broader than TTS: it shows the nearest visible
+  // Police / Accident / Hazard (or other enabled alert) even if it is not on
+  // the driver's route. Speech remains gated by range and travel direction in
+  // selectAnnounceableAlerts().
+  const nearestMapAlert = useMemo(
+    () => nearestAlertToDriver(mapVisibleAlerts, driverPosition),
+    [mapVisibleAlerts, driverPosition]
+  );
 
   /**
    * Fixed speed cameras (SAPOL data via the central database, or the
@@ -282,6 +298,22 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     });
   }, [driverPosition?.latitude, announceDistanceMeters, mapViewport.width, mapViewport.height]);
 
+  /** An overview uses the actual distance between driver and closest marker,
+   * so both stay visible rather than showing an arbitrary fixed zoom. */
+  const nearestAlertZoom = useMemo(() => {
+    if (!driverPosition || !nearestMapAlert || mapViewport.width <= 0 || mapViewport.height <= 0) return awarenessZoom;
+    const distanceMeters = haversineDistance(driverPosition, nearestMapAlert);
+    return awarenessZoomLevel({
+      latitude: driverPosition.latitude,
+      radiusMeters: Math.max(distanceMeters / 2, 1),
+      viewportWidth: mapViewport.width,
+      viewportHeight: mapViewport.height,
+      coverage: AWARENESS_CIRCLE_VIEWPORT_COVERAGE,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+    });
+  }, [driverPosition, nearestMapAlert, mapViewport.width, mapViewport.height, awarenessZoom]);
+
   /**
    * The closest-alert focus panel's actually-rendered height (either
    * variant - full on-path panel or the stood-down quiet line), reported up
@@ -315,16 +347,31 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     [showsFocusPanel, focusPanelHeight]
   );
 
-  /** Same reference-stability concern as cameraPadding above - a fresh
-   * array literal every render would retrigger Camera's native setCamera
-   * on every one-second `now` tick even when the driver hasn't actually
-   * moved. Keyed on the underlying primitives, not driverPosition/
-   * displayFocus object identity. */
+  /** Camera targets are declarative only while Shotgun is presenting one of
+   * its two useful automatic views. Once the driver pans or pinches, omit
+   * them so a GPS update never snaps the map away from their exploration. */
+  const cameraFollowsPresentation = mapPresentation !== 'free';
   const cameraCenterCoordinate = useMemo<[number, number] | undefined>(() => {
+    if (!cameraFollowsPresentation) return undefined;
     if (displayFocus) return [displayFocus.longitude, displayFocus.latitude];
+    if (mapPresentation === 'nearest' && driverPosition && nearestMapAlert) {
+      const center = midpoint(driverPosition, nearestMapAlert);
+      return [center.longitude, center.latitude];
+    }
     if (driverPosition) return [driverPosition.longitude, driverPosition.latitude];
     return undefined;
-  }, [displayFocus?.longitude, displayFocus?.latitude, driverPosition?.longitude, driverPosition?.latitude]);
+  }, [
+    cameraFollowsPresentation,
+    displayFocus?.longitude,
+    displayFocus?.latitude,
+    mapPresentation,
+    driverPosition?.longitude,
+    driverPosition?.latitude,
+    nearestMapAlert?.longitude,
+    nearestMapAlert?.latitude,
+  ]);
+  const cameraZoomLevel = displayFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom;
+  const cameraHeading = cameraFollowsPresentation ? (displayFocus ? 0 : driverHeadingDeg) : undefined;
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
   /** Skips the very first run - there's no meaningful "from" state on
@@ -430,20 +477,25 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         // Mapbox's ToS require the logo + attribution control on any map
         // using their data/styling - leave both at their (enabled) default.
         //
-        // The camera below is fully driver-controlled (recentres on every
-        // position update, ~3s), so manual pan/zoom/rotate gestures would
-        // just get yanked back on the next update instead of doing
-        // anything - disable them rather than let the map fight the user.
-        scrollEnabled={false}
-        zoomEnabled={false}
+        // The map starts with a useful alert overview but remains fully
+        // explorable. onRegionWillChange releases automatic follow only for
+        // a real user gesture; programmatic camera moves retain their mode.
+        scrollEnabled
+        zoomEnabled
         pitchEnabled={false}
-        rotateEnabled={false}
+        rotateEnabled
+        onPress={() =>
+          setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'))
+        }
+        onRegionWillChange={(event) => {
+          if (event.properties.isUserInteraction) setMapPresentation('free');
+        }}
       >
         <Mapbox.Camera
           ref={cameraRef}
           centerCoordinate={cameraCenterCoordinate}
-          heading={displayFocus ? 0 : driverHeadingDeg}
-          zoomLevel={displayFocus ? FOCUSED_ALERT_ZOOM : awarenessZoom}
+          heading={cameraHeading}
+          zoomLevel={cameraFollowsPresentation ? cameraZoomLevel : undefined}
           padding={cameraPadding}
           animationMode="easeTo"
           animationDuration={600}
@@ -497,6 +549,21 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           </Mapbox.MarkerView>
         ))}
       </Mapbox.MapView>
+
+      <Pressable
+        style={styles.mapModeControl}
+        onPress={() => setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'))}
+        accessibilityRole="button"
+        accessibilityLabel={
+          mapPresentation === 'range'
+            ? 'Show the nearest visible alert on the map'
+            : 'Show the Warn me from area on the map'
+        }
+      >
+        <Text style={styles.mapModeControlText}>
+          {mapPresentation === 'range' ? 'SHOW NEAREST ALERT' : 'SHOW WARN RANGE'}
+        </Text>
+      </Pressable>
 
       {displayFocus ? (
         <View style={styles.headingChip} pointerEvents="none">
@@ -696,6 +763,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.5,
     color: instrument.paper,
+  },
+  mapModeControl: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    minHeight: 36,
+    justifyContent: 'center',
+    backgroundColor: hud.ground,
+    borderWidth: 1,
+    borderColor: hud.accent,
+    paddingHorizontal: 9,
+  },
+  mapModeControlText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: hud.accent,
   },
   alertMarker: {
     alignItems: 'flex-start',
