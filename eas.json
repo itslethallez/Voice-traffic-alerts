@@ -22,7 +22,8 @@
       "channel": "production",
       "environment": "production",
       "env": {
-        "EAS_USE_PRECOMPILED_MODULES": "0"
+        "EAS_USE_PRECOMPILED_MODULES": "0",
+        "EXPO_USE_PRECOMPILED_MODULES": "0"
       }
     }
   },
