@@ -18,7 +18,7 @@ import { fontFamily } from '../theme/typography';
 import { confidenceLabel } from '../theme/confidence';
 import { PoliceLightBar } from './radar/PoliceLightBar';
 import { RadarMap } from './radar/RadarMap';
-import { ReportButton } from './radar/ReportButton';
+import { ReportBar } from './radar/ReportBar';
 import { splitCompactDistance } from './radar/formatCompactDistance';
 import { Speedometer } from './radar/Speedometer';
 
@@ -235,10 +235,10 @@ export function DriveScreen() {
           </ScrollView>
         </View>
 
-        <View style={styles.speedReportRow}>
+        <View style={styles.speedRow}>
           <Speedometer />
-          <ReportButton />
         </View>
+        <ReportBar />
       </SafeAreaView>
     </View>
   );
@@ -481,9 +481,7 @@ const styles = StyleSheet.create({
   ledgerRowSevMedText: {
     color: hud.sevMed,
   },
-  speedReportRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
+  speedRow: {
     flexGrow: 0,
     flexShrink: 0,
     borderTopWidth: 1,

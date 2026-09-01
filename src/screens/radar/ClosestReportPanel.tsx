@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { ClosestAlert } from '../../engine/selectClosestOnPathAlert';
 import { signedBearingOffset } from '../../geo/bearing';
 import { ANNOUNCE_MAX_BEARING_DIFF_DEG } from '../../geo/announceWindow';
@@ -49,6 +49,12 @@ export interface ClosestReportPanelProps {
    * can be confirmed. */
   nearbyReport?: NearbyReport;
   onConfirm?: (id: string) => void;
+  /** Reports this panel's actually-rendered height back to RadarMap.tsx, so
+   * it can pad the map Camera by that amount and lift the driver mark clear
+   * of the panel (`6a`'s "sits at 34% of map height so it clears the focus
+   * panel") - measured rather than hardcoded since the panel's height
+   * differs between the on-path and stood-down states below. */
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 /**
@@ -74,6 +80,7 @@ export function ClosestReportPanel({
   nowMs,
   nearbyReport,
   onConfirm,
+  onLayout,
 }: ClosestReportPanelProps) {
   const { alert, distanceMeters, bearingDeg, bearingDiffDeg } = closest;
   const meta = alertTypeMeta(alert.type, alert.subtype);
@@ -93,7 +100,7 @@ export function ClosestReportPanel({
   if (!isOnPath) {
     const place = [location.street, location.area].filter((part): part is string => Boolean(part)).join(', ');
     return (
-      <View style={styles.quietRoot}>
+      <View style={styles.quietRoot} onLayout={onLayout}>
         <Text style={styles.quietHeader}>CLOSEST · {Math.round(bearingDiffDeg)}° OFF HEADING</Text>
         <Text style={styles.quietBody}>
           {meta.label.toUpperCase()}
@@ -115,7 +122,7 @@ export function ClosestReportPanel({
   const alreadyConfirmed = nearbyReport?.confirmedByThisDevice ?? false;
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} onLayout={onLayout}>
       <View style={styles.headerRow}>
         <Text style={styles.headerLabel}>CLOSEST · HEADING TOWARD</Text>
         <Text style={styles.headerStatus}>{offsetLabel(offset)} · CLOSING</Text>

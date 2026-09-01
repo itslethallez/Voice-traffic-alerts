@@ -153,7 +153,12 @@ interface TripStoreState {
    * starts. */
   tripStartedAtMs: number | null;
   pushAnnouncement: (announcement: RecentAnnouncement) => void;
-  pushManualReport: (category?: ManualReportCategory, subtype?: string | null) => void;
+  /** Returns the new report's localKey - the report bar's undo affordance
+   * (ReportBar.tsx) needs it to call removeManualReport within the brief
+   * undo window, and has no other way to identify which report it just
+   * filed (manualReports is prepended, but another report could land
+   * ahead of it before the undo window closes). */
+  pushManualReport: (category?: ManualReportCategory, subtype?: string | null) => string;
   /** Removes one of this device's own reports, locally and (in the
    * background) on the backend - identified by localKey since that's the
    * one identifier that never changes across the local-id-to-backend-id
@@ -256,6 +261,8 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         }
       })();
     }
+
+    return localId;
   },
   removeManualReport: (localKey) => {
     const report = get().manualReports.find((r) => r.localKey === localKey);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
 import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
@@ -7,6 +7,7 @@ import { selectClosestOnPathAlert } from '../../engine/selectClosestOnPathAlert'
 import { compassDirection } from '../../geo/bearing';
 import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
+import { awarenessCircleCoordinates, awarenessZoomLevel } from '../../geo/mapScale';
 import type { GeoPoint } from '../../geo/types';
 import { announcementLocation } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
@@ -46,44 +47,19 @@ try {
   Mapbox = null;
 }
 
-/** Used only until the first GPS fix arrives, when there's no latitude yet
- * to compute a to-scale zoom from - matches the existing "no center
- * coordinate until driverPosition exists" fallback below. Matches
- * DEFAULT_CLOSE_ZOOM so the map doesn't visibly jump zoom level the moment
- * the first fix lands. */
+/**
+ * Default until the first GPS fix or map layout is known. Once both are
+ * available the camera uses awarenessZoomLevel(), derived from the active
+ * "Warn me from" radius instead.
+ */
 const DEFAULT_ZOOM = 13;
-/**
- * Two-zone layout (Step 12/13 rework): the map's default view centers on
- * the driver, decoupled from announceDistanceMeters entirely - it no
- * longer tours out to a wide survey. The old awareness rings, which
- * visualised the announce radius to scale, are gone along with the wide
- * default zoom they depended on. Widened from 16 to 13 (user feedback: the
- * original close, ~1-2 block view didn't give enough surrounding-road
- * context at a glance).
- */
-const DEFAULT_CLOSE_ZOOM = 13;
-/** Fixed zoom for a focused alert (Step 12 #25) - close enough to read the
- * marker clearly, not derived from announceDistanceMeters since a focused
- * view isn't about the driver's awareness radius. */
+/** The warning circle's diameter occupies this fraction of the shorter map
+ * edge. Keeping a margin means the circle is fully readable even above the
+ * map's status overlays. */
+const AWARENESS_CIRCLE_VIEWPORT_COVERAGE = 0.78;
+/** Fixed zoom for a focused alert; the awareness view resumes when focus ends. */
 const FOCUSED_ALERT_ZOOM = 16;
-
-/**
- * Decorative "actively scanning" cue, reinstated on top of the map (not
- * replacing it, and not tied to any real-world distance the way the old
- * pre-two-zone rings were - re-coupling ring size to announceDistanceMeters
- * would recouple zoom to it too, undoing the two-zone rework). Same fixed
- * pixel sizes the old rings used, before they were removed in the two-zone
- * rework - reused here as a reasonable, already-designed-for-this-screen
- * starting point. A deliberate, scoped exception to the Instrument
- * redesign's "no accent colour" rule (theme/colors.ts) - confirmed with
- * the user directly rather than assumed. HUD face colour pass adds a
- * third, middle ring and moves the colour from `colors.accent` to
- * `hud.accent`.
- */
-const RADAR_RING_OUTER_SIZE = 236;
-const RADAR_RING_MID_SIZE = 178;
-const RADAR_RING_INNER_SIZE = 120;
-const RADAR_RING_PULSE_DURATION_MS = 1000;
+const AWARENESS_CIRCLE_SEGMENTS = 48;
 
 /**
  * How long the camera lingers on a genuinely-new alert's exact location
@@ -273,29 +249,82 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     return selectClosestOnPathAlert(mapVisibleAlerts, driverPosition, driverHeadingDeg, announceDistanceMeters);
   }, [driverPosition, displayFocus, mapVisibleAlerts, driverHeadingDeg, announceDistanceMeters]);
 
-  /** Loops continuously for the lifetime of this component - a glanceable
-   * "listening" cue, not driven by any data, so it never needs resetting. */
-  const ringPulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(ringPulse, {
-          toValue: 1,
-          duration: RADAR_RING_PULSE_DURATION_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(ringPulse, {
-          toValue: 0,
-          duration: RADAR_RING_PULSE_DURATION_MS,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [ringPulse]);
-  const ringScale = ringPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-  const ringOpacity = ringPulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.15] });
+  /** The Mapbox viewport must be measured at runtime: a zoom that makes a
+   * five-kilometre circle fit a compact phone map would be wrong on a tablet
+   * or after an orientation change. */
+  const [mapViewport, setMapViewport] = useState({ width: 0, height: 0 });
+  const handleMapLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setMapViewport((current) => (current.width === width && current.height === height ? current : { width, height }));
+  };
+
+  const awarenessCircle = useMemo(() => {
+    if (!driverPosition) return null;
+    const coordinates = awarenessCircleCoordinates(driverPosition, announceDistanceMeters, AWARENESS_CIRCLE_SEGMENTS);
+    if (coordinates.length === 0) return null;
+    return {
+      type: 'Feature' as const,
+      properties: {},
+      geometry: { type: 'Polygon' as const, coordinates: [coordinates] },
+    };
+  }, [driverPosition?.latitude, driverPosition?.longitude, announceDistanceMeters]);
+
+  const awarenessZoom = useMemo(() => {
+    if (!driverPosition || mapViewport.width <= 0 || mapViewport.height <= 0) return DEFAULT_ZOOM;
+    return awarenessZoomLevel({
+      latitude: driverPosition.latitude,
+      radiusMeters: announceDistanceMeters,
+      viewportWidth: mapViewport.width,
+      viewportHeight: mapViewport.height,
+      coverage: AWARENESS_CIRCLE_VIEWPORT_COVERAGE,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+    });
+  }, [driverPosition?.latitude, announceDistanceMeters, mapViewport.width, mapViewport.height]);
+
+  /**
+   * The closest-alert focus panel's actually-rendered height (either
+   * variant - full on-path panel or the stood-down quiet line), reported up
+   * via ClosestReportPanel's onLayout - used below to pad the map Camera so
+   * the driver mark sits clear of the panel instead of centred underneath
+   * it (6a/6b: "sits at 34% of map height so it clears the focus panel").
+   * Measured rather than hardcoded since the two panel states differ in
+   * height.
+   */
+  const [focusPanelHeight, setFocusPanelHeight] = useState(0);
+  const showsFocusPanel = closest !== null && !displayFocus;
+  /**
+   * @rnmapbox/maps's Camera re-issues its native setCamera command whenever
+   * this `padding` object's *reference* changes (its own internal
+   * useEffect lists `padding` directly in its deps, not a deep-equals) -
+   * a fresh `{...}` literal here every render would retrigger that 600ms
+   * ease animation on every one of RadarMap's renders, including the
+   * once-a-second re-render driven by DriveScreen's `now` ticker, even
+   * when the actual padding hasn't changed. Memoized on the primitive
+   * inputs (not `closest` itself, which is a new object every render
+   * since it's downstream of that same `now` tick) so the reference only
+   * changes when the padding should actually change.
+   */
+  const cameraPadding = useMemo(
+    () => ({
+      paddingTop: 0,
+      paddingLeft: 0,
+      paddingRight: 0,
+      paddingBottom: showsFocusPanel ? focusPanelHeight : 0,
+    }),
+    [showsFocusPanel, focusPanelHeight]
+  );
+
+  /** Same reference-stability concern as cameraPadding above - a fresh
+   * array literal every render would retrigger Camera's native setCamera
+   * on every one-second `now` tick even when the driver hasn't actually
+   * moved. Keyed on the underlying primitives, not driverPosition/
+   * displayFocus object identity. */
+  const cameraCenterCoordinate = useMemo<[number, number] | undefined>(() => {
+    if (displayFocus) return [displayFocus.longitude, displayFocus.latitude];
+    if (driverPosition) return [driverPosition.longitude, driverPosition.latitude];
+    return undefined;
+  }, [displayFocus?.longitude, displayFocus?.latitude, driverPosition?.longitude, driverPosition?.latitude]);
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
   /** Skips the very first run - there's no meaningful "from" state on
@@ -312,7 +341,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     const targetPoint: GeoPoint = displayFocus
       ? { latitude: displayFocus.latitude, longitude: displayFocus.longitude }
       : driverPosition;
-    const targetZoom = displayFocus ? FOCUSED_ALERT_ZOOM : DEFAULT_CLOSE_ZOOM;
+    const targetZoom = displayFocus ? FOCUSED_ALERT_ZOOM : awarenessZoom;
     const pulledBackZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom - TRANSITION_ZOOM_OUT_DELTA));
     const pivot = midpoint(driverPosition, targetPoint);
 
@@ -389,6 +418,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     <View style={styles.root}>
       <Mapbox.MapView
         style={styles.root}
+        onLayout={handleMapLayout}
         // Mapbox has no built-in "monochrome" stock style - Dark is the
         // closest available match to the design's near-black map ground
         // without hand-authoring a full custom style JSON, which risks a
@@ -411,18 +441,26 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
       >
         <Mapbox.Camera
           ref={cameraRef}
-          centerCoordinate={
-            displayFocus
-              ? [displayFocus.longitude, displayFocus.latitude]
-              : driverPosition
-                ? [driverPosition.longitude, driverPosition.latitude]
-                : undefined
-          }
+          centerCoordinate={cameraCenterCoordinate}
           heading={displayFocus ? 0 : driverHeadingDeg}
-          zoomLevel={displayFocus ? FOCUSED_ALERT_ZOOM : driverPosition ? DEFAULT_CLOSE_ZOOM : DEFAULT_ZOOM}
+          zoomLevel={displayFocus ? FOCUSED_ALERT_ZOOM : awarenessZoom}
+          padding={cameraPadding}
           animationMode="easeTo"
           animationDuration={600}
         />
+
+        {awarenessCircle && !displayFocus ? (
+          <Mapbox.ShapeSource id="awareness-circle-source" shape={awarenessCircle}>
+            <Mapbox.FillLayer
+              id="awareness-circle-fill"
+              style={{ fillColor: hud.accent, fillOpacity: 0.08, fillAntialias: true }}
+            />
+            <Mapbox.LineLayer
+              id="awareness-circle-outline"
+              style={{ lineColor: hud.accent, lineWidth: 2, lineOpacity: 0.9 }}
+            />
+          </Mapbox.ShapeSource>
+        ) : null}
 
         {driverPosition ? (
           <Mapbox.MarkerView
@@ -460,23 +498,6 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         ))}
       </Mapbox.MapView>
 
-      {!displayFocus ? (
-        <>
-          <Animated.View
-            style={[styles.radarRingOuter, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
-            pointerEvents="none"
-          />
-          <Animated.View
-            style={[styles.radarRingMid, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
-            pointerEvents="none"
-          />
-          <Animated.View
-            style={[styles.radarRingInner, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
-            pointerEvents="none"
-          />
-        </>
-      ) : null}
-
       {displayFocus ? (
         <View style={styles.headingChip} pointerEvents="none">
           <Text style={styles.headingChipText}>
@@ -494,6 +515,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           nowMs={now}
           nearbyReport={nearbyReportsById.get(closest.alert.alert_id)}
           onConfirm={confirmNearbyReport}
+          onLayout={(event) => setFocusPanelHeight(event.nativeEvent.layout.height)}
         />
       ) : (
         <View style={styles.headingChip} pointerEvents="none">
@@ -544,12 +566,16 @@ function AlertMarker({
     : baseLabel;
 
   const marker = isPolice ? (
-    // Just the flashing blue/red light bar - no letter, no distance chip.
-    // A real police car doesn't wear a label or a range-finder, just its
-    // lights; the other alert types still get the letter+distance
-    // treatment since they have no equivalent "just show what it is" glyph.
-    <View style={styles.policeMarker}>
-      <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_MARKER_HEIGHT} />
+    <View style={styles.alertMarker}>
+      <View style={styles.policeSquare}>
+        <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_LIGHT_BAR_HEIGHT} />
+        <Text style={styles.policeLetter}>P</Text>
+      </View>
+      {distanceMeters !== null ? (
+        <View style={styles.alertDistanceChip}>
+          <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters).replace(/km$/, ' KM')}</Text>
+        </View>
+      ) : null}
     </View>
   ) : (
     <View style={styles.alertMarker}>
@@ -636,7 +662,7 @@ function Unsupported({ message }: { message: string }) {
 }
 
 const POLICE_MARKER_SIZE = 34;
-const POLICE_MARKER_HEIGHT = 18;
+const POLICE_LIGHT_BAR_HEIGHT = 9;
 const ALERT_PIN_SIZE = 28;
 const ALERT_PIN_BORDER_WIDTH = 2;
 
@@ -657,42 +683,6 @@ const styles = StyleSheet.create({
     color: instrument.mutedOnInk,
     textAlign: 'center',
   },
-  radarRingOuter: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: RADAR_RING_OUTER_SIZE,
-    height: RADAR_RING_OUTER_SIZE,
-    marginLeft: -RADAR_RING_OUTER_SIZE / 2,
-    marginTop: -RADAR_RING_OUTER_SIZE / 2,
-    borderRadius: RADAR_RING_OUTER_SIZE / 2,
-    borderWidth: 1,
-    borderColor: hud.accent,
-  },
-  radarRingMid: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: RADAR_RING_MID_SIZE,
-    height: RADAR_RING_MID_SIZE,
-    marginLeft: -RADAR_RING_MID_SIZE / 2,
-    marginTop: -RADAR_RING_MID_SIZE / 2,
-    borderRadius: RADAR_RING_MID_SIZE / 2,
-    borderWidth: 1,
-    borderColor: hud.accent,
-  },
-  radarRingInner: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: RADAR_RING_INNER_SIZE,
-    height: RADAR_RING_INNER_SIZE,
-    marginLeft: -RADAR_RING_INNER_SIZE / 2,
-    marginTop: -RADAR_RING_INNER_SIZE / 2,
-    borderRadius: RADAR_RING_INNER_SIZE / 2,
-    borderWidth: 1,
-    borderColor: hud.accent,
-  },
   headingChip: {
     position: 'absolute',
     top: 12,
@@ -711,9 +701,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 3,
   },
-  policeMarker: {
+  policeSquare: {
     width: POLICE_MARKER_SIZE,
-    height: POLICE_MARKER_HEIGHT,
+    height: POLICE_MARKER_SIZE,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    backgroundColor: instrument.paper,
+  },
+  policeLetter: {
+    marginTop: 1,
+    fontFamily: fontFamily.black,
+    fontSize: 15,
+    lineHeight: 15,
+    color: instrument.ink,
   },
   alertPin: {
     width: ALERT_PIN_SIZE,

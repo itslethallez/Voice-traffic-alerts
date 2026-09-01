@@ -15,7 +15,10 @@ export function Speedometer() {
 
   return (
     <LinearGradient colors={['#0A1E30', '#060D16']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.container}>
-      <Text style={styles.caption}>SPEED</Text>
+      <View style={styles.captionRow}>
+        <Text style={styles.caption}>SPEED</Text>
+        <Text style={styles.hint}>ONE TAP TO REPORT</Text>
+      </View>
       <View style={styles.valueRow}>
         <Text style={styles.value}>{Math.round(speedKmh)}</Text>
         <Text style={styles.unit}>KM/H</Text>
@@ -26,16 +29,28 @@ export function Speedometer() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 0,
     paddingTop: 10,
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingBottom: 12,
+  },
+  captionRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
   },
   caption: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 2,
     color: hud.accent,
+  },
+  hint: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: hud.accentBright,
   },
   valueRow: {
     flexDirection: 'row',
@@ -44,9 +59,9 @@ const styles = StyleSheet.create({
   },
   value: {
     fontFamily: fontFamily.black,
-    fontSize: 76,
-    lineHeight: 72,
-    letterSpacing: -3,
+    fontSize: 60,
+    lineHeight: 58,
+    letterSpacing: -2,
     color: hud.ink,
     fontVariant: ['tabular-nums'],
   },
