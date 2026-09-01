@@ -37,6 +37,11 @@
     "ts-jest": "^29.4.12",
     "typescript": "~6.0.3"
   },
+  "pnpm": {
+    "patchedDependencies": {
+      "react-native-call-detection": "patches/react-native-call-detection.patch"
+    }
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
