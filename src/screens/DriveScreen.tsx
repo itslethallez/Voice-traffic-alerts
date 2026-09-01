@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { WazeAlert } from '../api/waze/types';
 import { selectClosestOnPathAlert } from '../engine/selectClosestOnPathAlert';
@@ -186,6 +186,7 @@ export function DriveScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
+            <Image source={require('../../assets/header-logo.png')} style={styles.brandIcon} resizeMode="contain" />
             <Text style={styles.brand}>SHOTGUN</Text>
             <View style={styles.headerSpacer} />
             <View style={styles.liveDot} />
@@ -334,6 +335,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
     letterSpacing: 3,
     color: instrument.paper,
+  },
+  brandIcon: {
+    width: 40,
+    height: 40,
+    marginRight: 4,
   },
   headerSpacer: {
     flex: 1,

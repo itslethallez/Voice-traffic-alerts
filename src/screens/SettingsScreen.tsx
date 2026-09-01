@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RangeSlider } from '../components/RangeSlider';
 import {
   ALERT_CATEGORIES,
@@ -71,11 +71,14 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
     <View style={styles.root}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <Text style={styles.title}>SETTINGS</Text>
-          <View style={styles.headerSpacer} />
-          <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button">
-            <Text style={styles.doneText}>DONE</Text>
-          </Pressable>
+          <View style={styles.headerRow}>
+            <Image source={require('../../assets/header-logo.png')} style={styles.brandIcon} resizeMode="contain" />
+            <Text style={styles.title}>SETTINGS</Text>
+            <View style={styles.headerSpacer} />
+            <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button">
+              <Text style={styles.doneText}>DONE</Text>
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
@@ -235,11 +238,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: instrument.paper,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   title: {
     fontFamily: fontFamily.black,
     fontSize: 34,
     letterSpacing: -0.5,
     color: instrument.paper,
+  },
+  brandIcon: {
+    width: 40,
+    height: 40,
+    marginRight: 6,
   },
   headerSpacer: {
     flex: 1,

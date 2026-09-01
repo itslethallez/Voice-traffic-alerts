@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, PanResponder, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Animated, PanResponder, Pressable, SafeAreaView, StyleSheet, Text, View, Image } from 'react-native';
 import { compassDirection } from '../geo/bearing';
 import { announcementLocation } from '../speech/formatAnnouncement';
 import type { RecentAnnouncement } from '../speech/types';
@@ -84,6 +84,7 @@ export function HistoryScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
+            <Image source={require('../../assets/header-logo.png')} style={styles.brandIcon} resizeMode="contain" />
             <Text style={styles.title}>HISTORY</Text>
             <View style={styles.headerSpacer} />
             <Text style={styles.count}>{totalCount}</Text>
@@ -275,6 +276,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 10,
+  },
+  brandIcon: {
+    width: 40,
+    height: 40,
+    marginRight: 4,
   },
   title: {
     fontFamily: fontFamily.black,
