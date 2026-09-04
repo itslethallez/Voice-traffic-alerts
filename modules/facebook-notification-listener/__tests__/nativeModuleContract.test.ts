@@ -19,7 +19,7 @@ describe('local Facebook notification listener Expo module', () => {
     );
     const gradle = readModuleFile('android/build.gradle');
 
-    expect(packageJson.name).toBe('@streetwise/facebook-notification-listener');
+    expect(packageJson.name).toBe('@shotgun/facebook-notification-listener');
     expect(expoModuleConfig).toEqual({
       platforms: ['android'],
       android: {

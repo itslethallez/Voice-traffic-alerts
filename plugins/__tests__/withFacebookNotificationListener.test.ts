@@ -27,7 +27,7 @@ describe('withFacebookNotificationListener', () => {
       $: {
         'android:name':
           'expo.modules.facebooknotificationlistener.FacebookNotificationListenerService',
-        'android:label': 'Streetwise Facebook notification intake',
+        'android:label': 'Shotgun Facebook notification intake',
         'android:permission':
           'android.permission.BIND_NOTIFICATION_LISTENER_SERVICE',
         'android:exported': 'false',
