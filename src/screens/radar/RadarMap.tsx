@@ -408,10 +408,9 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     nearestMapAlert?.latitude,
   ]);
   const cameraZoomLevel = (cameraFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom) + zoomAdjustment;
-  // Range/notify mode is a fixed, north-up overview - it exists to show the
-  // configured "warn me from" distance to scale, which a heading-rotated
-  // pitched view can't do consistently. Nearest/drive keeps following the
-  // driver's actual heading.
+  // Range/notify mode keeps the same locked 50-degree drive perspective; the
+  // notification label and awareness zoom still communicate the configured
+  // warning distance without switching the map to a flat camera.
   const cameraHeading = cameraFollowsPresentation ? (cameraFocus || mapPresentation === 'range' ? 0 : driverHeadingDeg) : undefined;
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
@@ -541,7 +540,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           ref={cameraRef}
           centerCoordinate={cameraCenterCoordinate}
           heading={cameraHeading}
-          pitch={mapPresentation === 'range' ? 0 : 50}
+          pitch={50}
           zoomLevel={cameraFollowsPresentation ? cameraZoomLevel : undefined}
           padding={cameraPadding}
           animationMode="easeTo"

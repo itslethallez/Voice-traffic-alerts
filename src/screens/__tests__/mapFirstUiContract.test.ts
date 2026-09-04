@@ -28,7 +28,8 @@ describe('simplified map-first UI contract', () => {
     expect(drive).toContain('SHOW ON MAP');
 
     const map = source('src/screens/radar/RadarMap.tsx');
-    expect(map).toContain("pitch={mapPresentation === 'range' ? 0 : 50}");
+    expect(map).toContain('pitch={50}');
+    expect(map).not.toContain("pitch={mapPresentation === 'range' ? 0 : 50}");
     expect(map).toContain('ZOOM IN');
     expect(map).toContain('ZOOM OUT');
     expect(map).toContain('SHOW WARN RANGE');

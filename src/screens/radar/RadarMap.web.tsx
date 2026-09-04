@@ -171,7 +171,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
         [Math.min(driverPosition.longitude, focusedAlert.longitude), Math.min(driverPosition.latitude, focusedAlert.latitude)],
         [Math.max(driverPosition.longitude, focusedAlert.longitude), Math.max(driverPosition.latitude, focusedAlert.latitude)],
       ];
-      map.fitBounds(bounds, { padding: 72, pitch: 0, bearing: 0, duration: 400 });
+      map.fitBounds(bounds, { padding: 72, pitch: 50, bearing: 0, duration: 400 });
       focusTransitionTimeoutRef.current = setTimeout(() => {
         map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: 50, bearing: 0, duration: 500 });
         focusTransitionTimeoutRef.current = null;
@@ -242,7 +242,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
               const delta = announceDistanceMeters / 111_320;
               mapRef.current.fitBounds(
                 [[driverPosition.longitude - delta, driverPosition.latitude - delta], [driverPosition.longitude + delta, driverPosition.latitude + delta]],
-                { padding: 56, pitch: 0, bearing: 0, duration: 650 }
+                { padding: 56, pitch: 50, bearing: 0, duration: 650 }
               );
             } else if (!next && driverPosition && mapRef.current) {
               mapRef.current.easeTo({

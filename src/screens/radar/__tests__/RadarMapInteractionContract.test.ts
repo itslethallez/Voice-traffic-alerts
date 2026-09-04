@@ -42,7 +42,8 @@ describe('RadarMap interaction and marker contract', () => {
     expect(webSource.indexOf('map.fitBounds(')).toBeLessThan(webSource.indexOf('map.flyTo('));
     expect(webSource).toMatch(/zoomButtonLabel}>IN<\/Text>/);
     expect(webSource).toMatch(/zoomButtonLabel}>OUT<\/Text>/);
-    expect(webSource).toContain("pitch: 0");
+    expect(webSource).toContain("pitch: 50");
+    expect(webSource).not.toContain("pitch: 0");
     expect(webSource).toContain("bearing: 0");
     expect(webSource).toContain('NOTIFICATION AREA');
     expect(webSource).not.toContain('styles.radarRange');
