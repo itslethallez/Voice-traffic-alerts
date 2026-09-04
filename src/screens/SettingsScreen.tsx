@@ -73,7 +73,7 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Image source={require('../../assets/streetwise-icon.png')} style={styles.brandIcon} resizeMode="contain" />
+            <Image source={require('../../assets/shotgun-icon.png')} style={styles.brandIcon} resizeMode="contain" />
             <Text style={styles.title}>SETTINGS</Text>
             <View style={styles.headerSpacer} />
             <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button">

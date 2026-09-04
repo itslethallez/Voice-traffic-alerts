@@ -50,7 +50,7 @@ export function ReportsScreen({ onSelectAlert }: ReportsScreenProps) {
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
           <View style={styles.headerTop}>
-            <Image source={require('../../assets/streetwise-icon.png')} style={styles.brandIcon} resizeMode="contain" />
+            <Image source={require('../../assets/shotgun-icon.png')} style={styles.brandIcon} resizeMode="contain" />
             <View style={styles.headingBlock}>
               <Text style={styles.title}>CURRENT REPORTS</Text>
               <Text style={styles.subtitle}>{driverPosition ? 'CLOSEST FIRST' : 'WAITING FOR YOUR LOCATION'}</Text>

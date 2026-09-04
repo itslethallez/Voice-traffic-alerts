@@ -8,8 +8,8 @@ describe('Drive report UI contract', () => {
   it('uses the same compact brand icon and title hierarchy as the other primary screens', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
-    expect(drive).toContain("require('../../assets/streetwise-icon.png')");
-    expect(drive).toMatch(/<Text style=\{styles\.brandTitle\}[^>]*>STREETWISE<\/Text>/);
+    expect(drive).toContain("require('../../assets/shotgun-icon.png')");
+    expect(drive).toMatch(/<Text style=\{styles\.brandTitle\}[^>]*>SHOTGUN<\/Text>/);
     expect(drive).toContain('<Text style={styles.brandSubtitle}>LIVE MAP</Text>');
     expect(drive).toMatch(/brandIcon:\s*\{\s*width: 42,\s*height: 42,/);
     expect(drive).not.toContain('streetwise-header.png');

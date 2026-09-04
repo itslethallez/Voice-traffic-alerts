@@ -95,7 +95,7 @@ export function HistoryScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Image source={require('../../assets/streetwise-icon.png')} style={styles.brandIcon} resizeMode="contain" />
+            <Image source={require('../../assets/shotgun-icon.png')} style={styles.brandIcon} resizeMode="contain" />
             <Text style={styles.title}>HISTORY</Text>
             <View style={styles.headerSpacer} />
             <Text style={styles.count}>{totalCount}</Text>

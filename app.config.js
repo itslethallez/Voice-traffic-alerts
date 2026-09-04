@@ -9,11 +9,11 @@
  */
 module.exports = {
   expo: {
-    name: 'Streetwise',
+    name: 'Shotgun',
     slug: 'voice-traffic-alerts',
     version: '1.0.0',
     orientation: 'default',
-    icon: './assets/streetwise-icon.png',
+    icon: './assets/shotgun-icon.png',
     userInterfaceStyle: 'light',
     ios: {
       supportsTablet: true,
@@ -29,7 +29,7 @@ module.exports = {
       package: 'com.itslethallez.voicetrafficalerts',
       adaptiveIcon: {
         backgroundColor: '#E6F4FE',
-        foregroundImage: './assets/streetwise-icon.png',
+        foregroundImage: './assets/shotgun-icon.png',
         backgroundImage: './assets/android-icon-background.png',
         monochromeImage: './assets/android-icon-monochrome.png',
       },

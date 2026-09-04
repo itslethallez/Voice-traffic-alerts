@@ -77,9 +77,9 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
       <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
         <View style={styles.topBar}>
           <View style={styles.brandBlock}>
-            <Image source={require('../../assets/streetwise-icon.png')} style={styles.brandIcon} resizeMode="contain" />
+            <Image source={require('../../assets/shotgun-icon.png')} style={styles.brandIcon} resizeMode="contain" />
             <View style={styles.brandCopy}>
-              <Text style={styles.brandTitle} numberOfLines={1}>STREETWISE</Text>
+              <Text style={styles.brandTitle} numberOfLines={1}>SHOTGUN</Text>
               <Text style={styles.brandSubtitle}>LIVE MAP</Text>
             </View>
           </View>
