@@ -12,7 +12,7 @@ import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { sortCurrentReportsByDistance, type CurrentReport } from './currentReports';
 import { splitCompactDistance } from './radar/formatCompactDistance';
-import { getCachedSuburb } from '../geo/suburbLookup';
+import { resolveAreaName } from '../speech/formatAnnouncement';
 import { PoliceLightBar } from './radar/PoliceLightBar';
 
 interface ReportsScreenProps {

@@ -159,7 +159,7 @@ function normalizeNearBy(nearBy: string | null | undefined): string | null {
  * the suburb hasn't resolved yet (still in flight) or none was found.
  * A pure, synchronous read - never triggers a network call itself.
  */
-function resolveAreaName(alert: WazeAlert): string | null {
+export function resolveAreaName(alert: WazeAlert): string | null {
   const suburb = getCachedSuburb({ latitude: alert.latitude, longitude: alert.longitude });
   return suburb ?? normalizeCity(alert.city);
 }
