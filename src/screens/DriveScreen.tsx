@@ -11,6 +11,9 @@ import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { RadarMap } from './radar/RadarMap';
 import { ReportBar } from './radar/ReportBar';
+import { Speedometer } from './radar/Speedometer';
+
+const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;
 
 interface DriveScreenProps {
   focusedAlert?: WazeAlert | null;
@@ -30,12 +33,24 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
   const [now, setNow] = useState(() => Date.now());
-  const [dismissedAnnouncementId, setDismissedAnnouncementId] = useState<string | null>(null);
+  const latestAnnouncementKey = latestAnnouncement
+    ? `${latestAnnouncement.alertId}:${latestAnnouncement.announcedAtMs}`
+    : null;
+  const [dismissedAnnouncementKey, setDismissedAnnouncementKey] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!latestAnnouncementKey) return;
+
+    const timeout = setTimeout(() => {
+      setDismissedAnnouncementKey(latestAnnouncementKey);
+    }, ANNOUNCEMENT_CARD_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [latestAnnouncementKey]);
 
   const liveReportCount = useMemo(() => {
     const enabledTypes = enabledTypesFromSettings(categoriesEnabled);
@@ -61,7 +76,13 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
 
       <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
         <View style={styles.topBar}>
-          <Image source={require('../../assets/streetwise-header.png')} style={styles.brandLogo} resizeMode="contain" />
+          <View style={styles.brandBlock}>
+            <Image source={require('../../assets/streetwise-icon.png')} style={styles.brandIcon} resizeMode="contain" />
+            <View style={styles.brandCopy}>
+              <Text style={styles.brandTitle} numberOfLines={1}>STREETWISE</Text>
+              <Text style={styles.brandSubtitle}>LIVE MAP</Text>
+            </View>
+          </View>
           <View style={styles.livePill} accessible accessibilityLabel={`${liveReportCount} live reports, ${locationLabel.toLowerCase()}`}>
             <View style={[styles.liveDot, isOffline && styles.offlineDot]} />
             <View>
@@ -71,33 +92,36 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
           </View>
         </View>
 
-        <View style={styles.bottomStack}>
-          {latestAnnouncement && dismissedAnnouncementId !== latestAnnouncement.alertId ? (
-            <View style={styles.announcementCard} accessibilityLiveRegion="polite">
-              <View style={styles.announcementCopy}>
-                <Text style={styles.announcementEyebrow}>JUST ANNOUNCED</Text>
-                <Text style={styles.announcementText} numberOfLines={3}>{latestAnnouncement.text}</Text>
+        <View pointerEvents="box-none" style={styles.mapChrome}>
+          <View style={styles.bottomStack}>
+            {latestAnnouncement && dismissedAnnouncementKey !== latestAnnouncementKey ? (
+              <View style={styles.announcementCard} accessibilityLiveRegion="polite">
+                <View style={styles.announcementCopy}>
+                  <Text style={styles.announcementEyebrow}>JUST ANNOUNCED</Text>
+                  <Text style={styles.announcementText} numberOfLines={3}>{latestAnnouncement.text}</Text>
+                </View>
+                <Pressable
+                  onPress={() => onFocusAlert?.(latestAnnouncement.candidate.alert)}
+                  style={styles.showOnMapButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Show announced report on map: ${latestAnnouncement.text}`}
+                >
+                  <Text style={styles.showOnMapText}>SHOW ON MAP</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setDismissedAnnouncementKey(latestAnnouncementKey)}
+                  style={styles.dismissButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss announced report"
+                >
+                  <Text style={styles.dismissText}>×</Text>
+                </Pressable>
               </View>
-              <Pressable
-                onPress={() => onFocusAlert?.(latestAnnouncement.candidate.alert)}
-                style={styles.showOnMapButton}
-                accessibilityRole="button"
-                accessibilityLabel={`Show announced report on map: ${latestAnnouncement.text}`}
-              >
-                <Text style={styles.showOnMapText}>SHOW ON MAP</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setDismissedAnnouncementId(latestAnnouncement.alertId)}
-                style={styles.dismissButton}
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss announced report"
-              >
-                <Text style={styles.dismissText}>×</Text>
-              </Pressable>
+            ) : null}
+            <View style={styles.reportDock}>
+              <Speedometer />
+              <ReportBar />
             </View>
-          ) : null}
-          <View style={styles.reportDock}>
-            <ReportBar />
           </View>
         </View>
       </SafeAreaView>
@@ -116,7 +140,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    justifyContent: 'space-between',
   },
   topBar: {
     flexDirection: 'row',
@@ -126,9 +149,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
   },
-  brandLogo: {
-    width: 128,
-    height: 46,
+  brandBlock: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  brandIcon: {
+    width: 42,
+    height: 42,
+  },
+  brandCopy: {
+    flexShrink: 1,
+  },
+  brandTitle: {
+    fontFamily: fontFamily.black,
+    fontSize: 18,
+    letterSpacing: 0.4,
+    color: hud.rowTitle,
+  },
+  brandSubtitle: {
+    marginTop: 2,
+    fontFamily: fontFamily.bold,
+    fontSize: 9,
+    letterSpacing: 1.4,
+    color: hud.accent,
   },
   livePill: {
     minHeight: 48,
@@ -164,6 +210,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
     color: hud.accent,
   },
+  mapChrome: {
+    flex: 1,
+    minHeight: 0,
+    justifyContent: 'flex-end',
+    paddingTop: 12,
+  },
   bottomStack: {
     gap: 10,
     paddingBottom: 14,
@@ -172,7 +224,7 @@ const styles = StyleSheet.create({
     minHeight: 82,
     marginHorizontal: 16,
     padding: 14,
-    paddingRight: 42,
+    paddingRight: 52,
     borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -218,10 +270,10 @@ const styles = StyleSheet.create({
   },
   dismissButton: {
     position: 'absolute',
-    right: 7,
-    top: 7,
-    width: 32,
-    height: 32,
+    right: 4,
+    top: 4,
+    minWidth: 44,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },

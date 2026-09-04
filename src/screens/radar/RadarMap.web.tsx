@@ -11,6 +11,7 @@ import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { hud } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
+import { formatCompactDistance } from './formatCompactDistance';
 
 // Keep Mapbox GL's very deep style-expression generics outside the Expo/RN
 // project type graph; this platform adapter is exercised by the web export.
@@ -32,6 +33,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showRange, setShowRange] = useState(false);
   const driverPosition = useTripStore((state) => state.driverPosition);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
@@ -48,6 +50,13 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       ...visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters),
     ].filter((alert) => enabledTypes.has(alert.type));
   }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, categoriesEnabled]);
+
+  const mapRenderableAlerts = useMemo(() => {
+    if (!focusedAlert || mapVisibleAlerts.some((alert) => alert.alert_id === focusedAlert.alert_id)) {
+      return mapVisibleAlerts;
+    }
+    return [...mapVisibleAlerts, focusedAlert];
+  }, [mapVisibleAlerts, focusedAlert]);
 
   useEffect(() => {
     if (!hostRef.current || !env.mapboxAccessToken) return;
@@ -67,6 +76,10 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
     mapRef.current = map;
     return () => {
+      if (focusTransitionTimeoutRef.current !== null) {
+        clearTimeout(focusTransitionTimeoutRef.current);
+        focusTransitionTimeoutRef.current = null;
+      }
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
       mapRef.current = null;
@@ -97,7 +110,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       );
     }
 
-    for (const alert of mapVisibleAlerts) {
+    for (const alert of mapRenderableAlerts) {
       const meta = alertTypeMeta(alert.type, alert.subtype);
       const marker = document.createElement('button');
       marker.type = 'button';
@@ -113,8 +126,8 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       Object.assign(marker.style, {
         width: '36px',
         height: '36px',
-        borderRadius: '50%',
-        border: '3px solid #fff',
+        borderRadius: alert.type === 'POLICE' ? '4px' : '50%',
+        border: focusedAlert?.alert_id === alert.alert_id ? `4px solid ${hud.accent}` : '3px solid #fff',
         background: color,
         color: '#fff',
         font: '800 14px Archivo, Arial, sans-serif',
@@ -134,21 +147,45 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
         }
       }
       marker.addEventListener('click', () => {
-        map.flyTo({ center: [alert.longitude, alert.latitude], zoom: 16, duration: 600 });
+        map.easeTo({ center: [alert.longitude, alert.latitude], zoom: 16, duration: 600 });
       });
-      markersRef.current.push(
-        new mapboxgl.Marker({ element: marker, anchor: 'bottom' })
-          .setLngLat([alert.longitude, alert.latitude])
-          .setPopup(new mapboxgl.Popup({ offset: 22 }).setText(`${meta.label} · ${alert.street ?? alert.city ?? 'Location attached'} · Reported ${Math.max(0, Math.round((now - Date.parse(alert.publish_datetime_utc)) / 60000))} min ago${alert.description ? ` · ${alert.description}` : ''}`))
-          .addTo(map)
-      );
+      const reportMarker = new mapboxgl.Marker({ element: marker, anchor: 'bottom' })
+        .setLngLat([alert.longitude, alert.latitude])
+        .setPopup(new mapboxgl.Popup({ offset: 22 }).setText(`${meta.label} · ${alert.street ?? alert.city ?? 'Location attached'} · Reported ${Math.max(0, Math.round((now - Date.parse(alert.publish_datetime_utc)) / 60000))} min ago${alert.description ? ` · ${alert.description}` : ''}`))
+        .addTo(map);
+      if (focusedAlert?.alert_id === alert.alert_id) reportMarker.togglePopup();
+      markersRef.current.push(reportMarker);
     }
-  }, [mapVisibleAlerts, driverPosition]);
+  }, [mapRenderableAlerts, driverPosition, focusedAlert?.alert_id, now]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !focusedAlert) return;
-    map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, duration: 700 });
+
+    if (focusTransitionTimeoutRef.current !== null) {
+      clearTimeout(focusTransitionTimeoutRef.current);
+    }
+
+    if (driverPosition) {
+      const bounds: [[number, number], [number, number]] = [
+        [Math.min(driverPosition.longitude, focusedAlert.longitude), Math.min(driverPosition.latitude, focusedAlert.latitude)],
+        [Math.max(driverPosition.longitude, focusedAlert.longitude), Math.max(driverPosition.latitude, focusedAlert.latitude)],
+      ];
+      map.fitBounds(bounds, { padding: 72, pitch: 0, bearing: 0, duration: 400 });
+      focusTransitionTimeoutRef.current = setTimeout(() => {
+        map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: 50, bearing: 0, duration: 500 });
+        focusTransitionTimeoutRef.current = null;
+      }, 400);
+
+      return () => {
+        if (focusTransitionTimeoutRef.current !== null) {
+          clearTimeout(focusTransitionTimeoutRef.current);
+          focusTransitionTimeoutRef.current = null;
+        }
+      };
+    }
+
+    map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: 50, bearing: 0, duration: 500 });
   }, [focusedAlert?.alert_id]);
 
   if (!env.mapboxAccessToken) {
@@ -167,9 +204,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       accessibilityLabel={`LIVE WEB MAP with ${mapVisibleAlerts.length} current reports`}
     >
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
-      {showRange && driverPosition ? (
-        <View pointerEvents="none" style={styles.radarRange} accessible accessibilityLabel={`${Math.round(announceDistanceMeters / 100) / 10} kilometre notification range`}>
-          <View style={styles.radarRangeInner} />
+      {showRange ? (
+        <View pointerEvents="none" style={styles.rangeLabelBadge} accessible accessibilityLabel={`${formatCompactDistance(announceDistanceMeters)} notification range`}>
+          <Text style={styles.rangeLabelText}>
+            {formatCompactDistance(announceDistanceMeters).replace(/km$/, ' KM').replace(/m$/, ' M')} NOTIFICATION AREA
+          </Text>
         </View>
       ) : null}
       <View style={styles.mapControls}>
@@ -178,24 +217,41 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
           onPress={() => mapRef.current?.zoomIn({ duration: 350 })}
           accessibilityRole="button"
           accessibilityLabel="ZOOM IN"
-        ><Text style={styles.zoomButtonText}>+</Text></Pressable>
+          accessibilityHint="Increases the map zoom by one level"
+        >
+          <Text style={styles.zoomButtonGlyph}>+</Text>
+          <Text style={styles.zoomButtonLabel}>IN</Text>
+        </Pressable>
         <Pressable
           style={styles.zoomButton}
           onPress={() => mapRef.current?.zoomOut({ duration: 350 })}
           accessibilityRole="button"
           accessibilityLabel="ZOOM OUT"
-        ><Text style={styles.zoomButtonText}>−</Text></Pressable>
+          accessibilityHint="Decreases the map zoom by one level"
+        >
+          <Text style={styles.zoomButtonGlyph}>−</Text>
+          <Text style={styles.zoomButtonLabel}>OUT</Text>
+        </Pressable>
         <Pressable
           style={[styles.rangeButton, showRange && styles.rangeButtonActive]}
           onPress={() => {
             const next = !showRange;
             setShowRange(next);
+            markersRef.current.forEach((marker) => marker.getPopup?.()?.remove());
             if (next && driverPosition && mapRef.current) {
               const delta = announceDistanceMeters / 111_320;
               mapRef.current.fitBounds(
                 [[driverPosition.longitude - delta, driverPosition.latitude - delta], [driverPosition.longitude + delta, driverPosition.latitude + delta]],
-                { padding: 56, pitch: 50, bearing: useTripStore.getState().driverHeadingDeg, duration: 650 }
+                { padding: 56, pitch: 0, bearing: 0, duration: 650 }
               );
+            } else if (!next && driverPosition && mapRef.current) {
+              mapRef.current.easeTo({
+                center: [driverPosition.longitude, driverPosition.latitude],
+                zoom: 15.5,
+                pitch: 50,
+                bearing: useTripStore.getState().driverHeadingDeg,
+                duration: 650,
+              });
             }
           }}
           accessibilityRole="button"
@@ -233,27 +289,22 @@ const styles = StyleSheet.create({
     color: hud.muted,
     textAlign: 'center',
   },
-  radarRange: {
+  rangeLabelBadge: {
     position: 'absolute',
-    left: '50%',
-    top: '50%',
-    width: 240,
-    height: 240,
-    marginLeft: -120,
-    marginTop: -120,
-    borderRadius: 120,
-    borderWidth: 2,
-    borderColor: hud.accent,
-    backgroundColor: 'rgba(38,185,154,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radarRangeInner: {
-    width: 118,
-    height: 118,
-    borderRadius: 59,
+    alignSelf: 'center',
+    top: 78,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: 'rgba(6,27,31,0.94)',
     borderWidth: 1,
-    borderColor: 'rgba(69,209,181,0.58)',
+    borderColor: hud.accent,
+  },
+  rangeLabelText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: hud.accent,
   },
   mapControls: {
     position: 'absolute',
@@ -272,10 +323,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: hud.accent,
   },
-  zoomButtonText: {
+  zoomButtonGlyph: {
     fontFamily: fontFamily.bold,
-    fontSize: 24,
-    lineHeight: 25,
+    fontSize: 18,
+    lineHeight: 16,
+    color: hud.accent,
+  },
+  zoomButtonLabel: {
+    fontFamily: fontFamily.bold,
+    fontSize: 8,
+    lineHeight: 10,
+    letterSpacing: 0.5,
     color: hud.accent,
   },
   rangeButton: {

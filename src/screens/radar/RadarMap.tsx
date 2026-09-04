@@ -9,7 +9,6 @@ import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import { awarenessCircleCoordinates, awarenessZoomLevel } from '../../geo/mapScale';
 import { nearestAlertToDriver } from '../../geo/nearestAlert';
-import type { GeoPoint } from '../../geo/types';
 import { announcementLocation, resolveAreaName } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
@@ -91,9 +90,7 @@ const NEW_ALERT_LOCATE_COOLDOWN_MS = 20000;
  */
 const TRANSITION_ZOOM_OUT_DURATION_MS = 400;
 const TRANSITION_ZOOM_IN_DURATION_MS = 500;
-/** How much further out than the more-zoomed-in of the two endpoints the
- * pull-back step goes. */
-const TRANSITION_ZOOM_OUT_DELTA = 2;
+const FOCUS_BOUNDS_PADDING = [72, 56, 148, 56];
 
 function ageMinutesOf(alert: WazeAlert, nowMs: number): number {
   return (nowMs - Date.parse(alert.publish_datetime_utc)) / 60_000;
@@ -133,6 +130,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
   const [mapPresentation, setMapPresentation] = useState<MapPresentation>('nearest');
   const [zoomAdjustment, setZoomAdjustment] = useState(0);
   const [selectedAlert, setSelectedAlert] = useState<WazeAlert | null>(null);
+  const [settledFocusKey, setSettledFocusKey] = useState<string | null>(null);
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const driverSpeedKmh = useTripStore((state) => state.driverSpeedKmh);
@@ -174,6 +172,26 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     );
     return [...waze, ...ownReports, ...nearby];
   }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, announceDistanceMeters, now]);
+
+  /** A SHOW ON MAP target can have just fallen outside the current poll or
+   * category-filtered marker set. Keep one explicit target marker alive so
+   * the camera never flies to an anonymous point. */
+  const mapRenderableAlerts = useMemo(() => {
+    if (!focusedAlert || mapVisibleAlerts.some((alert) => alert.alert_id === focusedAlert.alert_id)) {
+      return mapVisibleAlerts;
+    }
+    return [...mapVisibleAlerts, focusedAlert];
+  }, [mapVisibleAlerts, focusedAlert]);
+
+  // Presentation changes dismiss transient report detail UI. A newly supplied
+  // SHOW ON MAP target, however, is selected and opens its own detail card.
+  useEffect(() => {
+    setSelectedAlert(null);
+    setSettledFocusKey(null);
+  }, [mapPresentation]);
+  useEffect(() => {
+    setSelectedAlert(focusedAlert);
+  }, [focusedAlert?.alert_id]);
 
   // The map is intentionally broader than TTS: it shows the nearest visible
   // Police / Accident / Hazard (or other enabled alert) even if it is not on
@@ -365,9 +383,14 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
    * its two useful automatic views. Once the driver pans or pinches, omit
    * them so a GPS update never snaps the map away from their exploration. */
   const cameraFollowsPresentation = mapPresentation !== 'free';
+  const focusKey = displayFocus?.alert_id ?? null;
+  /** Do not hand the declarative Camera the focused coordinate until the
+   * imperative bounds-fit has completed; otherwise its child effect can jump
+   * straight to zoom 16 before RadarMap establishes driver-to-target context. */
+  const cameraFocus = displayFocus && settledFocusKey === focusKey ? displayFocus : null;
   const cameraCenterCoordinate = useMemo<[number, number] | undefined>(() => {
     if (!cameraFollowsPresentation) return undefined;
-    if (displayFocus) return [displayFocus.longitude, displayFocus.latitude];
+    if (cameraFocus) return [cameraFocus.longitude, cameraFocus.latitude];
     if (mapPresentation === 'nearest' && driverPosition && nearestMapAlert) {
       const center = midpoint(driverPosition, nearestMapAlert);
       return [center.longitude, center.latitude];
@@ -376,55 +399,61 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     return undefined;
   }, [
     cameraFollowsPresentation,
-    displayFocus?.longitude,
-    displayFocus?.latitude,
+    cameraFocus?.longitude,
+    cameraFocus?.latitude,
     mapPresentation,
     driverPosition?.longitude,
     driverPosition?.latitude,
     nearestMapAlert?.longitude,
     nearestMapAlert?.latitude,
   ]);
-  const cameraZoomLevel = (displayFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom) + zoomAdjustment;
+  const cameraZoomLevel = (cameraFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom) + zoomAdjustment;
   // Range/notify mode is a fixed, north-up overview - it exists to show the
   // configured "warn me from" distance to scale, which a heading-rotated
   // pitched view can't do consistently. Nearest/drive keeps following the
   // driver's actual heading.
-  const cameraHeading = cameraFollowsPresentation ? (displayFocus || mapPresentation === 'range' ? 0 : driverHeadingDeg) : undefined;
+  const cameraHeading = cameraFollowsPresentation ? (cameraFocus || mapPresentation === 'range' ? 0 : driverHeadingDeg) : undefined;
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
-  /** Skips the very first run - there's no meaningful "from" state on
-   * mount, and the declarative Camera props below already center
-   * correctly on first render without needing a transition. */
-  const hasRunFocusTransitionEffectRef = useRef(false);
   const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const focusKey = displayFocus?.alert_id ?? null;
   useEffect(() => {
-    const isFirstRun = !hasRunFocusTransitionEffectRef.current;
-    hasRunFocusTransitionEffectRef.current = true;
-    if (isFirstRun || !cameraRef.current || !driverPosition) return;
-
-    const targetPoint: GeoPoint = displayFocus
-      ? { latitude: displayFocus.latitude, longitude: displayFocus.longitude }
-      : driverPosition;
-    const targetZoom = displayFocus ? FOCUSED_ALERT_ZOOM : awarenessZoom;
-    const pulledBackZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom - TRANSITION_ZOOM_OUT_DELTA));
-    const pivot = midpoint(driverPosition, targetPoint);
-
-    cameraRef.current.setCamera({
-      centerCoordinate: [pivot.longitude, pivot.latitude],
-      zoomLevel: pulledBackZoom,
-      animationDuration: TRANSITION_ZOOM_OUT_DURATION_MS,
-      animationMode: 'easeTo',
-    });
-
     if (focusTransitionTimeoutRef.current !== null) {
       clearTimeout(focusTransitionTimeoutRef.current);
+      focusTransitionTimeoutRef.current = null;
     }
+
+    if (!displayFocus) {
+      setSettledFocusKey(null);
+      return;
+    }
+    if (!cameraRef.current || !driverPosition) {
+      setSettledFocusKey(focusKey);
+      return;
+    }
+
+    const targetCoordinate: [number, number] = [displayFocus.longitude, displayFocus.latitude];
+    const northEast: [number, number] = [
+      Math.max(driverPosition.longitude, displayFocus.longitude),
+      Math.max(driverPosition.latitude, displayFocus.latitude),
+    ];
+    const southWest: [number, number] = [
+      Math.min(driverPosition.longitude, displayFocus.longitude),
+      Math.min(driverPosition.latitude, displayFocus.latitude),
+    ];
+
+    cameraRef.current.fitBounds(
+      northEast,
+      southWest,
+      FOCUS_BOUNDS_PADDING,
+      TRANSITION_ZOOM_OUT_DURATION_MS
+    );
+
     focusTransitionTimeoutRef.current = setTimeout(() => {
+      setSettledFocusKey(focusKey);
       cameraRef.current?.setCamera({
-        centerCoordinate: [targetPoint.longitude, targetPoint.latitude],
-        zoomLevel: targetZoom,
-        heading: displayFocus ? 0 : driverHeadingDeg,
+        centerCoordinate: targetCoordinate,
+        zoomLevel: FOCUSED_ALERT_ZOOM,
+        heading: 0,
         animationDuration: TRANSITION_ZOOM_IN_DURATION_MS,
         animationMode: 'easeTo',
       });
@@ -437,10 +466,8 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         focusTransitionTimeoutRef.current = null;
       }
     };
-    // Deliberately keyed on focusKey alone - driverPosition/driverHeadingDeg
-    // are read live inside for whichever point in time the transition
-    // actually fires, not to re-trigger this effect on every ~3s position
-    // tick the way the declarative Camera props below do.
+    // Deliberately keyed on focusKey alone so GPS updates do not restart the
+    // two-stage transition while it is in progress.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
 
@@ -504,7 +531,10 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           })
         }
         onRegionWillChange={(event) => {
-          if (event.properties.isUserInteraction) setMapPresentation('free');
+          if (event.properties.isUserInteraction) {
+            setSelectedAlert(null);
+            setMapPresentation('free');
+          }
         }}
       >
         <Mapbox.Camera
@@ -551,7 +581,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           </Mapbox.MarkerView>
         ))}
 
-        {mapVisibleAlerts.map((alert) => (
+        {mapRenderableAlerts.map((alert) => (
           <Mapbox.MarkerView
             key={alert.alert_id}
             coordinate={[alert.longitude, alert.latitude]}
@@ -563,6 +593,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
               nearbyReport={nearbyReportsById.get(alert.alert_id)}
               onConfirm={confirmNearbyReport}
               onSelect={setSelectedAlert}
+              isSelected={selectedAlert?.alert_id === alert.alert_id || focusedAlert?.alert_id === alert.alert_id}
             />
           </Mapbox.MarkerView>
         ))}
@@ -572,7 +603,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         <View style={styles.alertDetailCard}>
           <Text style={styles.alertDetailEyebrow}>REPORTED {Math.max(0, Math.round(ageMinutesOf(selectedAlert, now)))} MIN AGO</Text>
           <Text style={styles.alertDetailTitle}>{alertTypeMeta(selectedAlert.type, selectedAlert.subtype).label.toUpperCase()}</Text>
-          <Text style={styles.alertDetailMeta}>{resolveAreaName(selectedAlert) ?? [selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED'}</Text>
+          <Text style={styles.alertDetailMeta}>{resolveAreaName(selectedAlert) ?? ([selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED')}</Text>
           <Pressable style={styles.alertDetailClose} onPress={() => setSelectedAlert(null)} accessibilityRole="button" accessibilityLabel="Close report details">
             <Text style={styles.alertDetailCloseText}>×</Text>
           </Pressable>
@@ -590,16 +621,30 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
       <View style={styles.mapControls}>
         <Pressable
           style={styles.zoomButton}
-          onPress={() => setZoomAdjustment((value) => Math.min(3, value + 1))}
+          onPress={() => {
+            setSelectedAlert(null);
+            setZoomAdjustment((value) => Math.min(3, value + 1));
+          }}
           accessibilityRole="button"
           accessibilityLabel="ZOOM IN"
-        ><Text style={styles.zoomButtonText}>+</Text></Pressable>
+          accessibilityHint="Increases the map zoom by one level"
+        >
+          <Text style={styles.zoomButtonGlyph}>+</Text>
+          <Text style={styles.zoomButtonLabel}>IN</Text>
+        </Pressable>
         <Pressable
           style={styles.zoomButton}
-          onPress={() => setZoomAdjustment((value) => Math.max(-3, value - 1))}
+          onPress={() => {
+            setSelectedAlert(null);
+            setZoomAdjustment((value) => Math.max(-3, value - 1));
+          }}
           accessibilityRole="button"
           accessibilityLabel="ZOOM OUT"
-        ><Text style={styles.zoomButtonText}>−</Text></Pressable>
+          accessibilityHint="Decreases the map zoom by one level"
+        >
+          <Text style={styles.zoomButtonGlyph}>−</Text>
+          <Text style={styles.zoomButtonLabel}>OUT</Text>
+        </Pressable>
         <Pressable
           style={styles.mapModeControl}
           onPress={() => {
@@ -651,6 +696,7 @@ function AlertMarker({
   nearbyReport,
   onConfirm,
   onSelect,
+  isSelected,
 }: {
   alert: WazeAlert;
   driverPosition: { latitude: number; longitude: number } | null;
@@ -660,6 +706,7 @@ function AlertMarker({
   nearbyReport?: NearbyReport;
   onConfirm?: (id: string) => void;
   onSelect: (alert: WazeAlert) => void;
+  isSelected: boolean;
 }) {
   const meta = useMemo(() => alertTypeMeta(alert.type, alert.subtype), [alert.type, alert.subtype]);
   const isPolice = alert.type === 'POLICE';
@@ -684,7 +731,7 @@ function AlertMarker({
 
   const marker = isPolice ? (
     <View style={styles.alertMarker}>
-      <View style={styles.policeSquare}>
+      <View style={[styles.policeSquare, isSelected && styles.selectedMarker]}>
         <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_LIGHT_BAR_HEIGHT} />
         <Text style={styles.policeLetter}>P</Text>
       </View>
@@ -696,7 +743,7 @@ function AlertMarker({
     </View>
   ) : (
     <View style={styles.alertMarker}>
-      <View style={[styles.alertPin, { backgroundColor: meta.color }]}>
+      <View style={[styles.alertPin, { backgroundColor: meta.color }, isSelected && styles.selectedMarker]}>
         <Text style={styles.alertPinLetter}>{meta.letter}</Text>
       </View>
       {distanceMeters !== null ? (
@@ -708,7 +755,7 @@ function AlertMarker({
   );
 
   if (!nearbyReport) {
-    return <Pressable onPress={() => onSelect(alert)} accessibilityRole="button" accessibilityLabel={`${accessibilityLabel}. Show details`}>{marker}</Pressable>;
+    return <Pressable onPress={() => onSelect(alert)} accessibilityRole="button" accessibilityState={{ selected: isSelected }} accessibilityLabel={`${accessibilityLabel}. Show details`}>{marker}</Pressable>;
   }
 
   // Another device's report: tappable to confirm ("still there?"), with a
@@ -719,6 +766,7 @@ function AlertMarker({
     <Pressable
       onPress={() => onSelect(alert)}
       accessibilityRole="button"
+      accessibilityState={{ selected: isSelected }}
       accessibilityLabel={`${accessibilityLabel}. Show details`}
     >
       {marker}
@@ -758,8 +806,9 @@ function FixedCameraMarker({
 
   return (
     <View accessibilityLabel={accessibilityLabel} style={styles.cameraMarker}>
-      <View style={styles.cameraPin}>
-        <Text style={styles.cameraPinLetter}>S</Text>
+      <View style={styles.cameraSquare}>
+        <PoliceLightBar orientation="horizontal" width={FIXED_CAMERA_MARKER_SIZE} height={POLICE_LIGHT_BAR_HEIGHT} />
+        <Text style={styles.cameraSquareLetter}>S</Text>
       </View>
       {distanceMeters !== null ? (
         <View style={styles.cameraDistanceChip}>
@@ -779,6 +828,7 @@ function Unsupported({ message }: { message: string }) {
 }
 
 const POLICE_MARKER_SIZE = 34;
+const FIXED_CAMERA_MARKER_SIZE = 34;
 const POLICE_LIGHT_BAR_HEIGHT = 9;
 const ALERT_PIN_SIZE = 28;
 const ALERT_PIN_BORDER_WIDTH = 2;
@@ -861,10 +911,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: hud.accent,
   },
-  zoomButtonText: {
+  zoomButtonGlyph: {
     fontFamily: fontFamily.bold,
-    fontSize: 24,
-    lineHeight: 26,
+    fontSize: 18,
+    lineHeight: 16,
+    color: hud.accent,
+  },
+  zoomButtonLabel: {
+    fontFamily: fontFamily.bold,
+    fontSize: 8,
+    lineHeight: 10,
+    letterSpacing: 0.5,
     color: hud.accent,
   },
   mapModeControl: {
@@ -892,7 +949,7 @@ const styles = StyleSheet.create({
   policeSquare: {
     width: POLICE_MARKER_SIZE,
     height: POLICE_MARKER_SIZE,
-    borderRadius: POLICE_MARKER_SIZE / 2,
+    borderRadius: 4,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'flex-start',
@@ -921,6 +978,16 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     color: instrument.paper,
   },
+  selectedMarker: {
+    borderWidth: 3,
+    borderColor: hud.accent,
+    transform: [{ scale: 1.18 }],
+    shadowColor: hud.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 7,
+    elevation: 8,
+  },
   alertDistanceChip: {
     paddingVertical: 1,
     paddingHorizontal: 4,
@@ -936,21 +1003,21 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 3,
   },
-  cameraPin: {
-    width: ALERT_PIN_SIZE,
-    height: ALERT_PIN_SIZE,
-    borderRadius: ALERT_PIN_SIZE / 2,
+  cameraSquare: {
+    width: FIXED_CAMERA_MARKER_SIZE,
+    height: FIXED_CAMERA_MARKER_SIZE,
+    borderRadius: 4,
+    overflow: 'hidden',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-    borderWidth: ALERT_PIN_BORDER_WIDTH,
-    borderColor: hud.accent,
+    justifyContent: 'flex-start',
+    backgroundColor: instrument.ink,
   },
-  cameraPinLetter: {
+  cameraSquareLetter: {
+    marginTop: 1,
     fontFamily: fontFamily.black,
     fontSize: 15,
     lineHeight: 15,
-    color: hud.accent,
+    color: instrument.paper,
   },
   cameraDistanceChip: {
     paddingVertical: 1,

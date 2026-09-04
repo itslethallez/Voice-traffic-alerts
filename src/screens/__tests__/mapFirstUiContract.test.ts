@@ -23,7 +23,7 @@ describe('simplified map-first UI contract', () => {
     expect(drive).toContain('<ReportBar');
     expect(drive).toContain('LIVE REPORTS');
     expect(drive).not.toContain('<ScrollView');
-    expect(drive).not.toContain('<Speedometer');
+    expect(drive).toContain('<Speedometer');
     expect(drive).toContain('latestAnnouncement');
     expect(drive).toContain('SHOW ON MAP');
 

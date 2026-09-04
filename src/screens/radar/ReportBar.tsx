@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CarFront, Siren, TriangleAlert, type LucideIcon } from 'lucide-react-native';
+import { CarFront, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import { useTripStore, type ManualReportCategory } from '../../store/useTripStore';
 import { hud, instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
 
-const ICON_SIZE = 30;
+const ICON_SIZE = 26;
 const ICON_STROKE_WIDTH = 2;
 
 /** How long a just-filed cell offers UNDO before reverting to its resting
@@ -45,12 +45,21 @@ const CELLS: ReportCellDef[] = [
     stroke: hud.sevMed,
     gradient: ['rgba(232,147,12,0.18)', 'rgba(232,147,12,0.05)'],
   },
+  {
+    // JAM is already a first-class alert type. This cast keeps the requested
+    // UI-only change local while the older manual-report store type catches up.
+    category: 'JAM' as ManualReportCategory,
+    label: 'JAM',
+    Icon: TrafficCone,
+    stroke: '#F5C451',
+    gradient: ['rgba(245,196,81,0.18)', 'rgba(245,196,81,0.05)'],
+  },
 ];
 
 /**
  * The Radio screen's always-on report control (`BUILD PROMPT - HUD face.md`,
  * "Report bar") - replaces the old single expand-to-pick ReportButton with
- * three permanently visible cells, each a direct one-tap file at the
+ * four permanently visible cells, each a direct one-tap file at the
  * driver's current position via useTripStore's pushManualReport. No
  * category/subtype picker step (including for POLICE, which previously
  * required a second Visible/Hidden tap) - undo is the safety net instead of
@@ -111,7 +120,9 @@ function ReportCell({ def, isFirst }: { def: ReportCellDef; isFirst: boolean }) 
     >
       <LinearGradient colors={def.gradient} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
       <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} color={isPending ? instrument.paper : def.stroke} />
-      <Text style={styles.label}>{isPending ? 'UNDO' : def.label}</Text>
+      <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
+        {isPending ? 'UNDO' : def.label}
+      </Text>
     </Pressable>
   );
 }
@@ -127,11 +138,12 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
+    minHeight: 48,
     justifyContent: 'flex-end',
     alignItems: 'flex-start',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
   },
   cellDivider: {
     borderLeftWidth: 1,
@@ -139,8 +151,8 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: fontFamily.black,
-    fontSize: 13,
-    letterSpacing: 1,
+    fontSize: 11,
+    letterSpacing: 0.7,
     color: hud.rowTitle,
   },
 });
