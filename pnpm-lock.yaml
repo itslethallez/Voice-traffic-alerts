@@ -5,7 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  react-native-call-detection: 6fa972ad3011e42d946115d43b581ef5e29c2513f68c788ca7b80f2954aa6d82
+  react-native-call-detection:
+    hash: 6fa972ad3011e42d946115d43b581ef5e29c2513f68c788ca7b80f2954aa6d82
+    path: patches/react-native-call-detection.patch
 
 importers:
 
