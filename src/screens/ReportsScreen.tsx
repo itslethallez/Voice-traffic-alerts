@@ -12,6 +12,7 @@ import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { sortCurrentReportsByDistance, type CurrentReport } from './currentReports';
 import { splitCompactDistance } from './radar/formatCompactDistance';
+import { getCachedSuburb } from '../geo/suburbLookup';
 import { PoliceLightBar } from './radar/PoliceLightBar';
 
 interface ReportsScreenProps {
@@ -106,7 +107,7 @@ function ReportRow({
   const publishedAt = Date.parse(alert.publish_datetime_utc);
   const ageMinutes = Number.isFinite(publishedAt) ? Math.max(0, Math.round((nowMs - publishedAt) / 60_000)) : null;
   const ageLabel = ageMinutes === null ? 'LIVE' : ageMinutes < 1 ? 'JUST NOW' : `${ageMinutes} MIN AGO`;
-  const place = alert.street ?? alert.city ?? 'Nearby';
+  const place = resolveAreaName(alert) ?? alert.street ?? 'Nearby';
   const markerColor = alert.type === 'ACCIDENT' || alert.type === 'ROAD_CLOSED'
     ? hud.sevHighText
     : alert.type === 'POLICE'

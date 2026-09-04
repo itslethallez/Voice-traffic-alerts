@@ -10,6 +10,7 @@ import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import { awarenessCircleCoordinates, awarenessZoomLevel } from '../../geo/mapScale';
 import { nearestAlertToDriver } from '../../geo/nearestAlert';
 import type { GeoPoint } from '../../geo/types';
+import { getCachedSuburb } from '../../geo/suburbLookup';
 import { announcementLocation } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
@@ -61,6 +62,11 @@ const AWARENESS_CIRCLE_VIEWPORT_COVERAGE = 0.78;
 /** Fixed zoom for a focused alert; the awareness view resumes when focus ends. */
 const FOCUSED_ALERT_ZOOM = 16;
 const AWARENESS_CIRCLE_SEGMENTS = 48;
+
+/** Temporarily hidden per user request (2026-09-04) while the "notifiable
+ * area to scale" presentation is reworked; the circle's geometry/zoom-scale
+ * logic below is unchanged and ready to re-enable once restyled. */
+const SHOW_AWARENESS_CIRCLE = false;
 
 /**
  * How long the camera lingers on a genuinely-new alert's exact location
@@ -380,7 +386,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     nearestMapAlert?.latitude,
   ]);
   const cameraZoomLevel = (displayFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom) + zoomAdjustment;
-  const cameraHeading = cameraFollowsPresentation ? (displayFocus ? 0 : driverHeadingDeg) : undefined;
+  // Range/notify mode is a fixed, north-up overview - it exists to show the
+  // configured "warn me from" distance to scale, which a heading-rotated
+  // pitched view can't do consistently. Nearest/drive keeps following the
+  // driver's actual heading.
+  const cameraHeading = cameraFollowsPresentation ? (displayFocus || mapPresentation === 'range' ? 0 : driverHeadingDeg) : undefined;
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
   /** Skips the very first run - there's no meaningful "from" state on
@@ -489,7 +499,10 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         pitchEnabled
         rotateEnabled
         onPress={() =>
-          setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'))
+          setMapPresentation((current) => {
+            setZoomAdjustment(0);
+            return current === 'range' ? 'nearest' : 'range';
+          })
         }
         onRegionWillChange={(event) => {
           if (event.properties.isUserInteraction) setMapPresentation('free');
@@ -499,14 +512,14 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           ref={cameraRef}
           centerCoordinate={cameraCenterCoordinate}
           heading={cameraHeading}
-          pitch={50}
+          pitch={mapPresentation === 'range' ? 0 : 50}
           zoomLevel={cameraFollowsPresentation ? cameraZoomLevel : undefined}
           padding={cameraPadding}
           animationMode="easeTo"
           animationDuration={600}
         />
 
-        {awarenessCircle && !displayFocus ? (
+        {SHOW_AWARENESS_CIRCLE && awarenessCircle && !displayFocus ? (
           <Mapbox.ShapeSource id="awareness-circle-source" shape={awarenessCircle}>
             <Mapbox.FillLayer
               id="awareness-circle-fill"
@@ -560,10 +573,18 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         <View style={styles.alertDetailCard}>
           <Text style={styles.alertDetailEyebrow}>REPORTED {Math.max(0, Math.round(ageMinutesOf(selectedAlert, now)))} MIN AGO</Text>
           <Text style={styles.alertDetailTitle}>{alertTypeMeta(selectedAlert.type, selectedAlert.subtype).label.toUpperCase()}</Text>
-          <Text style={styles.alertDetailMeta}>{[selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED'}</Text>
+          <Text style={styles.alertDetailMeta}>{resolveAreaName(selectedAlert) ?? [selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED'}</Text>
           <Pressable style={styles.alertDetailClose} onPress={() => setSelectedAlert(null)} accessibilityRole="button" accessibilityLabel="Close report details">
             <Text style={styles.alertDetailCloseText}>×</Text>
           </Pressable>
+        </View>
+      ) : null}
+
+      {mapPresentation === 'range' ? (
+        <View style={styles.rangeLabelBadge} pointerEvents="none">
+          <Text style={styles.rangeLabelText}>
+            {formatCompactDistance(announceDistanceMeters).replace(/km$/, ' KM').replace(/m$/, ' M')} NOTIFICATION AREA
+          </Text>
         </View>
       ) : null}
 
@@ -800,6 +821,23 @@ const styles = StyleSheet.create({
     top: 78,
     flexDirection: 'row',
     gap: 6,
+  },
+  rangeLabelBadge: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: 78,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: hud.ground,
+    borderWidth: 1,
+    borderColor: hud.accent,
+  },
+  rangeLabelText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: hud.accent,
   },
   alertDetailCard: {
     position: 'absolute', left: 16, right: 16, bottom: 112,
