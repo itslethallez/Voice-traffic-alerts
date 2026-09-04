@@ -1,496 +1,247 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useMemo, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { WazeAlert } from '../api/waze/types';
-import { selectClosestOnPathAlert } from '../engine/selectClosestOnPathAlert';
-import type { AnnounceableAlert } from '../engine/types';
-import { haversineDistance } from '../geo/distance';
-import { announcementLocation } from '../speech/formatAnnouncement';
-import { STALE_ANNOUNCEMENT_AGE_MINUTES } from '../speech/constants';
-import { statusFor, statusLabel, useTripStore } from '../store/useTripStore';
 import { visibleManualReportAlerts } from '../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../store/nearbyReportAlert';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { alertTypeMeta } from '../theme/alertTypeMeta';
-import { hud, instrument } from '../theme/colors';
+import { useTripStore } from '../store/useTripStore';
+import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
-import { confidenceLabel } from '../theme/confidence';
-import { PoliceLightBar } from './radar/PoliceLightBar';
 import { RadarMap } from './radar/RadarMap';
 import { ReportBar } from './radar/ReportBar';
-import { splitCompactDistance } from './radar/formatCompactDistance';
-import { Speedometer } from './radar/Speedometer';
 
-/** Row severity is a simple two-tier system for this colour pass, not a
- * per-category scale: the nearest row, or any POLICE row, is "high" -
- * everything else is "medium," regardless of its actual alert type. */
-function isHighSeverity(alert: WazeAlert, index: number): boolean {
-  return index === 0 || alert.type === 'POLICE';
+interface DriveScreenProps {
+  focusedAlert?: WazeAlert | null;
+  onFocusAlert?: (alert: WazeAlert) => void;
 }
 
-const HIGH_ROW_GRADIENT = {
-  colors: ['rgba(224,27,36,0.20)', 'rgba(224,27,36,0.03)', 'rgba(224,27,36,0)'] as const,
-  locations: [0, 0.62, 1] as const,
-};
-const MEDIUM_ROW_GRADIENT = {
-  colors: ['rgba(232,147,12,0.12)', 'rgba(232,147,12,0.02)', 'rgba(232,147,12,0)'] as const,
-  locations: [0, 0.58, 1] as const,
-};
-
-/** How long a tapped ledger row keeps the map focused on it before the
- * camera returns to following the driver (Step 12 #25). */
-const ALERT_FOCUS_DURATION_MS = 5000;
-
-/** "5 KM AWARENESS" for a round number of km, "0.5 KM AWARENESS" otherwise -
- * the header meta line's own compact style, distinct from
- * formatCompactDistance's always-one-decimal-under-10km rule. */
-function formatAwarenessKm(meters: number): string {
-  const km = meters / 1000;
-  return Number.isInteger(km) ? String(km) : km.toFixed(1);
-}
-
-/** Builds just enough of an AnnounceableAlert to reuse
- * speech/formatAnnouncement.ts's announcementLocation() for its street/area
- * resolution (including the suburb-preferring resolveAreaName and
- * route-number filtering) without re-deriving that logic here - direction
- * isn't needed for the ledger, so driverHeadingDeg/bearingDeg are unused
- * placeholders. */
-function locationFor(alert: WazeAlert, ageMinutes: number) {
-  const candidate: AnnounceableAlert = {
-    alert,
-    distanceMeters: 0,
-    bearingDeg: 0,
-    bearingDiffDeg: 0,
-    ageMinutes,
-    driverHeadingDeg: 0,
-  };
-  const location = announcementLocation(candidate);
-  return location.street ?? location.area;
-}
-
-function ageMinutesOf(alert: WazeAlert, nowMs: number): number {
-  return (nowMs - Date.parse(alert.publish_datetime_utc)) / 60_000;
-}
-
-export function DriveScreen() {
-  const masterMute = useSettingsStore((state) => state.masterMute);
-  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
-  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
-
-  const isOffline = useTripStore((state) => state.isOffline);
-  const bannerMessage = useTripStore((state) => state.bannerMessage);
-  const locationError = useTripStore((state) => state.locationError);
-  const driverPosition = useTripStore((state) => state.driverPosition);
-  const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
+/** The driving view is deliberately map-first: live reports appear directly
+ * on the map, while reporting stays one tap away in the floating bottom dock. */
+export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenProps) {
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
   const nearbyReports = useTripStore((state) => state.nearbyReports);
-
+  const driverPosition = useTripStore((state) => state.driverPosition);
+  const locationError = useTripStore((state) => state.locationError);
+  const isOffline = useTripStore((state) => state.isOffline);
+  const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
+  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
+  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
   const [now, setNow] = useState(() => Date.now());
+  const [dismissedAnnouncementId, setDismissedAnnouncementId] = useState<string | null>(null);
+
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const [focusedAlert, setFocusedAlert] = useState<WazeAlert | null>(null);
-  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // RadarMap's own auto-locate spotlight is private state there - this
-  // mirrors just its active/inactive flag so `closest` below can suppress
-  // itself for exactly as long as RadarMap suppresses its own focus panel,
-  // not only while a tapped ledger row (focusedAlert) is set.
-  const [spotlightActive, setSpotlightActive] = useState(false);
-
-  const handleFocusAlert = useCallback((alert: WazeAlert) => {
-    if (focusTimeoutRef.current !== null) {
-      clearTimeout(focusTimeoutRef.current);
-    }
-    setFocusedAlert(alert);
-    focusTimeoutRef.current = setTimeout(() => {
-      setFocusedAlert(null);
-      focusTimeoutRef.current = null;
-    }, ALERT_FOCUS_DURATION_MS);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (focusTimeoutRef.current !== null) clearTimeout(focusTimeoutRef.current);
-    },
-    []
-  );
-
-  // Same enabled-categories state that already drives speech filtering and
-  // the map's own markers (RadarMap.tsx) - reused here, not reimplemented,
-  // so a category switched off in Settings disappears from this feed the
-  // same instant it stops being announced/shown on the map.
-  const enabledTypes = useMemo(() => enabledTypesFromSettings(categoriesEnabled), [categoriesEnabled]);
-  // Two-zone layout rework: mirrors exactly what the map plots
-  // (mapVisibleAlerts there, the same enabledTypes filter here) - no cap,
-  // no forward-facing bearing cone. selectNearbyAlerts.ts (the old
-  // top-3/90-degree-cone logic) is gone; "expiring" needs no extra
-  // handling, since this simply re-derives from live visibleAlerts on
-  // every poll, same as before. Unsorted and un-excluded (see `closest` and
-  // `nearbyAlerts` below) - this is the shared base both derive from.
-  const rawAlerts = useMemo(() => {
-    if (!driverPosition) return [];
-    const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
-    // Each report's own category gates it now, not a blanket POLICE check -
-    // a report can be ACCIDENT/HAZARD since the category picker (Report
-    // button) shipped, so gating all of them on the POLICE toggle would hide
-    // a driver's own accident/hazard reports when POLICE is off, and never
-    // hide them when ACCIDENT/HAZARD themselves are off.
-    const ownReports = visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters).filter(
+  const liveReportCount = useMemo(() => {
+    const enabledTypes = enabledTypesFromSettings(categoriesEnabled);
+    const wazeCount = visibleAlerts.filter((alert) => enabledTypes.has(alert.type)).length;
+    const ownCount = visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters).filter(
       (alert) => enabledTypes.has(alert.type)
-    );
-    const nearby = visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters).filter(
+    ).length;
+    const nearbyCount = visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters).filter(
       (alert) => enabledTypes.has(alert.type)
-    );
-    return [...waze, ...ownReports, ...nearby];
-  }, [visibleAlerts, manualReports, nearbyReports, enabledTypes, driverPosition, now, announceDistanceMeters]);
+    ).length;
+    return wazeCount + ownCount + nearbyCount;
+  }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, categoriesEnabled]);
 
-  /**
-   * The same "closest" alert RadarMap.tsx's focus panel shows
-   * (`Voice Traffic Alerts - Current UI.dc.html` turn 6) - computed here
-   * from the identical rawAlerts set (mirrors RadarMap.tsx's
-   * mapVisibleAlerts) so both agree on exactly which alert that is, without
-   * one having to pass it to the other as a prop. Suppressed while
-   * focusedAlert (a tapped ledger row) or spotlightActive (RadarMap's own
-   * auto-locate spotlight, mirrored back here via onSpotlightChange) is
-   * set, matching RadarMap.tsx's own displayFocus gating exactly - whenever
-   * the map is showing a row's or a new alert's own label instead of the
-   * focus panel, nothing should be excluded from this ledger on that
-   * alert's account either.
-   */
-  const closest = useMemo(() => {
-    if (!driverPosition || focusedAlert || spotlightActive) return null;
-    return selectClosestOnPathAlert(rawAlerts, driverPosition, driverHeadingDeg, announceDistanceMeters);
-  }, [rawAlerts, driverPosition, focusedAlert, spotlightActive, driverHeadingDeg, announceDistanceMeters]);
-
-  // Sorted, distance-tagged, and - the one thing rawAlerts doesn't already
-  // do - excludes `closest` when it's set, since that alert has its own
-  // focus panel on the map now and "ALSO AHEAD" below should list
-  // everything else instead of repeating it.
-  const nearbyAlerts = useMemo(() => {
-    if (!driverPosition) return [];
-    return rawAlerts
-      .filter((alert) => alert.alert_id !== closest?.alert.alert_id)
-      .map((alert) => ({ alert, distanceMeters: haversineDistance(driverPosition, alert) }))
-      .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [rawAlerts, closest, driverPosition]);
-
-  const status = statusFor({ masterMute, isOffline });
-  const gpsClause = driverPosition ? 'GPS LOCKED' : 'ACQUIRING GPS';
+  const locationLabel = locationError
+    ? 'LOCATION UNAVAILABLE'
+    : driverPosition
+      ? 'CURRENT LOCATION'
+      : 'LOCATING';
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <Image source={require('../../assets/header-logo.png')} style={styles.brandIcon} resizeMode="contain" />
-            <Text style={styles.brand}>SHOTGUN</Text>
-            <View style={styles.headerSpacer} />
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>LIVE</Text>
-          </View>
-          <Text style={styles.motto}>EVERYTHING IS IN SIGHT</Text>
-          {locationError ? (
-            <Text style={styles.metaLine}>{locationError}</Text>
-          ) : (
-            <Text style={styles.metaLine}>
-              {statusLabel(status).toUpperCase()} ·{' '}
-              <Text style={styles.metaLineAccent}>{formatAwarenessKm(announceDistanceMeters)} KM</Text> AWARENESS ·{' '}
-              <Text style={styles.metaLineAccent}>{gpsClause}</Text>
-            </Text>
-          )}
-          {bannerMessage ? <Text style={styles.bannerLine}>{bannerMessage}</Text> : null}
-        </View>
+      <RadarMap focusedAlert={focusedAlert} now={now} minimal />
 
-        <View style={styles.mapArea}>
-          <RadarMap focusedAlert={focusedAlert} now={now} onSpotlightChange={setSpotlightActive} />
-        </View>
-
-        <View style={styles.ledger}>
-          <View style={styles.ledgerHeaderRow}>
-            {/* closest !== null means the map's focus panel is showing that
-             * one alert on its own (RadarMap.tsx) - "ALSO AHEAD"/"N MORE"
-             * makes clear this list is everything besides it, not the
-             * driver's whole nearby picture. */}
-            <Text style={styles.ledgerHeaderLabel}>{closest ? 'ALSO AHEAD' : 'NEARBY ALERTS'}</Text>
-            <Text style={styles.ledgerHeaderCount}>{nearbyAlerts.length} {closest ? 'MORE' : 'ALERTS'}</Text>
-          </View>
-          {/* Persistent, uncapped feed (two-zone layout rework) - can run
-           * long in a dense area, so this scrolls instead of the fixed
-           * top-3 list it replaced. */}
-          <ScrollView style={styles.ledgerScroll}>
-            <View style={styles.ledgerRule}>
-              {nearbyAlerts.map((nearby, index) => (
-                <AlertLedgerRow
-                  key={nearby.alert.alert_id}
-                  nearby={nearby}
-                  nowMs={now}
-                  index={index}
-                  onPress={() => handleFocusAlert(nearby.alert)}
-                />
-              ))}
+      <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
+        <View style={styles.topBar}>
+          <Image source={require('../../assets/streetwise-header.png')} style={styles.brandLogo} resizeMode="contain" />
+          <View style={styles.livePill} accessible accessibilityLabel={`${liveReportCount} live reports, ${locationLabel.toLowerCase()}`}>
+            <View style={[styles.liveDot, isOffline && styles.offlineDot]} />
+            <View>
+              <Text style={styles.liveCount}>{liveReportCount} LIVE REPORTS</Text>
+              <Text style={styles.locationLabel}>{isOffline ? 'OFFLINE' : locationLabel}</Text>
             </View>
-          </ScrollView>
+          </View>
         </View>
 
-        <View style={styles.speedRow}>
-          <Speedometer />
+        <View style={styles.bottomStack}>
+          {latestAnnouncement && dismissedAnnouncementId !== latestAnnouncement.alertId ? (
+            <View style={styles.announcementCard} accessibilityLiveRegion="polite">
+              <View style={styles.announcementCopy}>
+                <Text style={styles.announcementEyebrow}>JUST ANNOUNCED</Text>
+                <Text style={styles.announcementText} numberOfLines={3}>{latestAnnouncement.text}</Text>
+              </View>
+              <Pressable
+                onPress={() => onFocusAlert?.(latestAnnouncement.candidate.alert)}
+                style={styles.showOnMapButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Show announced report on map: ${latestAnnouncement.text}`}
+              >
+                <Text style={styles.showOnMapText}>SHOW ON MAP</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setDismissedAnnouncementId(latestAnnouncement.alertId)}
+                style={styles.dismissButton}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss announced report"
+              >
+                <Text style={styles.dismissText}>×</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          <View style={styles.reportDock}>
+            <ReportBar />
+          </View>
         </View>
-        <ReportBar />
       </SafeAreaView>
     </View>
-  );
-}
-
-function AlertLedgerRow({
-  nearby,
-  nowMs,
-  index,
-  onPress,
-}: {
-  nearby: { alert: WazeAlert; distanceMeters: number };
-  nowMs: number;
-  index: number;
-  onPress: () => void;
-}) {
-  const { alert, distanceMeters } = nearby;
-  const isHigh = isHighSeverity(alert, index);
-  const meta = alertTypeMeta(alert.type, alert.subtype);
-  const ageMinutes = ageMinutesOf(alert, nowMs);
-  const isStale = ageMinutes > STALE_ANNOUNCEMENT_AGE_MINUTES;
-  const place = locationFor(alert, ageMinutes);
-  const detail = isStale ? `${Math.round(ageMinutes)} MIN AGO` : confidenceLabel(alert.alert_reliability).toUpperCase();
-  const subtitle = place ? `${place.toUpperCase()} · ${detail}` : detail;
-  const { value, unit } = splitCompactDistance(distanceMeters);
-  const gradient = isHigh ? HIGH_ROW_GRADIENT : MEDIUM_ROW_GRADIENT;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.ledgerRow, isHigh ? styles.ledgerRowHigh : styles.ledgerRowMedium]}
-      accessibilityRole="button"
-      accessibilityLabel={`${meta.label} alert, ${value} ${unit} ahead, ${subtitle.toLowerCase()}`}
-    >
-      <LinearGradient
-        colors={gradient.colors}
-        locations={gradient.locations}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {alert.type === 'POLICE' ? (
-        <PoliceLightBar orientation="horizontal" width={30} height={13} />
-      ) : null}
-      <View style={styles.ledgerRowText}>
-        <Text style={styles.ledgerRowTitle} numberOfLines={1}>
-          {meta.label.toUpperCase()}
-        </Text>
-        <Text
-          style={[styles.ledgerRowSubtitle, isHigh ? styles.ledgerRowSubtitleHigh : styles.ledgerRowSubtitleMedium]}
-          numberOfLines={1}
-        >
-          {place ? `${place.toUpperCase()} · ` : ''}
-          <Text style={isHigh ? styles.ledgerRowDetailHigh : styles.ledgerRowDetailMedium}>{detail}</Text>
-        </Text>
-      </View>
-      <View style={styles.ledgerRowValueBlock}>
-        <Text style={[styles.ledgerRowValue, isHigh ? styles.ledgerRowSevHighText : styles.ledgerRowSevMedText]}>
-          {value}
-        </Text>
-        <Text style={[styles.ledgerRowUnit, isHigh ? styles.ledgerRowSevHighText : styles.ledgerRowSevMedText]}>
-          {unit}
-        </Text>
-      </View>
-    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: instrument.ink,
+    backgroundColor: hud.mapGround,
   },
-  safeArea: {
-    flex: 1,
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    justifyContent: 'space-between',
   },
-  header: {
-    flexGrow: 0,
-    flexShrink: 0,
-    paddingTop: 6,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rule,
-  },
-  headerRow: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
-  brand: {
-    fontFamily: fontFamily.black,
-    fontSize: 22,
-    letterSpacing: 3,
-    color: instrument.paper,
+  brandLogo: {
+    width: 128,
+    height: 46,
   },
-  brandIcon: {
-    width: 40,
-    height: 40,
-    marginRight: 4,
-  },
-  headerSpacer: {
-    flex: 1,
+  livePill: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 24,
+    backgroundColor: 'rgba(6, 27, 31, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 191, 169, 0.48)',
   },
   liveDot: {
     width: 9,
     height: 9,
+    borderRadius: 5,
     backgroundColor: hud.accent,
   },
-  liveText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: hud.accentInk,
+  offlineDot: {
+    backgroundColor: hud.muted,
   },
-  motto: {
-    marginTop: 5,
+  liveCount: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
-    letterSpacing: 2.5,
-    color: hud.sevMed,
+    letterSpacing: 0.8,
+    color: hud.rowTitle,
   },
-  metaLine: {
-    marginTop: 8,
-    fontFamily: fontFamily.medium,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: hud.muted,
-  },
-  metaLineAccent: {
-    color: hud.accent,
-  },
-  bannerLine: {
+  locationLabel: {
     marginTop: 2,
     fontFamily: fontFamily.medium,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: instrument.paper,
-  },
-  mapArea: {
-    height: 268,
-    flexGrow: 0,
-    flexShrink: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rule,
-    backgroundColor: instrument.mapGround,
-  },
-  ledger: {
-    flex: 1,
-    overflow: 'hidden',
-  },
-  ledgerScroll: {
-    flex: 1,
-  },
-  ledgerHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  ledgerHeaderLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 2,
-    color: hud.mutedLabel,
-  },
-  ledgerHeaderCount: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 2,
+    fontSize: 9,
+    letterSpacing: 1.1,
     color: hud.accent,
   },
-  ledgerRule: {
-    borderTopWidth: 1,
-    borderTopColor: hud.rule,
+  bottomStack: {
+    gap: 10,
+    paddingBottom: 14,
   },
-  ledgerRow: {
+  announcementCard: {
+    minHeight: 82,
+    marginHorizontal: 16,
+    padding: 14,
+    paddingRight: 42,
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingLeft: 20,
-    paddingRight: 14,
-    paddingVertical: 12,
-    borderLeftWidth: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 9,
   },
-  ledgerRowHigh: {
-    borderLeftColor: hud.sevHigh,
-  },
-  ledgerRowMedium: {
-    borderLeftColor: hud.sevMed,
-  },
-  ledgerRowText: {
+  announcementCopy: {
     flex: 1,
     minWidth: 0,
   },
-  ledgerRowTitle: {
-    fontFamily: fontFamily.black,
-    fontSize: 17,
-    letterSpacing: 0,
-    color: hud.rowTitle,
-  },
-  ledgerRowSubtitle: {
-    marginTop: 1,
-    fontFamily: fontFamily.medium,
-    fontSize: 12,
-    letterSpacing: 0,
-  },
-  ledgerRowSubtitleHigh: {
-    color: hud.rowSubHigh,
-  },
-  ledgerRowSubtitleMedium: {
-    color: hud.rowSubMed,
-  },
-  ledgerRowDetailHigh: {
-    color: hud.sevHighText,
-  },
-  ledgerRowDetailMedium: {
-    color: hud.sevMed,
-  },
-  ledgerRowValueBlock: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'flex-end',
-    gap: 4,
-    flexShrink: 0,
-    minWidth: 44,
-  },
-  ledgerRowValue: {
-    fontFamily: fontFamily.black,
-    fontSize: 24,
-    fontVariant: ['tabular-nums'],
-  },
-  ledgerRowUnit: {
+  announcementEyebrow: {
     fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1,
+    fontSize: 9,
+    letterSpacing: 1.4,
+    color: '#087566',
   },
-  ledgerRowSevHighText: {
-    color: hud.sevHighText,
+  announcementText: {
+    marginTop: 4,
+    fontFamily: fontFamily.bold,
+    fontSize: 14,
+    lineHeight: 18,
+    color: '#07313C',
   },
-  ledgerRowSevMedText: {
-    color: hud.sevMed,
+  showOnMapButton: {
+    minWidth: 94,
+    minHeight: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    backgroundColor: hud.accent,
   },
-  speedRow: {
-    flexGrow: 0,
-    flexShrink: 0,
-    borderTopWidth: 1,
-    borderTopColor: hud.rule,
+  showOnMapText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    color: '#062128',
+  },
+  dismissButton: {
+    position: 'absolute',
+    right: 7,
+    top: 7,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dismissText: {
+    fontFamily: fontFamily.medium,
+    fontSize: 22,
+    lineHeight: 24,
+    color: '#587177',
+  },
+  reportDock: {
+    marginHorizontal: 16,
+    overflow: 'hidden',
+    borderRadius: 22,
+    backgroundColor: 'rgba(6, 20, 24, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(150, 210, 204, 0.28)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.32,
+    shadowRadius: 16,
+    elevation: 8,
   },
 });

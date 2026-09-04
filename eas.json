@@ -9,6 +9,16 @@
       "distribution": "internal",
       "environment": "development"
     },
+    "developmentTestflight": {
+      "developmentClient": true,
+      "distribution": "store",
+      "environment": "development",
+      "autoIncrement": true,
+      "env": {
+        "EAS_USE_PRECOMPILED_MODULES": "0",
+        "EXPO_USE_PRECOMPILED_MODULES": "0"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "channel": "preview",

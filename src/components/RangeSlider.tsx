@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { PanResponder, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import { instrument } from '../theme/colors';
+import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 
 const THUMB_WIDTH = 6;
@@ -96,20 +96,20 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: instrument.faintOnInk,
+    backgroundColor: hud.faintTrack,
   },
   filledLine: {
     position: 'absolute',
     left: 0,
     height: 2,
-    backgroundColor: instrument.paper,
+    backgroundColor: hud.accent,
   },
   thumb: {
     position: 'absolute',
     top: 0,
     width: THUMB_WIDTH,
     height: TRACK_HEIGHT,
-    backgroundColor: instrument.paper,
+    backgroundColor: hud.accent,
   },
   labelsRow: {
     flexDirection: 'row',
@@ -119,6 +119,6 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 10,
     letterSpacing: 1,
-    color: instrument.tickOnInk,
+    color: hud.muted,
   },
 });

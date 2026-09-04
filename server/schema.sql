@@ -64,6 +64,20 @@ UPDATE user_reports SET last_confirmed_at = created_at WHERE last_confirmed_at I
 ALTER TABLE user_reports ALTER COLUMN last_confirmed_at SET DEFAULT now();
 ALTER TABLE user_reports ALTER COLUMN last_confirmed_at SET NOT NULL;
 
+-- Distinguishes an in-app driver report from one extracted off a third-party
+-- source (initially: Android notification-listener intake of the user's own
+-- Facebook groups - see App Notification Access design, not scraping/login
+-- automation, which was tried and abandoned after triggering an FB
+-- suspected-automation warning on the user's account). 'in_app' is the
+-- default so every pre-existing row keeps its current meaning with no
+-- backfill needed. source_ref is a loose pointer back to the origin item
+-- (e.g. a notification id/timestamp) for dedupe/audit - deliberately not a
+-- foreign key, since what it points to varies per source and may not be
+-- addressable at all (a notification has no stable post URL the way a
+-- shared FB post link does).
+ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'in_app';
+ALTER TABLE user_reports ADD COLUMN IF NOT EXISTS source_ref TEXT;
+
 -- Waze's own alerts (police/accident/hazard/road-closed/jam), mirrored
 -- server-side by scripts/refreshWazeAlerts.js on a schedule (GitHub
 -- Actions, not a Vercel Cron - see that script's header comment for why).

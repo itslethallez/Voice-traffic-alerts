@@ -4774,7 +4774,7 @@ index 8903c5fd9b728d22405f5d534e1c43ff186633d2..8febd02ec79d4aeaa84ed4c879e77461
 +++ b/android/build.gradle
 @@ -21,7 +21,8 @@ android {
  }
-
+ 
  repositories{
 -    jcenter()
 +    google()
@@ -4783,12 +4783,26 @@ index 8903c5fd9b728d22405f5d534e1c43ff186633d2..8febd02ec79d4aeaa84ed4c879e77461
          url './libs'
      }
 @@ -29,6 +30,5 @@ repositories{
-
+ 
  dependencies {
      api fileTree(dir: 'libs', include: ['*.jar'])
 -    api 'com.android.support:appcompat-v7:23.0.1'
      api 'com.facebook.react:react-native:+'
  }
+diff --git a/index.js b/index.js
+index 005c3df6a9c5af1eba7d675e5df6dcd386ac101d..b0100915dc8900cc08ba9623d216d6912e3d74e1 100644
+--- a/index.js
++++ b/index.js
+@@ -9,7 +9,8 @@ import {
+ } from 'react-native'
+ export const permissionDenied = 'PERMISSION DENIED'
+ 
+-const BatchedBridge = require('react-native/Libraries/BatchedBridge/BatchedBridge')
++const BatchedBridgeModule = require('react-native/Libraries/BatchedBridge/BatchedBridge')
++const BatchedBridge = BatchedBridgeModule.default || BatchedBridgeModule
+ 
+ const NativeCallDetector = NativeModules.CallDetectionManager
+ const NativeCallDetectorAndroid = NativeModules.CallDetectionManagerAndroid
 diff --git a/package-lock.json b/package-lock.json
 deleted file mode 100644
 index 000a81d067cb90ab99aa9b528055c67c1a971983..0000000000000000000000000000000000000000

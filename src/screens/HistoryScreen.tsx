@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, PanResponder, Pressable, SafeAreaView, StyleSheet, Text, View, Image } from 'react-native';
+import { Animated, PanResponder, Pressable, StyleSheet, Text, View, Image } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { compassDirection } from '../geo/bearing';
 import { announcementLocation } from '../speech/formatAnnouncement';
 import type { RecentAnnouncement } from '../speech/types';
 import { useTripStore, type ManualReport } from '../store/useTripStore';
 import { alertTypeMeta } from '../theme/alertTypeMeta';
-import { colors, instrument } from '../theme/colors';
+import { colors, hud, instrument } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { formatRelativeTime } from './formatRelativeTime';
 import { PoliceLightBar } from './radar/PoliceLightBar';
@@ -15,6 +17,15 @@ import { splitCompactDistance } from './radar/formatCompactDistance';
  * enough for the DELETE label, matching the usual iOS/Android swipe-action
  * width rather than a bespoke number. */
 const DELETE_REVEAL_WIDTH = 88;
+
+/** HUD face has no ink/paper inversion to mark the newest row (that was an
+ * `instrument` face-only concept) - this reuses the same accent gradient
+ * wash convention DriveScreen's ledger rows and BottomNav's active tab
+ * already use instead, tinted with hud.accent. */
+const NEWEST_ROW_GRADIENT = {
+  colors: ['rgba(47,155,224,0.20)', 'rgba(47,155,224,0.04)', 'rgba(47,155,224,0)'] as const,
+  locations: [0, 0.6, 1] as const,
+};
 
 /** "just now" -> "NOW", "6m ago" -> "6M", "45s ago" -> "45S" - the ledger's
  * compact tabular time column, built from the same formatRelativeTime()
@@ -39,10 +50,10 @@ interface ReportRow {
 type HistoryRow = SpokenRow | ReportRow;
 
 /**
- * History (design_handoff_instrument_face) - two independently-sorted
- * groups (what was said to the driver, what the driver reported), each
- * with its own newest-first order and its own newest-row inversion. The
- * shipped version's single merged, flat list is gone.
+ * History - two independently-sorted groups (what was said to the driver,
+ * what the driver reported), each with its own newest-first order and its
+ * own newest-row accent highlight. The shipped version's single merged,
+ * flat list is gone.
  */
 export function HistoryScreen() {
   const recentAnnouncements = useTripStore((state) => state.recentAnnouncements);
@@ -84,7 +95,7 @@ export function HistoryScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Image source={require('../../assets/header-logo.png')} style={styles.brandIcon} resizeMode="contain" />
+            <Image source={require('../../assets/streetwise-icon.png')} style={styles.brandIcon} resizeMode="contain" />
             <Text style={styles.title}>HISTORY</Text>
             <View style={styles.headerSpacer} />
             <Text style={styles.count}>{totalCount}</Text>
@@ -110,7 +121,7 @@ export function HistoryScreen() {
                   <Text style={styles.groupLabelText}>SPOKEN TO YOU</Text>
                 </View>
                 {spokenRows.map((row, index) => (
-                  <SpokenHistoryRow key={row.id} row={row} nowMs={now} inverted={index === 0} />
+                  <SpokenHistoryRow key={row.id} row={row} nowMs={now} highlighted={index === 0} />
                 ))}
               </>
             ) : null}
@@ -122,7 +133,7 @@ export function HistoryScreen() {
                 </View>
                 {reportRows.map((row, index) => (
                   <SwipeToDeleteRow key={row.id} onDelete={() => removeManualReport(row.report.localKey)}>
-                    <ReportHistoryRow row={row} nowMs={now} inverted={index === 0} />
+                    <ReportHistoryRow row={row} nowMs={now} highlighted={index === 0} />
                   </SwipeToDeleteRow>
                 ))}
               </>
@@ -134,7 +145,7 @@ export function HistoryScreen() {
   );
 }
 
-function SpokenHistoryRow({ row, nowMs, inverted }: { row: SpokenRow; nowMs: number; inverted: boolean }) {
+function SpokenHistoryRow({ row, nowMs, highlighted }: { row: SpokenRow; nowMs: number; highlighted: boolean }) {
   const { candidate } = row.announcement;
   const alert = candidate.alert;
   const meta = alertTypeMeta(alert.type, alert.subtype);
@@ -149,26 +160,35 @@ function SpokenHistoryRow({ row, nowMs, inverted }: { row: SpokenRow; nowMs: num
   const subtitle = `${place ? `${place.toUpperCase()} · ` : ''}${directionPrefix}${value} ${unit} AHEAD`;
 
   return (
-    <View style={[styles.row, inverted && styles.rowInverted]}>
+    <View style={styles.row}>
+      {highlighted ? (
+        <LinearGradient
+          colors={NEWEST_ROW_GRADIENT.colors}
+          locations={NEWEST_ROW_GRADIENT.locations}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       {alert.type === 'POLICE' ? (
-        <PoliceLightBar orientation="vertical" width={22} height={22} inverted={inverted} />
+        <PoliceLightBar orientation="vertical" width={22} height={22} />
       ) : (
-        <View style={[styles.rowMark, inverted && styles.rowMarkInverted]}>
-          <Text style={[styles.rowMarkLetter, inverted && styles.rowTextInverted]}>{meta.letter}</Text>
+        <View style={styles.rowMark}>
+          <Text style={styles.rowMarkLetter}>{meta.letter}</Text>
         </View>
       )}
       <View style={styles.rowText}>
-        <Text style={[styles.rowTitle, inverted && styles.rowTextInverted]}>{meta.label.toUpperCase()}</Text>
-        <Text style={[styles.rowSubtitle, inverted ? styles.rowSubtitleInverted : styles.rowSubtitleNormal]}>
+        <Text style={styles.rowTitle}>{meta.label.toUpperCase()}</Text>
+        <Text style={[styles.rowSubtitle, highlighted ? styles.rowSubtitleHighlighted : styles.rowSubtitleNormal]}>
           {subtitle}
         </Text>
       </View>
-      <Text style={[styles.rowTime, inverted && styles.rowTextInverted]}>{formatLedgerTime(row.atMs, nowMs)}</Text>
+      <Text style={styles.rowTime}>{formatLedgerTime(row.atMs, nowMs)}</Text>
     </View>
   );
 }
 
-function ReportHistoryRow({ row, nowMs, inverted }: { row: ReportRow; nowMs: number; inverted: boolean }) {
+function ReportHistoryRow({ row, nowMs, highlighted }: { row: ReportRow; nowMs: number; highlighted: boolean }) {
   const { report } = row;
   const meta = alertTypeMeta(report.category, report.subtype);
   const subtitle =
@@ -177,21 +197,30 @@ function ReportHistoryRow({ row, nowMs, inverted }: { row: ReportRow; nowMs: num
       : 'LOCATION ATTACHED';
 
   return (
-    <View style={[styles.row, inverted && styles.rowInverted]}>
+    <View style={styles.row}>
+      {highlighted ? (
+        <LinearGradient
+          colors={NEWEST_ROW_GRADIENT.colors}
+          locations={NEWEST_ROW_GRADIENT.locations}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       {report.category === 'POLICE' ? (
-        <PoliceLightBar orientation="vertical" width={22} height={22} inverted={inverted} />
+        <PoliceLightBar orientation="vertical" width={22} height={22} />
       ) : (
-        <View style={[styles.rowMark, inverted && styles.rowMarkInverted]}>
-          <Text style={[styles.rowMarkLetter, inverted && styles.rowTextInverted]}>{meta.letter}</Text>
+        <View style={styles.rowMark}>
+          <Text style={styles.rowMarkLetter}>{meta.letter}</Text>
         </View>
       )}
       <View style={styles.rowText}>
-        <Text style={[styles.rowTitle, inverted && styles.rowTextInverted]}>{meta.label.toUpperCase()} REPORTED</Text>
-        <Text style={[styles.rowSubtitle, inverted ? styles.rowSubtitleInverted : styles.rowSubtitleNormal]}>
+        <Text style={styles.rowTitle}>{meta.label.toUpperCase()} REPORTED</Text>
+        <Text style={[styles.rowSubtitle, highlighted ? styles.rowSubtitleHighlighted : styles.rowSubtitleNormal]}>
           {subtitle}
         </Text>
       </View>
-      <Text style={[styles.rowTime, inverted && styles.rowTextInverted]}>{formatLedgerTime(row.atMs, nowMs)}</Text>
+      <Text style={styles.rowTime}>{formatLedgerTime(row.atMs, nowMs)}</Text>
     </View>
   );
 }
@@ -269,8 +298,8 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
   },
   headerRow: {
     flexDirection: 'row',
@@ -286,7 +315,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.black,
     fontSize: 34,
     letterSpacing: -0.5,
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
   headerSpacer: {
     flex: 1,
@@ -294,7 +323,7 @@ const styles = StyleSheet.create({
   count: {
     fontFamily: fontFamily.black,
     fontSize: 24,
-    color: instrument.paper,
+    color: hud.accent,
     fontVariant: ['tabular-nums'],
   },
   metaLine: {
@@ -302,7 +331,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.medium,
     fontSize: 12,
     letterSpacing: 1.5,
-    color: instrument.mutedOnInk,
+    color: hud.muted,
   },
   content: {
     flex: 1,
@@ -314,29 +343,29 @@ const styles = StyleSheet.create({
   emptyText: {
     fontFamily: fontFamily.medium,
     fontSize: 16,
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
   groupLabel: {
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 8,
-    borderTopWidth: 2,
-    borderTopColor: instrument.paper,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderTopWidth: 1,
+    borderTopColor: hud.rule,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
   },
   groupLabelBottomOnly: {
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
   },
   groupLabelText: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 2,
-    color: instrument.mutedOnInk,
+    color: hud.mutedLabel,
   },
   row: {
     flexDirection: 'row',
@@ -345,10 +374,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 13,
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
-  },
-  rowInverted: {
-    backgroundColor: instrument.paper,
+    borderBottomColor: hud.rowRule,
   },
   rowMark: {
     width: 22,
@@ -356,17 +382,14 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
     borderWidth: 2,
-    borderColor: instrument.paper,
+    borderColor: hud.muted,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  rowMarkInverted: {
-    borderColor: instrument.ink,
   },
   rowMarkLetter: {
     fontFamily: fontFamily.black,
     fontSize: 12,
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
   rowText: {
     flex: 1,
@@ -376,10 +399,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.black,
     fontSize: 18,
     letterSpacing: 0.5,
-    color: instrument.paper,
-  },
-  rowTextInverted: {
-    color: instrument.ink,
+    color: hud.rowTitle,
   },
   rowSubtitle: {
     marginTop: 1,
@@ -388,18 +408,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   rowSubtitleNormal: {
-    color: instrument.mutedOnInk,
+    color: hud.rowSubMed,
   },
-  rowSubtitleInverted: {
-    color: instrument.ink,
-    opacity: 0.7,
+  rowSubtitleHighlighted: {
+    color: hud.rowSubHigh,
   },
   rowTime: {
     paddingTop: 3,
     fontFamily: fontFamily.bold,
     fontSize: 12,
     letterSpacing: 1,
-    color: instrument.paper,
+    color: hud.rowTitle,
     fontVariant: ['tabular-nums'],
   },
   swipeContainer: {
@@ -420,6 +439,6 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 12,
     letterSpacing: 1,
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
 });

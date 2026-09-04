@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { RangeSlider } from '../components/RangeSlider';
 import {
   ALERT_CATEGORIES,
@@ -12,7 +13,7 @@ import {
   type AlertCategory,
 } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { instrument } from '../theme/colors';
+import { hud, instrument } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { BuildInfoCard } from './BuildInfoCard';
 
@@ -72,7 +73,7 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Image source={require('../../assets/header-logo.png')} style={styles.brandIcon} resizeMode="contain" />
+            <Image source={require('../../assets/streetwise-icon.png')} style={styles.brandIcon} resizeMode="contain" />
             <Text style={styles.title}>SETTINGS</Text>
             <View style={styles.headerSpacer} />
             <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button">
@@ -235,8 +236,8 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
   },
   headerRow: {
     flexDirection: 'row',
@@ -247,7 +248,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.black,
     fontSize: 34,
     letterSpacing: -0.5,
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
   brandIcon: {
     width: 40,
@@ -261,7 +262,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 12,
     letterSpacing: 1.5,
-    color: instrument.paper,
+    color: hud.accent,
   },
   content: {
     paddingBottom: 40,
@@ -270,23 +271,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 8,
-    borderTopWidth: 2,
-    borderTopColor: instrument.paper,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderTopWidth: 1,
+    borderTopColor: hud.rule,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
   },
   sectionLabelBottomOnly: {
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: instrument.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rule,
   },
   sectionLabelText: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 2,
-    color: instrument.mutedOnInk,
+    color: hud.mutedLabel,
   },
   categoryRow: {
     flexDirection: 'row',
@@ -295,28 +296,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
+    borderBottomColor: hud.rowRule,
   },
   categoryLabel: {
     flex: 1,
     fontFamily: fontFamily.bold,
     fontSize: 17,
     letterSpacing: 0.5,
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
   mutedText: {
-    color: instrument.mutedOnInk,
+    color: hud.muted,
   },
   stateBlock: {
     paddingVertical: 4,
     paddingHorizontal: 10,
   },
   stateBlockOn: {
-    backgroundColor: instrument.paper,
+    backgroundColor: hud.accent,
   },
   stateBlockOff: {
     borderWidth: 2,
-    borderColor: instrument.mutedOnInk,
+    borderColor: hud.muted,
   },
   stateBlockText: {
     fontFamily: fontFamily.black,
@@ -324,14 +325,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   stateBlockTextOn: {
-    color: instrument.ink,
+    color: hud.rowTitle,
   },
   rangeRow: {
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
+    borderBottomColor: hud.rowRule,
   },
   rangeHeaderRow: {
     flexDirection: 'row',
@@ -343,20 +344,20 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 17,
     letterSpacing: 0.5,
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
   rangeValue: {
     fontFamily: fontFamily.black,
     fontSize: 26,
     lineHeight: 26,
-    color: instrument.paper,
+    color: hud.rowTitle,
     fontVariant: ['tabular-nums'],
   },
   rangeUnit: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 1,
-    color: instrument.mutedOnInk,
+    color: hud.mutedLabel,
   },
   rangeSliderWrap: {
     marginTop: 12,
@@ -364,7 +365,7 @@ const styles = StyleSheet.create({
   voiceRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
+    borderBottomColor: hud.rowRule,
   },
   voiceCell: {
     flex: 1,
@@ -373,14 +374,14 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   voiceCellRight: {
-    borderLeftWidth: 2,
-    borderLeftColor: instrument.paper,
+    borderLeftWidth: 1,
+    borderLeftColor: hud.rule,
   },
   voiceCaption: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 1.5,
-    color: instrument.mutedOnInk,
+    color: hud.mutedLabel,
   },
   voiceValueRow: {
     flexDirection: 'row',
@@ -390,19 +391,19 @@ const styles = StyleSheet.create({
   voiceValue: {
     fontFamily: fontFamily.black,
     fontSize: 30,
-    color: instrument.paper,
+    color: hud.rowTitle,
     fontVariant: ['tabular-nums'],
   },
   voiceUnit: {
     fontFamily: fontFamily.bold,
     fontSize: 12,
-    color: instrument.paper,
+    color: hud.accent,
   },
   expandedSliderRow: {
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
+    borderBottomColor: hud.rowRule,
   },
   muteRow: {
     flexDirection: 'row',
@@ -411,6 +412,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
+    borderBottomColor: hud.rowRule,
   },
 });

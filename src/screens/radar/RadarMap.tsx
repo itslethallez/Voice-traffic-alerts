@@ -90,7 +90,14 @@ const TRANSITION_ZOOM_IN_DURATION_MS = 500;
  * pull-back step goes. */
 const TRANSITION_ZOOM_OUT_DELTA = 2;
 
+function ageMinutesOf(alert: WazeAlert, nowMs: number): number {
+  return (nowMs - Date.parse(alert.publish_datetime_utc)) / 60_000;
+}
+
 interface RadarMapProps {
+  /** Map-first mode keeps markers and focused-alert labels but removes the
+   * large closest-report panel, leaving the map as the primary surface. */
+  minimal?: boolean;
   /** Set by the Drive screen's alert feed (Step 12 #25) when the driver
    * taps a row - the camera centers on this alert instead of following the
    * driver for a few seconds, then the caller clears it. The only
@@ -114,11 +121,13 @@ interface RadarMapProps {
 
 type MapPresentation = 'nearest' | 'range' | 'free';
 
-export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightChange }: RadarMapProps) {
+export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightChange, minimal = false }: RadarMapProps) {
   // Start in overview mode: show the driver's travel arrow and the closest
   // visible report. A single tap switches to the exact Warn me from radius;
   // a pan or pinch leaves the camera entirely in the driver's control.
   const [mapPresentation, setMapPresentation] = useState<MapPresentation>('nearest');
+  const [zoomAdjustment, setZoomAdjustment] = useState(0);
+  const [selectedAlert, setSelectedAlert] = useState<WazeAlert | null>(null);
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const driverSpeedKmh = useTripStore((state) => state.driverSpeedKmh);
@@ -324,7 +333,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
    * height.
    */
   const [focusPanelHeight, setFocusPanelHeight] = useState(0);
-  const showsFocusPanel = closest !== null && !displayFocus;
+  const showsFocusPanel = !minimal && closest !== null && !displayFocus;
   /**
    * @rnmapbox/maps's Camera re-issues its native setCamera command whenever
    * this `padding` object's *reference* changes (its own internal
@@ -370,7 +379,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     nearestMapAlert?.longitude,
     nearestMapAlert?.latitude,
   ]);
-  const cameraZoomLevel = displayFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom;
+  const cameraZoomLevel = (displayFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom) + zoomAdjustment;
   const cameraHeading = cameraFollowsPresentation ? (displayFocus ? 0 : driverHeadingDeg) : undefined;
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
@@ -466,12 +475,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
       <Mapbox.MapView
         style={styles.root}
         onLayout={handleMapLayout}
-        // Mapbox has no built-in "monochrome" stock style - Dark is the
-        // closest available match to the design's near-black map ground
-        // without hand-authoring a full custom style JSON, which risks a
-        // blank/broken map if it's wrong and can't be visually verified in
-        // this environment. Documented fidelity gap - see the redesign plan.
-        styleURL={Mapbox.StyleURL.Dark}
+        styleURL="mapbox://styles/mapbox/navigation-night-v1"
         compassEnabled={false}
         scaleBarEnabled={false}
         // Mapbox's ToS require the logo + attribution control on any map
@@ -482,7 +486,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         // a real user gesture; programmatic camera moves retain their mode.
         scrollEnabled
         zoomEnabled
-        pitchEnabled={false}
+        pitchEnabled
         rotateEnabled
         onPress={() =>
           setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'))
@@ -495,6 +499,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           ref={cameraRef}
           centerCoordinate={cameraCenterCoordinate}
           heading={cameraHeading}
+          pitch={50}
           zoomLevel={cameraFollowsPresentation ? cameraZoomLevel : undefined}
           padding={cameraPadding}
           animationMode="easeTo"
@@ -545,25 +550,48 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
               driverPosition={driverPosition}
               nearbyReport={nearbyReportsById.get(alert.alert_id)}
               onConfirm={confirmNearbyReport}
+              onSelect={setSelectedAlert}
             />
           </Mapbox.MarkerView>
         ))}
       </Mapbox.MapView>
 
-      <Pressable
-        style={styles.mapModeControl}
-        onPress={() => setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'))}
-        accessibilityRole="button"
-        accessibilityLabel={
-          mapPresentation === 'range'
-            ? 'Show the nearest visible alert on the map'
-            : 'Show the Warn me from area on the map'
-        }
-      >
-        <Text style={styles.mapModeControlText}>
-          {mapPresentation === 'range' ? 'SHOW NEAREST ALERT' : 'SHOW WARN RANGE'}
-        </Text>
-      </Pressable>
+      {selectedAlert ? (
+        <View style={styles.alertDetailCard}>
+          <Text style={styles.alertDetailEyebrow}>REPORTED {Math.max(0, Math.round(ageMinutesOf(selectedAlert, now)))} MIN AGO</Text>
+          <Text style={styles.alertDetailTitle}>{alertTypeMeta(selectedAlert.type, selectedAlert.subtype).label.toUpperCase()}</Text>
+          <Text style={styles.alertDetailMeta}>{[selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED'}</Text>
+          <Pressable style={styles.alertDetailClose} onPress={() => setSelectedAlert(null)} accessibilityRole="button" accessibilityLabel="Close report details">
+            <Text style={styles.alertDetailCloseText}>×</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <View style={styles.mapControls}>
+        <Pressable
+          style={styles.zoomButton}
+          onPress={() => setZoomAdjustment((value) => Math.min(3, value + 1))}
+          accessibilityRole="button"
+          accessibilityLabel="ZOOM IN"
+        ><Text style={styles.zoomButtonText}>+</Text></Pressable>
+        <Pressable
+          style={styles.zoomButton}
+          onPress={() => setZoomAdjustment((value) => Math.max(-3, value - 1))}
+          accessibilityRole="button"
+          accessibilityLabel="ZOOM OUT"
+        ><Text style={styles.zoomButtonText}>−</Text></Pressable>
+        <Pressable
+          style={styles.mapModeControl}
+          onPress={() => {
+            setZoomAdjustment(0);
+            setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'));
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={mapPresentation === 'range' ? 'Show nearest alert' : 'SHOW WARN RANGE'}
+        >
+          <Text style={styles.mapModeControlText}>{mapPresentation === 'range' ? 'NEAREST' : 'RANGE'}</Text>
+        </Pressable>
+      </View>
 
       {displayFocus ? (
         <View style={styles.headingChip} pointerEvents="none">
@@ -574,7 +602,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
               }`}
           </Text>
         </View>
-      ) : closest ? (
+      ) : closest && !minimal ? (
         <ClosestReportPanel
           closest={closest}
           driverHeadingDeg={driverHeadingDeg}
@@ -602,6 +630,7 @@ function AlertMarker({
   driverPosition,
   nearbyReport,
   onConfirm,
+  onSelect,
 }: {
   alert: WazeAlert;
   driverPosition: { latitude: number; longitude: number } | null;
@@ -610,6 +639,7 @@ function AlertMarker({
    * this device's own reports, neither of which are confirmable. */
   nearbyReport?: NearbyReport;
   onConfirm?: (id: string) => void;
+  onSelect: (alert: WazeAlert) => void;
 }) {
   const meta = useMemo(() => alertTypeMeta(alert.type, alert.subtype), [alert.type, alert.subtype]);
   const isPolice = alert.type === 'POLICE';
@@ -646,7 +676,7 @@ function AlertMarker({
     </View>
   ) : (
     <View style={styles.alertMarker}>
-      <View style={styles.alertPin}>
+      <View style={[styles.alertPin, { backgroundColor: meta.color }]}>
         <Text style={styles.alertPinLetter}>{meta.letter}</Text>
       </View>
       {distanceMeters !== null ? (
@@ -658,7 +688,7 @@ function AlertMarker({
   );
 
   if (!nearbyReport) {
-    return <View accessibilityLabel={accessibilityLabel}>{marker}</View>;
+    return <Pressable onPress={() => onSelect(alert)} accessibilityRole="button" accessibilityLabel={`${accessibilityLabel}. Show details`}>{marker}</Pressable>;
   }
 
   // Another device's report: tappable to confirm ("still there?"), with a
@@ -667,9 +697,9 @@ function AlertMarker({
   // branch (nearbyReport is only set for the map's other-devices layer).
   return (
     <Pressable
-      onPress={canConfirm && onConfirm ? () => onConfirm(nearbyReport.id) : undefined}
-      accessibilityRole={canConfirm ? 'button' : undefined}
-      accessibilityLabel={accessibilityLabel}
+      onPress={() => onSelect(alert)}
+      accessibilityRole="button"
+      accessibilityLabel={`${accessibilityLabel}. Show details`}
     >
       {marker}
       <View style={[styles.confirmChip, nearbyReport.confirmedByThisDevice && styles.confirmChipDone]}>
@@ -752,7 +782,7 @@ const styles = StyleSheet.create({
   },
   headingChip: {
     position: 'absolute',
-    top: 12,
+    top: 78,
     left: 20,
     backgroundColor: hud.ground,
     paddingVertical: 5,
@@ -764,12 +794,49 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     color: instrument.paper,
   },
-  mapModeControl: {
+  mapControls: {
     position: 'absolute',
     right: 12,
-    top: 12,
-    minHeight: 36,
+    top: 78,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  alertDetailCard: {
+    position: 'absolute', left: 16, right: 16, bottom: 112,
+    minHeight: 92, padding: 15, paddingRight: 48, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+  },
+  alertDetailEyebrow: { fontFamily: fontFamily.bold, fontSize: 9, letterSpacing: 1.2, color: '#087566' },
+  alertDetailTitle: { marginTop: 4, fontFamily: fontFamily.black, fontSize: 18, color: '#07313C' },
+  alertDetailMeta: { marginTop: 3, fontFamily: fontFamily.medium, fontSize: 12, color: '#5E777D' },
+  alertDetailClose: {
+    position: 'absolute', right: 8, top: 8, width: 36, height: 36,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  alertDetailCloseText: { fontFamily: fontFamily.medium, fontSize: 24, color: '#587177' },
+  zoomButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: hud.ground,
+    borderWidth: 1,
+    borderColor: hud.accent,
+  },
+  zoomButtonText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 24,
+    lineHeight: 26,
+    color: hud.accent,
+  },
+  mapModeControl: {
+    minHeight: 36,
+    minWidth: 58,
+    alignSelf: 'center',
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: hud.ground,
     borderWidth: 1,
     borderColor: hud.accent,
@@ -788,6 +855,8 @@ const styles = StyleSheet.create({
   policeSquare: {
     width: POLICE_MARKER_SIZE,
     height: POLICE_MARKER_SIZE,
+    borderRadius: POLICE_MARKER_SIZE / 2,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'flex-start',
     backgroundColor: instrument.paper,
@@ -802,6 +871,7 @@ const styles = StyleSheet.create({
   alertPin: {
     width: ALERT_PIN_SIZE,
     height: ALERT_PIN_SIZE,
+    borderRadius: ALERT_PIN_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: instrument.ink,
@@ -832,6 +902,7 @@ const styles = StyleSheet.create({
   cameraPin: {
     width: ALERT_PIN_SIZE,
     height: ALERT_PIN_SIZE,
+    borderRadius: ALERT_PIN_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',

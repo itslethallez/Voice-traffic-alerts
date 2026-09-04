@@ -43,3 +43,5 @@ yarn-error.*
 
 # raw design handoff archives - kept extracted under design_handoff_instrument_face/ instead
 /*.zip
+dist-web/
+dist-android/

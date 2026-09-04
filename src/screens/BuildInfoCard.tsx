@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { instrument } from '../theme/colors';
+import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 
 /**
@@ -118,11 +118,7 @@ export function BuildInfoCard() {
             accessibilityRole="button"
             accessibilityLabel="Restart to apply the downloaded update"
           >
-            {({ pressed }) => (
-              <Text style={[styles.buttonText, pressed && styles.buttonTextPressed]}>
-                RESTART TO APPLY UPDATE
-              </Text>
-            )}
+            <Text style={styles.buttonText}>RESTART TO APPLY UPDATE</Text>
           </Pressable>
         ) : (
           <Pressable
@@ -136,15 +132,11 @@ export function BuildInfoCard() {
             accessibilityRole="button"
             accessibilityLabel="Check for updates"
           >
-            {({ pressed }) =>
-              state === 'checking' || state === 'downloading' ? (
-                <ActivityIndicator color={instrument.ink} />
-              ) : (
-                <Text style={[styles.buttonText, pressed && styles.buttonTextPressed]}>
-                  CHECK FOR UPDATES
-                </Text>
-              )
-            }
+            {state === 'checking' || state === 'downloading' ? (
+              <ActivityIndicator color={hud.rowTitle} />
+            ) : (
+              <Text style={styles.buttonText}>CHECK FOR UPDATES</Text>
+            )}
           </Pressable>
         )}
 
@@ -172,18 +164,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: instrument.ruleOnInk,
+    borderBottomColor: hud.rule,
   },
   label: {
     fontFamily: fontFamily.medium,
     fontSize: 13,
     letterSpacing: 0.5,
-    color: instrument.mutedOnInk,
+    color: hud.muted,
   },
   value: {
     fontFamily: fontFamily.bold,
     fontSize: 13,
-    color: instrument.paper,
+    color: hud.rowTitle,
     flexShrink: 1,
     textAlign: 'right',
   },
@@ -194,12 +186,12 @@ const styles = StyleSheet.create({
   },
   button: {
     height: 44,
-    backgroundColor: instrument.paper,
+    backgroundColor: hud.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonPressed: {
-    backgroundColor: instrument.ink,
+    backgroundColor: hud.accentBright,
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -208,15 +200,12 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.black,
     fontSize: 15,
     letterSpacing: 1,
-    color: instrument.ink,
-  },
-  buttonTextPressed: {
-    color: instrument.paper,
+    color: hud.rowTitle,
   },
   status: {
     fontFamily: fontFamily.medium,
     fontSize: 13,
-    color: instrument.mutedOnInk,
+    color: hud.muted,
     textAlign: 'center',
   },
   errorText: {

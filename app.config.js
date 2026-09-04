@@ -9,11 +9,11 @@
  */
 module.exports = {
   expo: {
-    name: 'Shotgun',
+    name: 'Streetwise',
     slug: 'voice-traffic-alerts',
     version: '1.0.0',
-    orientation: 'portrait',
-    icon: './assets/icon.png',
+    orientation: 'default',
+    icon: './assets/streetwise-icon.png',
     userInterfaceStyle: 'light',
     ios: {
       supportsTablet: true,
@@ -29,7 +29,7 @@ module.exports = {
       package: 'com.itslethallez.voicetrafficalerts',
       adaptiveIcon: {
         backgroundColor: '#E6F4FE',
-        foregroundImage: './assets/android-icon-foreground.png',
+        foregroundImage: './assets/streetwise-icon.png',
         backgroundImage: './assets/android-icon-background.png',
         monochromeImage: './assets/android-icon-monochrome.png',
       },
@@ -60,6 +60,9 @@ module.exports = {
         },
       ],
       'expo-font',
+      // Android Notification Access is a special system setting. The app can
+      // only deep-link there; the user must explicitly enable the listener.
+      './plugins/withFacebookNotificationListener',
       [
         'expo-location',
         {

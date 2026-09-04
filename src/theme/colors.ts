@@ -59,14 +59,15 @@ export const hud = {
   statusBar: '#050709', // status-bar strip
   ink: '#F5F7FA', // primary text
   mapGround: '#0C1319', // map field
-  accent: '#2F9BE0', // system state: LIVE, GPS, awareness, active tab, SPEED label
-  accentBright: '#4FB0EE', // "ONE TAP" caption on the report block
-  accentInk: '#DDEAF3', // "LIVE" wordmark
+  accent: '#26B99A', // live/system state, matched to the map-first reference
+  accentBright: '#45D1B5', // brighter interaction state
+  accentInk: '#E1F5F0', // "LIVE" wordmark
   muted: '#79838B', // meta line, inactive tab labels
   mutedLabel: '#6E7A85', // ledger header label
   rule: 'rgba(150,190,215,0.30)', // 1px section rules (replaces the 2px paper rules)
   ruleStrong: 'rgba(150,190,215,0.45)', // report block's left border
   rowRule: 'rgba(150,190,215,0.16)', // 1px rule between ledger rows
+  faintTrack: 'rgba(150,190,215,0.14)', // slider track fill (Settings' RangeSlider)
   // Severity, applied to the ledger row rail + confidence tail + distance:
   sevHigh: '#E01B24', // rail, police / nearest
   sevHighText: '#F0453A', // distance numeral, unit, confidence tail
