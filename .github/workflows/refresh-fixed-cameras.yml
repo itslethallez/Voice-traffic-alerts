@@ -4,9 +4,8 @@ name: Refresh fixed camera dataset
 # this scrapes a live third-party page + geocodes every address via
 # Mapbox, so there's no reason to run it more often than that. See
 # scripts/buildFixedCameraDataset.js's header comment for the full
-# rationale (including why this runs on GitHub Actions rather than a
-# Vercel Cron function - the script shells out to curl, which Vercel's
-# Node runtime doesn't reliably provide, to get past SAPOL's WAF).
+# rationale (including why this routes through ScraperAPI's premium
+# tier - SAPOL's WAF blocks GitHub Actions' shared runner IPs directly).
 on:
   schedule:
     - cron: '0 3 * * 1' # Monday 03:00 UTC
@@ -32,6 +31,7 @@ jobs:
         run: |
           echo "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=${{ secrets.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN }}" >> .env
           echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+          echo "SCRAPERAPI_KEY=${{ secrets.SCRAPERAPI_KEY }}" >> .env
 
       - name: Run SAPOL fixed-camera ingest
         run: node scripts/buildFixedCameraDataset.js

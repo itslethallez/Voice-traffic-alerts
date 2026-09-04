@@ -18,13 +18,13 @@
  *
  * Usage: node scripts/buildFixedCameraDataset.js
  * Requires EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN (same key the app's map and
- * suburb lookup already use) and DATABASE_URL (the server/ Neon
- * connection string - never the mobile app's own env vars) in .env.
+ * suburb lookup already use), DATABASE_URL (the server/ Neon connection
+ * string - never the mobile app's own env vars), and SCRAPERAPI_KEY (see
+ * fetchSapolPageHtml's doc comment below for why) in .env.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { neon } = require('@neondatabase/serverless');
 
 const SAPOL_PAGE_URL = 'https://www.police.sa.gov.au/your-safety/road-safety/traffic-camera-locations';
@@ -103,28 +103,39 @@ function parseFixedCameraRows(html) {
 
 /**
  * Node's built-in fetch (undici) gets a 403 from SAPOL's site even with an
- * identical User-Agent to a request that succeeds - looks like WAF
- * fingerprinting below the header level (TLS/HTTP client fingerprint), not
- * anything this script's request is actually missing. Shelling out to curl
- * sidesteps it and is proven to work (verified live against this exact URL
- * while researching this feature).
+ * identical User-Agent to a request that succeeds from a residential IP -
+ * looks like WAF IP-range blocking (datacenter/cloud ranges, which is what
+ * both a local curl-from-devbox *and* GitHub Actions runners increasingly
+ * fall under) rather than anything about the request itself. Shelling out
+ * to curl locally used to sidestep it, but GitHub Actions' shared runner
+ * IPs started getting blocked too (this is what broke the scheduled
+ * workflow - see git history around late Aug/early Sep 2026), so this now
+ * routes through ScraperAPI (https://www.scraperapi.com, free tier: 1,000
+ * requests/month, no card - this script runs weekly, so usage is
+ * negligible) with premium=true, which uses ScraperAPI's residential/
+ * higher-trust IP pool instead of a datacenter one. premium=true requests
+ * take significantly longer (observed ~60-90s vs a plain request's few
+ * seconds) - the default fetch timeout is raised accordingly below.
+ *
+ * Requires SCRAPERAPI_KEY in .env (or the SCRAPERAPI_KEY secret in CI).
  */
-function fetchSapolPageHtml() {
-  return execFileSync(
-    'curl',
-    [
-      '-s',
-      '-L',
-      '-A',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-      SAPOL_PAGE_URL,
-    ],
-    { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }
-  );
+async function fetchSapolPageHtml() {
+  const scraperApiKey = readEnvValue('SCRAPERAPI_KEY');
+  const url = new URL('http://api.scraperapi.com');
+  url.searchParams.set('api_key', scraperApiKey);
+  url.searchParams.set('url', SAPOL_PAGE_URL);
+  url.searchParams.set('premium', 'true');
+
+  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(120_000) });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`ScraperAPI request failed (${response.status}): ${body.slice(0, 300)}`);
+  }
+  return body;
 }
 
 async function fetchSapolTableRows() {
-  const html = fetchSapolPageHtml();
+  const html = await fetchSapolPageHtml();
   if (!html || html.length < 1000) {
     throw new Error('SAPOL page fetch returned unexpectedly little content - check the URL/network manually.');
   }
