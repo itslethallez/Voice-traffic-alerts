@@ -50,6 +50,7 @@ describe('local Facebook notification listener Expo module', () => {
     expect(moduleSource).toContain(
       'Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS',
     );
+    expect(moduleSource).toContain('catch (_: SecurityException)');
   });
 
   it('filters to the Facebook package before reading or emitting content', () => {

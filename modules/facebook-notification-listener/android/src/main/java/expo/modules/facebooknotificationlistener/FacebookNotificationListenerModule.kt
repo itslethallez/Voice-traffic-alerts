@@ -69,6 +69,8 @@ class FacebookNotificationListenerModule : Module() {
         true
       } catch (_: ActivityNotFoundException) {
         false
+      } catch (_: SecurityException) {
+        false
       }
     }
   }
