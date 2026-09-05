@@ -5,17 +5,24 @@ const root = path.resolve(__dirname, '../../..');
 const source = (relative: string) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 describe('Drive report UI contract', () => {
-  it('uses the same compact brand icon and title hierarchy as the other primary screens', () => {
+  it('uses the real Shotgun wordmark logo asset in the header, not a plain text label', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
-    expect(drive).toContain("require('../../assets/shotgun-icon.png')");
-    expect(drive).toMatch(/<Text style=\{styles\.brandTitle\}[^>]*>SHOTGUN<\/Text>/);
-    expect(drive).toContain('<Text style={styles.brandSubtitle}>LIVE MAP</Text>');
-    expect(drive).toMatch(/brandIcon:\s*\{\s*width: 42,\s*height: 42,/);
+    expect(drive).toContain("require('../../assets/shotgun-header.png')");
     expect(drive).not.toContain('streetwise-header.png');
+    expect(drive).not.toMatch(/>SHOTGUN<\/Text>/);
   });
 
-  it('automatically dismisses each announced-report card after 20 seconds', () => {
+  it('adapts the header and control row for landscape orientation', () => {
+    const drive = source('src/screens/DriveScreen.tsx');
+
+    expect(drive).toContain("import { useIsLandscape } from '../hooks/useIsLandscape';");
+    expect(drive).toContain('const isLandscape = useIsLandscape();');
+    expect(drive).toMatch(/style=\{\[styles\.topBar, isLandscape && styles\.topBarLandscape\]\}/);
+    expect(drive).toMatch(/style=\{\[styles\.controlRow, isLandscape && styles\.controlRowLandscape, compactControls && styles\.controlRowCompact\]\}/);
+  });
+
+  it('automatically dismisses each announced-report ticker after 20 seconds', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
     expect(drive).toContain('const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;');
@@ -25,22 +32,47 @@ describe('Drive report UI contract', () => {
     expect(drive).toContain('clearTimeout(timeout);');
   });
 
-  it('keeps the announced-report card in a dedicated flex lane below the header', () => {
+  it('keeps a compact live-report ticker in a dedicated lane below the header', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
     expect(drive).toContain('<View pointerEvents="box-none" style={styles.mapChrome}>');
-    expect(drive).toMatch(/mapChrome:\s*\{\s*flex: 1,\s*minHeight: 0,\s*justifyContent: 'flex-end',/);
-    expect(drive).toMatch(/style=\{styles\.mapChrome\}>\s*<View style=\{styles\.bottomStack\}>\s*\{latestAnnouncement/);
+    expect(drive).toMatch(/mapChrome:\s*\{\s*flex: 1,\s*minHeight: 0,\s*justifyContent: 'space-between',/);
+    expect(drive).toContain("backgroundColor: hud.ground");
+    expect(drive).toContain('<ReportTicker');
+    expect(drive).toContain('LIVE REPORT');
+    expect(drive).toContain('TAP TO SHOW ON MAP');
+    expect(drive).not.toContain('announcementCard');
   });
 
-  it('retains the live speed readout in the floating map-first report dock', () => {
+  it('provides a top map recenter control on native and web map adapters', () => {
+    const nativeMap = source('src/screens/radar/RadarMap.tsx');
+    const webMap = source('src/screens/radar/RadarMap.web.tsx');
+
+    for (const map of [nativeMap, webMap]) {
+      expect(map).toContain('RECENTER ON MY LOCATION');
+      expect(map).toContain('Centers the map on your current location');
+      expect(map).toContain('recenterButton');
+      expect(map).toContain('disabled={!driverPosition}');
+      expect(map).toMatch(/mapControls:\s*\{[\s\S]*?flexDirection: 'column',/);
+    }
+    expect(webMap).not.toContain('new mapboxgl.NavigationControl');
+  });
+
+  it('mirrors the REPORT dial and speedometer as same-size circular controls on opposite sides', () => {
     const drive = source('src/screens/DriveScreen.tsx');
+    const reportBar = source('src/screens/radar/ReportBar.tsx');
+    const speedometer = source('src/screens/radar/Speedometer.tsx');
 
     expect(drive).toContain("import { Speedometer } from './radar/Speedometer';");
-    expect(drive).toMatch(/<View style=\{styles\.reportDock\}>\s*<Speedometer \/>\s*<ReportBar \/>/);
+    expect(drive).toMatch(/<ReportBar \/>[\s\S]*?Toggle notification range[\s\S]*?Mute audio[\s\S]*?<Speedometer \/>/);
+    expect(drive).toContain('ScanLine');
+    expect(drive).toContain('toggleMasterMute');
+
+    expect(reportBar).toContain('const REPORT_DIAL_SIZE = 112;');
+    expect(speedometer).toContain('const SPEED_DIAL_SIZE = 112;');
   });
 
-  it('offers one-tap police, accident, hazard, and jam report actions', () => {
+  it('hides the four report categories behind a single expandable REPORT dial', () => {
     const reportBar = source('src/screens/radar/ReportBar.tsx');
 
     for (const category of ['POLICE', 'ACCIDENT', 'HAZARD', 'JAM']) {
@@ -49,14 +81,27 @@ describe('Drive report UI contract', () => {
     }
     expect(reportBar.match(/category: '(POLICE|ACCIDENT|HAZARD|JAM)'/g)).toHaveLength(4);
     expect(reportBar).toContain('pushManualReport(def.category, null);');
+    expect(reportBar).toContain('const [expanded, setExpanded] = useState(false);');
+    expect(reportBar).toMatch(/\{expanded \? \(\s*<View style=\{styles\.fanOut\}/);
   });
 
-  it('keeps all new and existing report controls at least 44dp tall', () => {
-    const drive = source('src/screens/DriveScreen.tsx');
-    const reportBar = source('src/screens/radar/ReportBar.tsx');
+  it('gives the bottom tab bar the same dark chrome as the header', () => {
+    const bottomNav = source('src/navigation/BottomNav.tsx');
 
-    expect(drive).toMatch(/showOnMapButton:\s*\{[\s\S]*?minHeight: 44,/);
-    expect(drive).toMatch(/dismissButton:\s*\{[\s\S]*?minWidth: 44,\s*minHeight: 44,/);
-    expect(reportBar).toMatch(/cell:\s*\{\s*flex: 1,\s*minHeight: 48,/);
+    expect(bottomNav).toContain("import { hud } from '../theme/colors';");
+    expect(bottomNav).toMatch(/root:\s*\{[\s\S]*?backgroundColor: hud\.ground,/);
+    expect(bottomNav).not.toContain("backgroundColor: '#FFFFFF'");
+  });
+
+  it('keeps the ticker and map controls at least 44dp tall', () => {
+    const drive = source('src/screens/DriveScreen.tsx');
+    const nativeMap = source('src/screens/radar/RadarMap.tsx');
+    const webMap = source('src/screens/radar/RadarMap.web.tsx');
+
+    expect(drive).toMatch(/tickerBanner:\s*\{[\s\S]*?height: 48,/);
+    for (const map of [nativeMap, webMap]) {
+      expect(map).toMatch(/recenterButton:\s*\{[\s\S]*?width: 44,\s*height: 44,/);
+      expect(map).toMatch(/zoomButton:\s*\{[\s\S]*?width: 44,\s*height: 44,/);
+    }
   });
 });

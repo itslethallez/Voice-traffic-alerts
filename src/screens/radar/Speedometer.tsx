@@ -4,71 +4,64 @@ import { useTripStore } from '../../store/useTripStore';
 import { hud } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
 
+/** Matches ReportBar's REPORT_DIAL_SIZE (design reference: the two
+ * circular controls are the same size, mirrored left/right in the bottom
+ * bar) - kept as a separate constant since the two files have no shared
+ * import today and this is a small, easily-eyeballed layout constant. */
+const SPEED_DIAL_SIZE = 112;
+
 /**
- * The Drive screen's speed readout (design_handoff_instrument_face) - the
- * single largest numeral in the app, since speed is the one thing read
- * while actually moving. Reads useTripStore's driverSpeedKmh, unchanged
- * from the shipped version - only the visual treatment changes here.
+ * The Drive screen's speed readout (2026-09 redesign: a circular dial
+ * mirroring ReportBar's REPORT control, replacing the old full-width bar).
+ * Reads useTripStore's driverSpeedKmh, unchanged from the shipped version -
+ * only the visual treatment changes here.
  */
 export function Speedometer() {
   const speedKmh = useTripStore((state) => state.driverSpeedKmh);
 
   return (
-    <LinearGradient colors={['#0A1E30', '#060D16']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.container}>
-      <View style={styles.captionRow}>
-        <Text style={styles.caption}>SPEED</Text>
-        <Text style={styles.hint}>ONE TAP TO REPORT</Text>
-      </View>
+    <LinearGradient colors={['#0A1E30', '#060D16']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
+      <Text style={styles.caption}>SPEED</Text>
       <View style={styles.valueRow}>
         <Text style={styles.value}>{Math.round(speedKmh)}</Text>
-        <Text style={styles.unit}>KM/H</Text>
       </View>
+      <Text style={styles.unit}>KM/H</Text>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 0,
-    flexShrink: 0,
-    paddingTop: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  captionRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
+    width: SPEED_DIAL_SIZE,
+    height: SPEED_DIAL_SIZE,
+    borderRadius: SPEED_DIAL_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: hud.accent,
   },
   caption: {
     fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 2,
+    fontSize: 10,
+    letterSpacing: 1.6,
     color: hud.accent,
-  },
-  hint: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: hud.accentBright,
   },
   valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 8,
   },
   value: {
     fontFamily: fontFamily.black,
-    fontSize: 60,
-    lineHeight: 58,
-    letterSpacing: -2,
+    fontSize: 34,
+    lineHeight: 36,
+    letterSpacing: -1,
     color: hud.ink,
     fontVariant: ['tabular-nums'],
   },
   unit: {
     fontFamily: fontFamily.bold,
-    fontSize: 14,
-    letterSpacing: 1.5,
+    fontSize: 10,
+    letterSpacing: 1.2,
     color: hud.accent,
   },
 });

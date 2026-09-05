@@ -26,13 +26,17 @@ describe('simplified map-first UI contract', () => {
     expect(drive).toContain('<Speedometer');
     expect(drive).toContain('latestAnnouncement');
     expect(drive).toContain('SHOW ON MAP');
+    expect(drive).toContain('Toggle notification range');
+    expect(drive).toContain('Mute audio');
 
     const map = source('src/screens/radar/RadarMap.tsx');
     expect(map).toContain('pitch={50}');
     expect(map).not.toContain("pitch={mapPresentation === 'range' ? 0 : 50}");
     expect(map).toContain('ZOOM IN');
     expect(map).toContain('ZOOM OUT');
-    expect(map).toContain('SHOW WARN RANGE');
+    expect(map).toContain('RECENTER ON MY LOCATION');
+    expect(map).toContain('rangeToggleToken');
+    expect(map).not.toContain('mapModeControl');
     expect(map).toContain('mapbox://styles/mapbox/navigation-night-v1');
     expect(map).toContain('borderRadius: ALERT_PIN_SIZE / 2');
 

@@ -49,9 +49,12 @@ describe('RadarMap interaction and marker contract', () => {
     expect(webSource).not.toContain('styles.radarRange');
   });
 
-  it('uses squared flashing-light marks for police and fixed-camera markers', () => {
+  it('uses squared flashing-light marks for police and camera glyphs for fixed cameras', () => {
     expect(source).toMatch(/policeSquare:[\s\S]*?borderRadius: 4,/);
-    expect(source).toContain('<PoliceLightBar orientation="horizontal" width={FIXED_CAMERA_MARKER_SIZE}');
+    expect(source).toContain('Camera as CameraIcon');
+    expect(source).toContain('<CameraIcon size={20}');
     expect(source).toMatch(/cameraSquare:[\s\S]*?borderRadius: 4,/);
+    expect(webSource).toContain('Fixed speed camera');
+    expect(webSource).toContain('cameraLens');
   });
 });

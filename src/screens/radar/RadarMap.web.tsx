@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { LocateFixed } from 'lucide-react-native';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { WazeAlert } from '../../api/waze/types';
+import { haversineDistance } from '../../geo/distance';
+import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
 import { env } from '../../config/env';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
@@ -23,24 +26,57 @@ interface RadarMapProps {
   now?: number;
   onSpotlightChange?: (active: boolean) => void;
   minimal?: boolean;
+  rangeToggleToken?: number;
 }
 
 const ADELAIDE: [number, number] = [138.6007, -34.9285];
 
 /** Browser implementation of the map surface. Native builds continue using
  * RadarMap.tsx/@rnmapbox; Expo web resolves this file and uses Mapbox GL JS. */
-export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProps) {
+export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleToken = 0 }: RadarMapProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showRange, setShowRange] = useState(false);
+  const rangeToggleSeenRef = useRef(0);
   const driverPosition = useTripStore((state) => state.driverPosition);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
   const nearbyReports = useTripStore((state) => state.nearbyReports);
+  const fixedCameras = useTripStore((state) => state.fixedCameras);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+
+  useEffect(() => {
+    if (rangeToggleToken === 0 || rangeToggleToken === rangeToggleSeenRef.current) return;
+    rangeToggleSeenRef.current = rangeToggleToken;
+    const next = !showRange;
+    setShowRange(next);
+    markersRef.current.forEach((marker) => marker.getPopup?.()?.remove());
+    if (next && driverPosition && mapRef.current) {
+      const delta = announceDistanceMeters / 111_320;
+      mapRef.current.fitBounds(
+        [[driverPosition.longitude - delta, driverPosition.latitude - delta], [driverPosition.longitude + delta, driverPosition.latitude + delta]],
+        { padding: 56, pitch: 50, bearing: 0, duration: 650 }
+      );
+    } else if (!next && driverPosition && mapRef.current) {
+      mapRef.current.easeTo({
+        center: [driverPosition.longitude, driverPosition.latitude],
+        zoom: 15.5,
+        pitch: 50,
+        bearing: useTripStore.getState().driverHeadingDeg,
+        duration: 650,
+      });
+    }
+  }, [rangeToggleToken]);
+
+  const mapVisibleCameras = useMemo(() => {
+    if (!driverPosition || !categoriesEnabled.POLICE) return [];
+    return fixedCameras.filter(
+      (camera) => haversineDistance(driverPosition, camera.position) <= announceDistanceMeters
+    );
+  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, announceDistanceMeters]);
 
   const mapVisibleAlerts = useMemo(() => {
     const enabledTypes = enabledTypesFromSettings(categoriesEnabled);
@@ -73,7 +109,6 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       bearing: useTripStore.getState().driverHeadingDeg,
       attributionControl: true,
     });
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
     mapRef.current = map;
     return () => {
       if (focusTransitionTimeoutRef.current !== null) {
@@ -106,6 +141,58 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       markersRef.current.push(
         new mapboxgl.Marker({ element: driver, anchor: 'center' })
           .setLngLat([driverPosition.longitude, driverPosition.latitude])
+          .addTo(map)
+      );
+    }
+
+    for (const fixedCamera of mapVisibleCameras) {
+      const cameraMarker = document.createElement('div');
+      cameraMarker.setAttribute('aria-label', `Fixed speed camera, ${fixedCamera.label}`);
+      Object.assign(cameraMarker.style, {
+        position: 'relative',
+        width: '36px',
+        height: '32px',
+        filter: 'drop-shadow(0 3px 5px rgba(0,0,0,.65))',
+      });
+      const cameraBody = document.createElement('div');
+      Object.assign(cameraBody.style, {
+        position: 'absolute',
+        left: '2px',
+        top: '6px',
+        width: '32px',
+        height: '24px',
+        borderRadius: '6px',
+        border: `2px solid ${hud.accent}`,
+        background: '#061B1F',
+        boxSizing: 'border-box',
+      });
+      const cameraBump = document.createElement('span');
+      Object.assign(cameraBump.style, {
+        position: 'absolute',
+        left: '9px',
+        top: '2px',
+        width: '10px',
+        height: '6px',
+        borderRadius: '3px 3px 0 0',
+        background: hud.accent,
+      });
+      const cameraLens = document.createElement('span');
+      Object.assign(cameraLens.style, {
+        position: 'absolute',
+        left: '9px',
+        top: '4px',
+        width: '10px',
+        height: '10px',
+        borderRadius: '50%',
+        border: `2px solid ${hud.accent}`,
+        background: '#0D3A40',
+        boxSizing: 'border-box',
+      });
+      cameraBody.append(cameraLens);
+      cameraMarker.append(cameraBump, cameraBody);
+      markersRef.current.push(
+        new mapboxgl.Marker({ element: cameraMarker, anchor: 'bottom' })
+          .setLngLat([fixedCamera.position.longitude, fixedCamera.position.latitude])
           .addTo(map)
       );
     }
@@ -156,7 +243,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       if (focusedAlert?.alert_id === alert.alert_id) reportMarker.togglePopup();
       markersRef.current.push(reportMarker);
     }
-  }, [mapRenderableAlerts, driverPosition, focusedAlert?.alert_id, now]);
+  }, [mapRenderableAlerts, mapVisibleCameras, driverPosition, focusedAlert?.alert_id, now]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -213,6 +300,26 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       ) : null}
       <View style={styles.mapControls}>
         <Pressable
+          style={[styles.recenterButton, !driverPosition && styles.recenterButtonDisabled]}
+          onPress={() => {
+            if (!driverPosition || !mapRef.current) return;
+            setShowRange(false);
+            mapRef.current.easeTo({
+              center: [driverPosition.longitude, driverPosition.latitude],
+              zoom: 15.5,
+              pitch: 50,
+              bearing: useTripStore.getState().driverHeadingDeg,
+              duration: 650,
+            });
+          }}
+          disabled={!driverPosition}
+          accessibilityRole="button"
+          accessibilityLabel="RECENTER ON MY LOCATION"
+          accessibilityHint="Centers the map on your current location"
+        >
+          <LocateFixed size={20} strokeWidth={2.2} color={hud.accent} />
+        </Pressable>
+        <Pressable
           style={styles.zoomButton}
           onPress={() => mapRef.current?.zoomIn({ duration: 350 })}
           accessibilityRole="button"
@@ -232,32 +339,6 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
           <Text style={styles.zoomButtonGlyph}>−</Text>
           <Text style={styles.zoomButtonLabel}>OUT</Text>
         </Pressable>
-        <Pressable
-          style={[styles.rangeButton, showRange && styles.rangeButtonActive]}
-          onPress={() => {
-            const next = !showRange;
-            setShowRange(next);
-            markersRef.current.forEach((marker) => marker.getPopup?.()?.remove());
-            if (next && driverPosition && mapRef.current) {
-              const delta = announceDistanceMeters / 111_320;
-              mapRef.current.fitBounds(
-                [[driverPosition.longitude - delta, driverPosition.latitude - delta], [driverPosition.longitude + delta, driverPosition.latitude + delta]],
-                { padding: 56, pitch: 50, bearing: 0, duration: 650 }
-              );
-            } else if (!next && driverPosition && mapRef.current) {
-              mapRef.current.easeTo({
-                center: [driverPosition.longitude, driverPosition.latitude],
-                zoom: 15.5,
-                pitch: 50,
-                bearing: useTripStore.getState().driverHeadingDeg,
-                duration: 650,
-              });
-            }
-          }}
-          accessibilityRole="button"
-          accessibilityState={{ selected: showRange }}
-          accessibilityLabel="SHOW WARN RANGE"
-        ><Text style={[styles.rangeButtonText, showRange && styles.rangeButtonTextActive]}>{showRange ? 'NEAREST' : 'RANGE'}</Text></Pressable>
       </View>
     </View>
   );
@@ -309,9 +390,22 @@ const styles = StyleSheet.create({
   mapControls: {
     position: 'absolute',
     right: 14,
-    top: 78,
-    flexDirection: 'row',
-    gap: 7,
+    top: 128,
+    flexDirection: 'column',
+    gap: 8,
+  },
+  recenterButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(6,27,31,0.94)',
+    borderWidth: 1,
+    borderColor: hud.accent,
+  },
+  recenterButtonDisabled: {
+    opacity: 1,
   },
   zoomButton: {
     width: 44,
@@ -335,28 +429,5 @@ const styles = StyleSheet.create({
     lineHeight: 10,
     letterSpacing: 0.5,
     color: hud.accent,
-  },
-  rangeButton: {
-    minWidth: 62,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(6,27,31,0.94)',
-    borderWidth: 1,
-    borderColor: hud.accent,
-  },
-  rangeButtonActive: {
-    backgroundColor: hud.accent,
-  },
-  rangeButtonText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 9,
-    letterSpacing: 0.8,
-    color: hud.accent,
-  },
-  rangeButtonTextActive: {
-    color: '#062128',
   },
 });

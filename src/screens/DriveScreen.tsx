@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ScanLine, Volume2, VolumeX } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { WazeAlert } from '../api/waze/types';
+import type { RecentAnnouncement } from '../speech/types';
+import { useIsLandscape } from '../hooks/useIsLandscape';
 import { visibleManualReportAlerts } from '../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../store/nearbyReportAlert';
 import { enabledTypesFromSettings } from '../store/settingsDefaults';
@@ -23,6 +26,10 @@ interface DriveScreenProps {
 /** The driving view is deliberately map-first: live reports appear directly
  * on the map, while reporting stays one tap away in the floating bottom dock. */
 export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenProps) {
+  const isLandscape = useIsLandscape();
+  const { width: viewportWidth } = useWindowDimensions();
+  const compactControls = !isLandscape && viewportWidth < 430;
+  const [rangeToggleToken, setRangeToggleToken] = useState(0);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
   const nearbyReports = useTripStore((state) => state.nearbyReports);
@@ -32,6 +39,8 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const masterMute = useSettingsStore((state) => state.masterMute);
+  const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
   const [now, setNow] = useState(() => Date.now());
   const latestAnnouncementKey = latestAnnouncement
     ? `${latestAnnouncement.alertId}:${latestAnnouncement.announcedAtMs}`
@@ -72,16 +81,17 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
 
   return (
     <View style={styles.root}>
-      <RadarMap focusedAlert={focusedAlert} now={now} minimal />
+      <RadarMap focusedAlert={focusedAlert} now={now} minimal rangeToggleToken={rangeToggleToken} />
 
       <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, isLandscape && styles.topBarLandscape]}>
           <View style={styles.brandBlock}>
-            <Image source={require('../../assets/shotgun-icon.png')} style={styles.brandIcon} resizeMode="contain" />
-            <View style={styles.brandCopy}>
-              <Text style={styles.brandTitle} numberOfLines={1}>SHOTGUN</Text>
-              <Text style={styles.brandSubtitle}>LIVE MAP</Text>
-            </View>
+            <Image
+              source={require('../../assets/shotgun-header.png')}
+              style={[styles.brandLogo, isLandscape && styles.brandLogoLandscape]}
+              resizeMode="contain"
+              accessibilityLabel="Shotgun"
+            />
           </View>
           <View style={styles.livePill} accessible accessibilityLabel={`${liveReportCount} live reports, ${locationLabel.toLowerCase()}`}>
             <View style={[styles.liveDot, isOffline && styles.offlineDot]} />
@@ -93,39 +103,118 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
         </View>
 
         <View pointerEvents="box-none" style={styles.mapChrome}>
+          {latestAnnouncement && dismissedAnnouncementKey !== latestAnnouncementKey ? (
+            <ReportTicker
+              announcement={latestAnnouncement}
+              onPress={() => onFocusAlert?.(latestAnnouncement.candidate.alert)}
+            />
+          ) : (
+            <View style={styles.tickerPlaceholder} />
+          )}
           <View style={styles.bottomStack}>
-            {latestAnnouncement && dismissedAnnouncementKey !== latestAnnouncementKey ? (
-              <View style={styles.announcementCard} accessibilityLiveRegion="polite">
-                <View style={styles.announcementCopy}>
-                  <Text style={styles.announcementEyebrow}>JUST ANNOUNCED</Text>
-                  <Text style={styles.announcementText} numberOfLines={3}>{latestAnnouncement.text}</Text>
-                </View>
-                <Pressable
-                  onPress={() => onFocusAlert?.(latestAnnouncement.candidate.alert)}
-                  style={styles.showOnMapButton}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Show announced report on map: ${latestAnnouncement.text}`}
-                >
-                  <Text style={styles.showOnMapText}>SHOW ON MAP</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setDismissedAnnouncementKey(latestAnnouncementKey)}
-                  style={styles.dismissButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Dismiss announced report"
-                >
-                  <Text style={styles.dismissText}>×</Text>
-                </Pressable>
-              </View>
-            ) : null}
-            <View style={styles.reportDock}>
-              <Speedometer />
+            <View style={[styles.controlRow, isLandscape && styles.controlRowLandscape, compactControls && styles.controlRowCompact]}>
               <ReportBar />
+              <Pressable
+                onPress={() => setRangeToggleToken((token) => token + 1)}
+                style={[styles.utilityButton, compactControls && styles.utilityButtonCompact]}
+                accessibilityRole="button"
+                accessibilityLabel="Toggle notification range"
+                accessibilityHint="Shows or hides the configured notification range on the map"
+              >
+                <ScanLine size={compactControls ? 18 : 22} strokeWidth={2.1} color={hud.accent} />
+                <Text style={styles.utilityButtonLabel}>RANGE</Text>
+              </Pressable>
+              <Pressable
+                onPress={toggleMasterMute}
+                style={[styles.utilityButton, masterMute && styles.utilityButtonActive, compactControls && styles.utilityButtonCompact]}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: masterMute }}
+                accessibilityLabel={masterMute ? 'Unmute audio' : 'Mute audio'}
+              >
+                {masterMute ? (
+                  <VolumeX size={compactControls ? 18 : 22} strokeWidth={2.1} color="#062128" />
+                ) : (
+                  <Volume2 size={compactControls ? 18 : 22} strokeWidth={2.1} color={hud.accent} />
+                )}
+                <Text style={[styles.utilityButtonLabel, masterMute && styles.utilityButtonLabelActive]}>
+                  {masterMute ? 'MUTED' : 'MUTE'}
+                </Text>
+              </Pressable>
+              <Speedometer />
             </View>
           </View>
         </View>
       </SafeAreaView>
     </View>
+  );
+}
+
+function ReportTicker({
+  announcement,
+  onPress,
+}: {
+  announcement: RecentAnnouncement;
+  onPress: () => void;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  useEffect(() => {
+    if (viewportWidth <= 0 || trackWidth <= viewportWidth) {
+      translateX.setValue(0);
+      return;
+    }
+
+    const distance = trackWidth - viewportWidth + 28;
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.delay(700),
+        Animated.timing(translateX, {
+          toValue: -distance,
+          duration: Math.max(7000, distance * 24),
+          useNativeDriver: true,
+        }),
+        Animated.delay(1000),
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 850,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [announcement.alertId, trackWidth, translateX, viewportWidth]);
+
+  return (
+    <Pressable
+      style={styles.tickerBanner}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={`New report: ${announcement.text}. Tap to show on map`}
+    >
+      <View
+        style={styles.tickerViewport}
+        onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
+      >
+        <Animated.View
+          style={[styles.tickerTrack, { transform: [{ translateX }] }]}
+          onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+        >
+          <Text style={styles.tickerText} numberOfLines={1}>
+            <Text style={styles.tickerLead}>LIVE REPORT</Text>
+            {'  •  '}
+            {announcement.text}
+            {'  •  TAP TO SHOW ON MAP'}
+          </Text>
+        </Animated.View>
+      </View>
+      <View style={styles.tickerTag}>
+        <Text style={styles.tickerTagText}>MAP</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -148,33 +237,27 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingTop: 8,
+    backgroundColor: hud.ground,
+    paddingBottom: 8,
+  },
+  topBarLandscape: {
+    paddingHorizontal: 24,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   brandBlock: {
     flex: 1,
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
-  brandIcon: {
-    width: 42,
-    height: 42,
+  brandLogo: {
+    width: 168,
+    height: 56,
   },
-  brandCopy: {
-    flexShrink: 1,
-  },
-  brandTitle: {
-    fontFamily: fontFamily.black,
-    fontSize: 18,
-    letterSpacing: 0.4,
-    color: hud.rowTitle,
-  },
-  brandSubtitle: {
-    marginTop: 2,
-    fontFamily: fontFamily.bold,
-    fontSize: 9,
-    letterSpacing: 1.4,
-    color: hud.accent,
+  brandLogoLandscape: {
+    width: 140,
+    height: 46,
   },
   livePill: {
     minHeight: 48,
@@ -184,7 +267,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 24,
-    backgroundColor: 'rgba(6, 27, 31, 0.94)',
+    backgroundColor: hud.ground,
     borderWidth: 1,
     borderColor: 'rgba(76, 191, 169, 0.48)',
   },
@@ -213,87 +296,105 @@ const styles = StyleSheet.create({
   mapChrome: {
     flex: 1,
     minHeight: 0,
-    justifyContent: 'flex-end',
-    paddingTop: 12,
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  tickerPlaceholder: {
+    height: 48,
+    marginHorizontal: 16,
+  },
+  tickerBanner: {
+    height: 48,
+    marginHorizontal: 16,
+    paddingLeft: 14,
+    paddingRight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: hud.ground,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 191, 169, 0.7)',
+  },
+  tickerViewport: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+  },
+  tickerTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  tickerText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 0.65,
+    color: hud.rowTitle,
+  },
+  tickerLead: {
+    color: hud.accent,
+  },
+  tickerTag: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: hud.accent,
+  },
+  tickerTagText: {
+    fontFamily: fontFamily.black,
+    fontSize: 9,
+    letterSpacing: 1,
+    color: '#062128',
   },
   bottomStack: {
     gap: 10,
     paddingBottom: 14,
   },
-  announcementCard: {
-    minHeight: 82,
-    marginHorizontal: 16,
-    padding: 14,
-    paddingRight: 52,
-    borderRadius: 20,
+  controlRow: {
+    marginHorizontal: 10,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 9,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
   },
-  announcementCopy: {
-    flex: 1,
-    minWidth: 0,
+  controlRowCompact: {
+    marginHorizontal: 6,
   },
-  announcementEyebrow: {
-    fontFamily: fontFamily.bold,
-    fontSize: 9,
-    letterSpacing: 1.4,
-    color: '#087566',
+  controlRowLandscape: {
+    marginHorizontal: 28,
   },
-  announcementText: {
-    marginTop: 4,
-    fontFamily: fontFamily.bold,
-    fontSize: 14,
-    lineHeight: 18,
-    color: '#07313C',
-  },
-  showOnMapButton: {
-    minWidth: 94,
-    minHeight: 44,
-    borderRadius: 22,
+  utilityButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    backgroundColor: hud.accent,
+    gap: 4,
+    backgroundColor: hud.ground,
+    borderWidth: 2,
+    borderColor: hud.accent,
   },
-  showOnMapText: {
-    fontFamily: fontFamily.bold,
+  utilityButtonCompact: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  utilityButtonActive: {
+    backgroundColor: hud.accent,
+    borderColor: hud.accentBright,
+  },
+  utilityButtonLabel: {
+    fontFamily: fontFamily.black,
     fontSize: 9,
     letterSpacing: 0.8,
+    color: hud.accent,
+  },
+  utilityButtonLabelActive: {
     color: '#062128',
-  },
-  dismissButton: {
-    position: 'absolute',
-    right: 4,
-    top: 4,
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dismissText: {
-    fontFamily: fontFamily.medium,
-    fontSize: 22,
-    lineHeight: 24,
-    color: '#587177',
-  },
-  reportDock: {
-    marginHorizontal: 16,
-    overflow: 'hidden',
-    borderRadius: 22,
-    backgroundColor: 'rgba(6, 20, 24, 0.96)',
-    borderWidth: 1,
-    borderColor: 'rgba(150, 210, 204, 0.28)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.32,
-    shadowRadius: 16,
-    elevation: 8,
   },
 });

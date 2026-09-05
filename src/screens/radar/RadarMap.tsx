@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Camera as CameraIcon, LocateFixed } from 'lucide-react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
 import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
@@ -119,16 +120,19 @@ interface RadarMapProps {
    * own focus panel, since the spotlight is internal state here that
    * DriveScreen has no other way to know about. */
   onSpotlightChange?: (active: boolean) => void;
+  /** Incremented by DriveScreen's lower RANGE button. */
+  rangeToggleToken?: number;
 }
 
 type MapPresentation = 'nearest' | 'range' | 'free';
 
-export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightChange, minimal = false }: RadarMapProps) {
+export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightChange, minimal = false, rangeToggleToken = 0 }: RadarMapProps) {
   // Start in overview mode: show the driver's travel arrow and the closest
   // visible report. A single tap switches to the exact Warn me from radius;
   // a pan or pinch leaves the camera entirely in the driver's control.
   const [mapPresentation, setMapPresentation] = useState<MapPresentation>('nearest');
   const [zoomAdjustment, setZoomAdjustment] = useState(0);
+  const rangeToggleSeenRef = useRef(0);
   const [selectedAlert, setSelectedAlert] = useState<WazeAlert | null>(null);
   const [settledFocusKey, setSettledFocusKey] = useState<string | null>(null);
   const driverPosition = useTripStore((state) => state.driverPosition);
@@ -142,6 +146,13 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+
+  useEffect(() => {
+    if (rangeToggleToken === 0 || rangeToggleToken === rangeToggleSeenRef.current) return;
+    rangeToggleSeenRef.current = rangeToggleToken;
+    setZoomAdjustment(0);
+    setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'));
+  }, [rangeToggleToken]);
 
   /** Same enabled-categories state that already drives speech filtering
    * (engine/selectAlerts.ts, engine/selectBriefingAlerts.ts both take this
@@ -619,6 +630,29 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
 
       <View style={styles.mapControls}>
         <Pressable
+          style={[styles.recenterButton, !driverPosition && styles.recenterButtonDisabled]}
+          onPress={() => {
+            if (!driverPosition) return;
+            setSelectedAlert(null);
+            setZoomAdjustment(0);
+            setMapPresentation('range');
+            cameraRef.current?.setCamera({
+              centerCoordinate: [driverPosition.longitude, driverPosition.latitude],
+              zoomLevel: awarenessZoom,
+              heading: driverHeadingDeg,
+              pitch: 50,
+              animationMode: 'easeTo',
+              animationDuration: 650,
+            });
+          }}
+          disabled={!driverPosition}
+          accessibilityRole="button"
+          accessibilityLabel="RECENTER ON MY LOCATION"
+          accessibilityHint="Centers the map on your current location"
+        >
+          <LocateFixed size={20} strokeWidth={2.2} color={hud.accent} />
+        </Pressable>
+        <Pressable
           style={styles.zoomButton}
           onPress={() => {
             setSelectedAlert(null);
@@ -643,17 +677,6 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         >
           <Text style={styles.zoomButtonGlyph}>−</Text>
           <Text style={styles.zoomButtonLabel}>OUT</Text>
-        </Pressable>
-        <Pressable
-          style={styles.mapModeControl}
-          onPress={() => {
-            setZoomAdjustment(0);
-            setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'));
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={mapPresentation === 'range' ? 'Show nearest alert' : 'SHOW WARN RANGE'}
-        >
-          <Text style={styles.mapModeControlText}>{mapPresentation === 'range' ? 'NEAREST' : 'RANGE'}</Text>
         </Pressable>
       </View>
 
@@ -777,14 +800,10 @@ function AlertMarker({
 }
 
 /**
- * Deliberately visually distinct from AlertMarker's pins: an outline-only
- * badge (ink fill, no border) rather than a filled pin, so permanent
- * enforcement infrastructure doesn't read as "something is happening right
- * now" the way a live Waze/report alert does. 'S' for "speed camera" -
- * this app has no other camera type to disambiguate from (see
- * fixedSpeedCameras.ts's doc comment: PAC/Rail/MPDC types were never
- * ingested). Not tappable/confirmable - a camera is a fact, not a report -
- * so unlike AlertMarker this never wraps itself in a Pressable.
+ * Deliberately visually distinct from AlertMarker's pins: a small camera
+ * glyph in an ink badge, so permanent enforcement infrastructure doesn't
+ * read as a live Waze/report alert. Not tappable/confirmable - a camera is a
+ * fact, not a report.
  */
 function FixedCameraMarker({
   camera,
@@ -806,8 +825,7 @@ function FixedCameraMarker({
   return (
     <View accessibilityLabel={accessibilityLabel} style={styles.cameraMarker}>
       <View style={styles.cameraSquare}>
-        <PoliceLightBar orientation="horizontal" width={FIXED_CAMERA_MARKER_SIZE} height={POLICE_LIGHT_BAR_HEIGHT} />
-        <Text style={styles.cameraSquareLetter}>S</Text>
+        <CameraIcon size={20} strokeWidth={2.2} color={hud.accent} />
       </View>
       {distanceMeters !== null ? (
         <View style={styles.cameraDistanceChip}>
@@ -866,9 +884,9 @@ const styles = StyleSheet.create({
   mapControls: {
     position: 'absolute',
     right: 12,
-    top: 78,
-    flexDirection: 'row',
-    gap: 6,
+    top: 128,
+    flexDirection: 'column',
+    gap: 8,
   },
   rangeLabelBadge: {
     position: 'absolute',
@@ -900,6 +918,19 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   alertDetailCloseText: { fontFamily: fontFamily.medium, fontSize: 24, color: '#587177' },
+  recenterButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: hud.ground,
+    borderWidth: 1,
+    borderColor: hud.accent,
+  },
+  recenterButtonDisabled: {
+    opacity: 1,
+  },
   zoomButton: {
     width: 44,
     height: 44,
@@ -921,24 +952,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     lineHeight: 10,
     letterSpacing: 0.5,
-    color: hud.accent,
-  },
-  mapModeControl: {
-    minHeight: 36,
-    minWidth: 58,
-    alignSelf: 'center',
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: hud.ground,
-    borderWidth: 1,
-    borderColor: hud.accent,
-    paddingHorizontal: 9,
-  },
-  mapModeControlText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1,
     color: hud.accent,
   },
   alertMarker: {
@@ -1008,15 +1021,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     backgroundColor: instrument.ink,
-  },
-  cameraSquareLetter: {
-    marginTop: 1,
-    fontFamily: fontFamily.black,
-    fontSize: 15,
-    lineHeight: 15,
-    color: instrument.paper,
   },
   cameraDistanceChip: {
     paddingVertical: 1,

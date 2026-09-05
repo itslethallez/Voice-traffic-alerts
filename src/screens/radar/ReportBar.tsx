@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { CarFront, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
+import { CarFront, Plus, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import { useTripStore, type ManualReportCategory } from '../../store/useTripStore';
 import { hud, instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
 
-const ICON_SIZE = 26;
+const ICON_SIZE = 22;
 const ICON_STROKE_WIDTH = 2;
+/** Matches Speedometer's circular footprint (design reference: the
+ * REPORT dial and speedometer are the same size, mirrored left/right in
+ * the bottom bar) - see REPORT_DIAL_SIZE's doc comment on why this is a
+ * fixed diameter rather than flex-sized like the old always-on bar. */
+const REPORT_DIAL_SIZE = 112;
+const CATEGORY_BUTTON_SIZE = 56;
 
 /** How long a just-filed cell offers UNDO before reverting to its resting
  * label - long enough to catch a second glance-free tap, short enough that
@@ -20,31 +25,12 @@ interface ReportCellDef {
   label: string;
   Icon: LucideIcon;
   stroke: string;
-  gradient: readonly [string, string];
 }
 
 const CELLS: ReportCellDef[] = [
-  {
-    category: 'POLICE',
-    label: 'POLICE',
-    Icon: Siren,
-    stroke: hud.sevHighText,
-    gradient: ['rgba(224,27,36,0.22)', 'rgba(224,27,36,0.06)'],
-  },
-  {
-    category: 'ACCIDENT',
-    label: 'ACCIDENT',
-    Icon: CarFront,
-    stroke: hud.accentBright,
-    gradient: ['#14395C', '#0A2338'],
-  },
-  {
-    category: 'HAZARD',
-    label: 'HAZARD',
-    Icon: TriangleAlert,
-    stroke: hud.sevMed,
-    gradient: ['rgba(232,147,12,0.18)', 'rgba(232,147,12,0.05)'],
-  },
+  { category: 'POLICE', label: 'POLICE', Icon: Siren, stroke: hud.sevHighText },
+  { category: 'ACCIDENT', label: 'ACCIDENT', Icon: CarFront, stroke: hud.accentBright },
+  { category: 'HAZARD', label: 'HAZARD', Icon: TriangleAlert, stroke: hud.sevMed },
   {
     // JAM is already a first-class alert type. This cast keeps the requested
     // UI-only change local while the older manual-report store type catches up.
@@ -52,34 +38,24 @@ const CELLS: ReportCellDef[] = [
     label: 'JAM',
     Icon: TrafficCone,
     stroke: '#F5C451',
-    gradient: ['rgba(245,196,81,0.18)', 'rgba(245,196,81,0.05)'],
   },
 ];
 
 /**
- * The Radio screen's always-on report control (`BUILD PROMPT - HUD face.md`,
- * "Report bar") - replaces the old single expand-to-pick ReportButton with
- * four permanently visible cells, each a direct one-tap file at the
- * driver's current position via useTripStore's pushManualReport. No
- * category/subtype picker step (including for POLICE, which previously
- * required a second Visible/Hidden tap) - undo is the safety net instead of
- * a confirm-before-file step, via removeManualReport within
- * UNDO_WINDOW_MS.
+ * The Drive screen's report control (2026-09 redesign: a single circular
+ * REPORT dial, the same footprint as Speedometer and mirrored to its
+ * opposite side, replacing the old always-visible 4-cell bar). Tapping the
+ * dial fans the four category buttons out above it (design reference:
+ * the dotted-line radial layout); tapping a category files the report via
+ * useTripStore's pushManualReport and collapses back to the resting dial.
+ * Tapping the dial again while expanded collapses it with no report filed.
  */
 export function ReportBar() {
-  return (
-    <View style={styles.root}>
-      {CELLS.map((cell, index) => (
-        <ReportCell key={cell.category} def={cell} isFirst={index === 0} />
-      ))}
-    </View>
-  );
-}
-
-function ReportCell({ def, isFirst }: { def: ReportCellDef; isFirst: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   const pushManualReport = useTripStore((state) => state.pushManualReport);
   const removeManualReport = useTripStore((state) => state.removeManualReport);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -89,39 +65,87 @@ function ReportCell({ def, isFirst }: { def: ReportCellDef; isFirst: boolean }) 
     []
   );
 
-  const handlePress = useCallback(() => {
-    if (pendingKey) {
-      if (undoTimeoutRef.current !== null) {
-        clearTimeout(undoTimeoutRef.current);
+  const handleCategoryPress = useCallback(
+    (def: ReportCellDef) => {
+      const localKey = pushManualReport(def.category, null);
+      setPendingKey(localKey);
+      setPendingLabel(def.label);
+      setExpanded(false);
+      undoTimeoutRef.current = setTimeout(() => {
+        setPendingKey(null);
+        setPendingLabel(null);
         undoTimeoutRef.current = null;
-      }
-      removeManualReport(pendingKey);
-      setPendingKey(null);
-      return;
-    }
+      }, UNDO_WINDOW_MS);
+    },
+    [pushManualReport]
+  );
 
-    const localKey = pushManualReport(def.category, null);
-    setPendingKey(localKey);
-    undoTimeoutRef.current = setTimeout(() => {
-      setPendingKey(null);
+  const handleUndo = useCallback(() => {
+    if (!pendingKey) return;
+    if (undoTimeoutRef.current !== null) {
+      clearTimeout(undoTimeoutRef.current);
       undoTimeoutRef.current = null;
-    }, UNDO_WINDOW_MS);
-  }, [pendingKey, pushManualReport, removeManualReport, def.category]);
+    }
+    removeManualReport(pendingKey);
+    setPendingKey(null);
+    setPendingLabel(null);
+  }, [pendingKey, removeManualReport]);
 
   const isPending = pendingKey !== null;
-  const { Icon } = def;
 
   return (
+    <View style={styles.root} pointerEvents="box-none">
+      {expanded ? (
+        <View style={styles.fanOut} pointerEvents="box-none">
+          {CELLS.map((cell) => (
+            <CategoryButton key={cell.category} def={cell} onPress={() => handleCategoryPress(cell)} />
+          ))}
+        </View>
+      ) : null}
+
+      <Pressable
+        onPress={isPending ? handleUndo : () => setExpanded((current) => !current)}
+        style={[styles.dial, expanded && styles.dialExpanded, isPending && styles.dialPending]}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isPending
+            ? `Undo ${pendingLabel?.toLowerCase()} report`
+            : expanded
+              ? 'Close report menu'
+              : 'Report an incident'
+        }
+        accessibilityState={{ expanded }}
+      >
+        {isPending ? (
+          <Text style={styles.dialLabel}>UNDO</Text>
+        ) : (
+          <>
+            <Plus
+              size={28}
+              strokeWidth={2.4}
+              color={hud.accentBright}
+              style={expanded ? styles.plusRotated : undefined}
+            />
+            <Text style={styles.dialLabel}>REPORT</Text>
+          </>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+function CategoryButton({ def, onPress }: { def: ReportCellDef; onPress: () => void }) {
+  const { Icon } = def;
+  return (
     <Pressable
-      onPress={handlePress}
-      style={[styles.cell, !isFirst && styles.cellDivider]}
+      onPress={onPress}
+      style={styles.categoryButton}
       accessibilityRole="button"
-      accessibilityLabel={isPending ? `Undo ${def.label.toLowerCase()} report` : `Report ${def.label.toLowerCase()}`}
+      accessibilityLabel={`Report ${def.label.toLowerCase()}`}
     >
-      <LinearGradient colors={def.gradient} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-      <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} color={isPending ? instrument.paper : def.stroke} />
-      <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
-        {isPending ? 'UNDO' : def.label}
+      <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} color={def.stroke} />
+      <Text style={styles.categoryLabel} numberOfLines={1}>
+        {def.label}
       </Text>
     </Pressable>
   );
@@ -129,30 +153,57 @@ function ReportCell({ def, isFirst }: { def: ReportCellDef; isFirst: boolean }) 
 
 const styles = StyleSheet.create({
   root: {
-    flexDirection: 'row',
-    height: 84,
-    flexGrow: 0,
-    flexShrink: 0,
-    borderTopWidth: 1,
-    borderTopColor: hud.rule,
+    width: REPORT_DIAL_SIZE,
+    alignItems: 'center',
   },
-  cell: {
-    flex: 1,
-    minHeight: 48,
-    justifyContent: 'flex-end',
-    alignItems: 'flex-start',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
+  dial: {
+    width: REPORT_DIAL_SIZE,
+    height: REPORT_DIAL_SIZE,
+    borderRadius: REPORT_DIAL_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(6, 20, 24, 0.96)',
+    borderWidth: 2,
+    borderColor: hud.accentBright,
   },
-  cellDivider: {
-    borderLeftWidth: 1,
-    borderLeftColor: hud.rule,
+  dialExpanded: {
+    borderColor: hud.accent,
   },
-  label: {
+  dialPending: {
+    backgroundColor: instrument.ink,
+    borderColor: instrument.paper,
+  },
+  plusRotated: {
+    transform: [{ rotate: '45deg' }],
+  },
+  dialLabel: {
     fontFamily: fontFamily.black,
-    fontSize: 11,
-    letterSpacing: 0.7,
+    fontSize: 12,
+    letterSpacing: 1,
+    color: hud.rowTitle,
+  },
+  fanOut: {
+    position: 'absolute',
+    bottom: REPORT_DIAL_SIZE + 12,
+    alignItems: 'center',
+    gap: 10,
+  },
+  categoryButton: {
+    width: CATEGORY_BUTTON_SIZE,
+    height: CATEGORY_BUTTON_SIZE,
+    borderRadius: CATEGORY_BUTTON_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(6, 20, 24, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(150, 210, 204, 0.4)',
+  },
+  categoryLabel: {
+    fontFamily: fontFamily.bold,
+    fontSize: 7,
+    letterSpacing: 0.4,
     color: hud.rowTitle,
   },
 });

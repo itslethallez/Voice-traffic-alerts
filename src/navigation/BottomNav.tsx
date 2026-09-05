@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 
 export type NavTab = 'map' | 'reports' | 'settings';
@@ -20,6 +21,9 @@ interface BottomNavProps {
   onChange: (tab: NavTab) => void;
 }
 
+/** Matches DriveScreen's topBar background (hud.ground) so the header and
+ * footer read as one consistent dark chrome, rather than the previous
+ * white bar that clashed with the dark map-first screens above it. */
 export function BottomNav({ active, onChange }: BottomNavProps) {
   const insets = useSafeAreaInsets();
 
@@ -49,9 +53,9 @@ const styles = StyleSheet.create({
   root: {
     minHeight: 64,
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: hud.ground,
     borderTopWidth: 1,
-    borderTopColor: '#DCE7E5',
+    borderTopColor: hud.rule,
   },
   tab: {
     minHeight: 58,
@@ -61,7 +65,7 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   tabActive: {
-    backgroundColor: '#F3FAF8',
+    backgroundColor: 'rgba(38, 185, 154, 0.12)',
   },
   tabPressed: {
     opacity: 0.72,
@@ -70,10 +74,10 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 11,
     letterSpacing: 1.2,
-    color: '#6B7D81',
+    color: hud.muted,
   },
   labelActive: {
-    color: '#087566',
+    color: hud.accent,
   },
   indicator: {
     width: 28,
@@ -82,6 +86,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   indicatorActive: {
-    backgroundColor: '#26B99A',
+    backgroundColor: hud.accent,
   },
 });
