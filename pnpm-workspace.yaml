@@ -1,0 +1,7 @@
+nodeLinker: hoisted
+onlyBuiltDependencies:
+  - unrs-resolver
+allowBuilds:
+  unrs-resolver: true
+patchedDependencies:
+  react-native-call-detection: patches/react-native-call-detection.patch

@@ -1,0 +1,13 @@
+{
+  "name": "shotgun-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Thin Vercel serverless API in front of the Neon Postgres database holding fixed camera locations and user-submitted reports. The Expo app never holds DB credentials directly - it only ever calls this.",
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0"
+  },
+  "devDependencies": {
+    "@vercel/node": "^8.1.0",
+    "typescript": "^5.7.0"
+  }
+}

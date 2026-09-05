@@ -1,0 +1,12 @@
+{
+  "stack": [
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 99400, "column": 38, "methodName": "anonymous"},
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 99286, "column": 41, "methodName": "anonymous"},
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 98948, "column": 26, "methodName": "anonymous"},
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 98316, "column": 27, "methodName": "anonymous"},
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 94476, "column": 32, "methodName": "anonymous"},
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 92961, "column": 32, "methodName": "anonymous"},
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 3843, "column": 9, "methodName": "anonymous"},
+    {"file": "http://172.20.10.3:8081/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&unstable_transformProfile=hermes-stable", "lineNumber": 298540, "column": 3, "methodName": "global"}
+  ]
+}
