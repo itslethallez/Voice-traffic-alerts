@@ -14,6 +14,7 @@ import { sortCurrentReportsByDistance, type CurrentReport } from './currentRepor
 import { splitCompactDistance } from './radar/formatCompactDistance';
 import { resolveAreaName } from '../speech/formatAnnouncement';
 import { PoliceLightBar } from './radar/PoliceLightBar';
+import { useCommunityReportStore } from '../store/useCommunityReportStore';
 
 interface ReportsScreenProps {
   onSelectAlert: (alert: WazeAlert) => void;
@@ -27,6 +28,8 @@ export function ReportsScreen({ onSelectAlert }: ReportsScreenProps) {
   const isOffline = useTripStore((state) => state.isOffline);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const communityCandidates = useCommunityReportStore((state) => state.candidates);
+  const dismissCommunityCandidate = useCommunityReportStore((state) => state.dismissCandidate);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -61,6 +64,36 @@ export function ReportsScreen({ onSelectAlert }: ReportsScreenProps) {
             </View>
           </View>
         </View>
+
+        {communityCandidates.length > 0 ? (
+          <View style={styles.communitySection} accessibilityLiveRegion="polite">
+            <View style={styles.communityHeadingRow}>
+              <Text style={styles.communityHeading}>COMMUNITY INTAKE</Text>
+              <Text style={styles.communityCount}>{communityCandidates.length} PENDING</Text>
+            </View>
+            <Text style={styles.communityIntro}>
+              Facebook notices are unverified. Review before they can become live map or voice alerts.
+            </Text>
+            {communityCandidates.map((candidate) => (
+              <Pressable
+                key={candidate.sourceRef}
+                onPress={() => dismissCommunityCandidate(candidate.sourceRef)}
+                style={styles.communityRow}
+                accessibilityRole="button"
+                accessibilityLabel={`${candidate.summary}. ${candidate.decision === 'eligible' ? 'Ready for location check' : 'Review required'}. Dismiss.`}
+              >
+                <View style={styles.communityCopy}>
+                  <Text style={styles.communitySummary}>{candidate.summary}</Text>
+                  <Text style={styles.communityMeta}>
+                    {candidate.decision === 'eligible' ? 'READY FOR LOCATION CHECK' : 'REVIEW REQUIRED'}
+                    {' · '}{Math.round(candidate.confidence * 100)}% CONFIDENCE · UNVERIFIED
+                  </Text>
+                </View>
+                <Text style={styles.communityDismiss}>DISMISS</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         {!driverPosition ? (
           <View style={styles.emptyState}>
@@ -209,6 +242,77 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#07313C',
     fontVariant: ['tabular-nums'],
+  },
+  communitySection: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: '#FFF8E8',
+    borderWidth: 1,
+    borderColor: '#E8D7AC',
+  },
+  communityHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  communityHeading: {
+    fontFamily: fontFamily.black,
+    fontSize: 12,
+    letterSpacing: 1.4,
+    color: '#76540A',
+  },
+  communityCount: {
+    fontFamily: fontFamily.bold,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    color: '#A17411',
+  },
+  communityIntro: {
+    marginTop: 5,
+    marginBottom: 10,
+    fontFamily: fontFamily.medium,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#6B5A35',
+  },
+  communityRow: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E8D7AC',
+  },
+  communityCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  communitySummary: {
+    fontFamily: fontFamily.bold,
+    fontSize: 14,
+    color: '#07313C',
+  },
+  communityMeta: {
+    marginTop: 3,
+    fontFamily: fontFamily.bold,
+    fontSize: 9,
+    letterSpacing: 0.6,
+    color: '#9B741D',
+  },
+  communityDismiss: {
+    minWidth: 54,
+    minHeight: 44,
+    paddingHorizontal: 6,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    fontFamily: fontFamily.bold,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    color: '#8A6112',
   },
   list: {
     flex: 1,

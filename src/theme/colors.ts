@@ -9,12 +9,9 @@ export const colors = {
   warning: '#E8B04B',
   muteButtonIdle: '#1C1C24',
   muteButtonActive: '#2A2A38',
-  /** The Report-dial's lime accent (Step 11b) - deliberately far from
-   * `accent`'s blue (driver/police) and `warning`'s amber (hazards/jams)
-   * so the one control the driver actively presses reads as visually
-   * distinct from anything the app itself is reporting. */
-  report: '#C6FF3D',
-  reportDim: 'rgba(198, 255, 61, 0.18)',
+  /** The Report-dial's red accent, shared with the app's primary system state. */
+  report: '#FF3D3D',
+  reportDim: 'rgba(255, 61, 61, 0.18)',
   /** Police radar marker's flashing lights (Step 12 #24) - deliberately
    * saturated, unlike the muted `accent` blue used for the marker's static
    * meta color, so the flash reads as an emergency-light effect. */
@@ -59,9 +56,9 @@ export const hud = {
   statusBar: '#050709', // status-bar strip
   ink: '#F5F7FA', // primary text
   mapGround: '#0C1319', // map field
-  accent: '#26B99A', // live/system state, matched to the map-first reference
-  accentBright: '#45D1B5', // brighter interaction state
-  accentInk: '#E1F5F0', // "LIVE" wordmark
+  accent: '#E01B24', // live/system state and primary interface accent
+  accentBright: '#FF6B63', // brighter interaction state
+  accentInk: '#FFE7E5', // "LIVE" wordmark
   muted: '#79838B', // meta line, inactive tab labels
   mutedLabel: '#6E7A85', // ledger header label
   rule: 'rgba(150,190,215,0.30)', // 1px section rules (replaces the 2px paper rules)

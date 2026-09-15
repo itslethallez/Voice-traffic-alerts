@@ -233,6 +233,17 @@ locally or in CI). Required secrets:
 Both also support `workflow_dispatch`, so either can be run on demand from
 the Actions tab instead of waiting for the schedule.
 
+### Android community notification source
+
+The Android development build includes an optional `NotificationListenerService`
+that reads only notifications from Facebook's Android package after the user
+manually grants Notification Access. It filters the package in native code,
+normalizes incident categories and road hints on-device, deduplicates updates,
+and exposes a clearly labelled unverified community review queue in the app.
+Raw notification text is not stored or logged. Candidates are not added to the
+map or voice queue automatically; location resolution and explicit review are
+still required before this source can become a live alert.
+
 ## Build status
 
 - [x] Step 1: Expo scaffold, TypeScript config, folder structure, env handling
@@ -246,6 +257,7 @@ the Actions tab instead of waiting for the schedule.
 - [x] Step 9: Swap mock for live API
 - [x] Central database: Neon Postgres behind a Vercel API for fixed
       cameras and user reports (see "Central database" above)
+- [x] Android notification listener, local sorter, and unverified review queue
 
 ## Non-goals for v1
 

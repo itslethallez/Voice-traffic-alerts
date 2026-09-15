@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { ScanLine, Volume2, VolumeX } from 'lucide-react-native';
+import { ScanLine, Search, Volume2, VolumeX } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { WazeAlert } from '../api/waze/types';
 import type { RecentAnnouncement } from '../speech/types';
@@ -12,6 +12,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { hud } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
+import { NavigationStatusBar } from './radar/NavigationStatusBar';
 import { RadarMap } from './radar/RadarMap';
 import { ReportBar } from './radar/ReportBar';
 import { Speedometer } from './radar/Speedometer';
@@ -21,11 +22,16 @@ const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;
 interface DriveScreenProps {
   focusedAlert?: WazeAlert | null;
   onFocusAlert?: (alert: WazeAlert) => void;
+  /** Opens the destination-search screen (App.tsx owns that overlay's
+   * visibility) - omitted (button hidden) rather than a no-op default, so a
+   * caller that genuinely can't offer navigation yet doesn't show a dead
+   * button. */
+  onOpenSearch?: () => void;
 }
 
 /** The driving view is deliberately map-first: live reports appear directly
  * on the map, while reporting stays one tap away in the floating bottom dock. */
-export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenProps) {
+export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }: DriveScreenProps) {
   const isLandscape = useIsLandscape();
   const { width: viewportWidth } = useWindowDimensions();
   const compactControls = !isLandscape && viewportWidth < 430;
@@ -100,6 +106,17 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
               <Text style={styles.locationLabel}>{isOffline ? 'OFFLINE' : locationLabel}</Text>
             </View>
           </View>
+          {onOpenSearch ? (
+            <Pressable
+              onPress={onOpenSearch}
+              style={styles.searchButton}
+              accessibilityRole="button"
+              accessibilityLabel="Search for a destination"
+              accessibilityHint="Opens destination search to start turn-by-turn navigation"
+            >
+              <Search size={20} strokeWidth={2.2} color={hud.accent} />
+            </Pressable>
+          ) : null}
         </View>
 
         <View pointerEvents="box-none" style={styles.mapChrome}>
@@ -112,6 +129,7 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert }: DriveScreenPr
             <View style={styles.tickerPlaceholder} />
           )}
           <View style={styles.bottomStack}>
+            <NavigationStatusBar nowMs={now} />
             <View style={[styles.controlRow, isLandscape && styles.controlRowLandscape, compactControls && styles.controlRowCompact]}>
               <ReportBar />
               <Pressable
@@ -270,6 +288,17 @@ const styles = StyleSheet.create({
     backgroundColor: hud.ground,
     borderWidth: 1,
     borderColor: 'rgba(76, 191, 169, 0.48)',
+  },
+  searchButton: {
+    marginLeft: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: hud.ground,
+    borderWidth: 1,
+    borderColor: hud.accent,
   },
   liveDot: {
     width: 9,

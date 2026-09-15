@@ -4,6 +4,7 @@ import { fetchAlertsForBoundingBox } from '../api/waze/fetchAlertsForBoundingBox
 import { WazeApiError } from '../api/waze/client';
 import { getDeviceId } from '../config/deviceId';
 import { FIXED_SPEED_CAMERAS, type FixedSpeedCamera } from '../data/fixedSpeedCameras';
+import { updateNavigationForDriverUpdate } from '../navigation/navigationRuntime';
 import type { GeoPoint } from '../geo/types';
 import type { ManualReport, NearbyReport } from '../store/useTripStore';
 import { applyFetchResult, initialAlertsCache } from '../engine/cache';
@@ -402,6 +403,14 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
 
   const settings = useSettingsStore.getState();
   await pollIfDue(driver, nowMs, settings.announceDistanceMeters);
+
+  // Navigation's own position/step/ETA tracking and reroute detection run
+  // unconditionally (a driver who muted audio still wants a live map and
+  // ETA) - only the maneuver speech inside it respects masterMute, same as
+  // every other speech path below. A no-op whenever navigation isn't
+  // active. Deliberately ahead of the masterMute/low-speed early return
+  // below so it isn't skipped by either.
+  await updateNavigationForDriverUpdate(driver, nowMs, { masterMute: settings.masterMute });
 
   speedState = updateSpeedState(speedState, driver.speedKmh, nowMs);
 

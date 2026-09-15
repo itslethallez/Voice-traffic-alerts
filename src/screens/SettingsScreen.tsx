@@ -16,6 +16,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { hud, instrument } from '../theme/colors';
 import { fontFamily } from '../theme/typography';
 import { BuildInfoCard } from './BuildInfoCard';
+import type { FacebookNotificationSourceControls } from '../notifications/useFacebookNotificationSource';
 
 const CATEGORY_LABELS: Record<AlertCategory, string> = {
   POLICE: 'Police',
@@ -44,15 +45,18 @@ type VoiceControl = 'volume' | 'rate';
 
 interface SettingsScreenProps {
   onClose?: () => void;
+  notificationSource: FacebookNotificationSourceControls;
 }
 
-export function SettingsScreen({ onClose }: SettingsScreenProps) {
+export function SettingsScreen({ onClose, notificationSource }: SettingsScreenProps) {
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
   const briefingRadiusMeters = useSettingsStore((state) => state.briefingRadiusMeters);
   const voiceVolume = useSettingsStore((state) => state.voiceVolume);
   const voiceRate = useSettingsStore((state) => state.voiceRate);
   const masterMute = useSettingsStore((state) => state.masterMute);
+  const avoidHazards = useSettingsStore((state) => state.avoidHazards);
+  const toggleAvoidHazards = useSettingsStore((state) => state.toggleAvoidHazards);
   const toggleCategory = useSettingsStore((state) => state.toggleCategory);
   const setAnnounceDistanceMeters = useSettingsStore((state) => state.setAnnounceDistanceMeters);
   const setBriefingRadiusMeters = useSettingsStore((state) => state.setBriefingRadiusMeters);
@@ -214,6 +218,59 @@ export function SettingsScreen({ onClose }: SettingsScreenProps) {
             </View>
           </Pressable>
 
+          <View style={styles.sectionLabel}>
+            <Text style={styles.sectionLabelText}>NAVIGATION</Text>
+          </View>
+
+          <Pressable
+            onPress={toggleAvoidHazards}
+            style={styles.categoryRow}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: avoidHazards }}
+            accessibilityLabel="Avoid reported hazards while navigating"
+          >
+            <View style={styles.avoidHazardsCopy}>
+              <Text style={styles.categoryLabel}>AVOID REPORTED HAZARDS</Text>
+              <Text style={styles.avoidHazardsNote}>
+                Prefers routes with fewer nearby police/accident/hazard reports - not a guarantee every hazard is missed.
+              </Text>
+            </View>
+            <View style={[styles.stateBlock, avoidHazards ? styles.stateBlockOn : styles.stateBlockOff]}>
+              <Text style={[styles.stateBlockText, avoidHazards ? styles.stateBlockTextOn : styles.mutedText]}>
+                {avoidHazards ? 'ON' : 'OFF'}
+              </Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            style={styles.notificationSourceCard}
+            onPress={() => void notificationSource.openAccessSettings()}
+            accessibilityRole="button"
+            accessibilityLabel={
+              notificationSource.accessStatus === 'granted'
+                ? 'Facebook notification access enabled'
+                : 'Open Android notification access settings'
+            }
+          >
+            <View style={styles.notificationSourceCopy}>
+              <Text style={styles.notificationSourceTitle}>FACEBOOK NOTIFICATIONS</Text>
+              <Text style={styles.notificationSourceBody}>
+                {notificationSource.accessStatus === 'unsupported'
+                  ? 'ANDROID ONLY · unavailable in this build'
+                  : notificationSource.accessStatus === 'granted'
+                    ? 'ACCESS ENABLED · unverified community source'
+                    : 'ACCESS REQUIRED · tap to open Android settings'}
+              </Text>
+              <Text style={styles.notificationSourceNote}>
+                Notices are sorted locally and held for review. They never become police-confirmed alerts automatically.
+              </Text>
+            </View>
+            <View style={styles.notificationSourceBadge}>
+              <Text style={styles.notificationSourceBadgeValue}>{notificationSource.pendingCount}</Text>
+              <Text style={styles.notificationSourceBadgeLabel}>PENDING</Text>
+            </View>
+          </Pressable>
+
           <BuildInfoCard />
         </ScrollView>
       </SafeAreaView>
@@ -306,6 +363,16 @@ const styles = StyleSheet.create({
     color: hud.rowTitle,
   },
   mutedText: {
+    color: hud.muted,
+  },
+  avoidHazardsCopy: {
+    flex: 1,
+  },
+  avoidHazardsNote: {
+    marginTop: 3,
+    fontFamily: fontFamily.medium,
+    fontSize: 11,
+    lineHeight: 15,
     color: hud.muted,
   },
   stateBlock: {
@@ -413,5 +480,59 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: hud.rowRule,
+  },
+  notificationSourceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    minHeight: 104,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#292725',
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rowRule,
+  },
+  notificationSourceCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  notificationSourceTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    color: hud.rowTitle,
+  },
+  notificationSourceBody: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 0.4,
+    color: hud.accentBright,
+  },
+  notificationSourceNote: {
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    color: instrument.mutedOnInk,
+  },
+  notificationSourceBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 58,
+    minHeight: 48,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: hud.ruleStrong,
+  },
+  notificationSourceBadgeValue: {
+    fontFamily: fontFamily.black,
+    fontSize: 22,
+    lineHeight: 24,
+    color: hud.accentBright,
+  },
+  notificationSourceBadgeLabel: {
+    fontFamily: fontFamily.bold,
+    fontSize: 8,
+    letterSpacing: 1,
+    color: hud.mutedLabel,
   },
 });

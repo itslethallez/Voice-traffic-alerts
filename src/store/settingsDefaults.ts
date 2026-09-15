@@ -51,6 +51,12 @@ export interface SettingsValues {
   voiceVolume: number;
   voiceRate: number;
   masterMute: boolean;
+  /** When on, navigationRuntime.ts scores Mapbox's alternative routes by
+   * proximity to currently-reported hazards (the same set already visible
+   * on the map/heard as alerts) and prefers the least-exposed one - not a
+   * guarantee every hazard is dodged, see navigationRuntime.ts's own doc
+   * comment for why. */
+  avoidHazards: boolean;
 }
 
 export const defaultSettingsValues: SettingsValues = {
@@ -66,6 +72,7 @@ export const defaultSettingsValues: SettingsValues = {
   voiceVolume: DEFAULT_VOICE_VOLUME,
   voiceRate: DEFAULT_VOICE_RATE,
   masterMute: false,
+  avoidHazards: true,
 };
 
 /** The Set<WazeAlertType> shape selectAnnounceableAlerts()'s settings option expects. */

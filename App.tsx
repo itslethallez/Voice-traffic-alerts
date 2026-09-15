@@ -12,9 +12,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { WazeAlert } from './src/api/waze/types';
 import { BottomNav, type NavTab } from './src/navigation/BottomNav';
 import { DriveScreen } from './src/screens/DriveScreen';
+import { NavigationSearchScreen } from './src/screens/NavigationSearchScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { useDriveLoop } from './src/screens/useDriveLoop';
+import { useFacebookNotificationSource } from './src/notifications/useFacebookNotificationSource';
 import { hud } from './src/theme/colors';
 
 const REPORT_FOCUS_DURATION_MS = 5000;
@@ -28,11 +30,13 @@ export default function App() {
   });
   const [tab, setTab] = useState<NavTab>('map');
   const [focusedAlert, setFocusedAlert] = useState<WazeAlert | null>(null);
+  const [showNavigationSearch, setShowNavigationSearch] = useState(false);
 
   // The trip lifecycle stays at the application level, and all screens stay
   // mounted. This preserves the existing Mapbox/location crash workaround
   // while making the primary navigation map → reports → settings.
   useDriveLoop();
+  const notificationSource = useFacebookNotificationSource();
 
   useEffect(() => {
     if (!focusedAlert) return;
@@ -54,7 +58,11 @@ export default function App() {
       <View style={styles.root}>
         <View style={styles.content}>
           <View style={[styles.screen, tab !== 'map' && styles.hiddenScreen]}>
-            <DriveScreen focusedAlert={focusedAlert} onFocusAlert={focusAlertOnMap} />
+            <DriveScreen
+              focusedAlert={focusedAlert}
+              onFocusAlert={focusAlertOnMap}
+              onOpenSearch={() => setShowNavigationSearch(true)}
+            />
           </View>
           <View style={[styles.screen, tab !== 'reports' && styles.hiddenScreen]}>
             <ReportsScreen
@@ -62,11 +70,22 @@ export default function App() {
             />
           </View>
           <View style={[styles.screen, tab !== 'settings' && styles.hiddenScreen]}>
-            <SettingsScreen onClose={() => setTab('map')} />
+            <SettingsScreen
+              onClose={() => setTab('map')}
+              notificationSource={notificationSource}
+            />
           </View>
         </View>
         <BottomNav active={tab} onChange={setTab} />
         <StatusBar style={tab === 'reports' ? 'dark' : 'light'} />
+        {showNavigationSearch ? (
+          <View style={styles.screen}>
+            <NavigationSearchScreen
+              onClose={() => setShowNavigationSearch(false)}
+              onNavigationStarted={() => setShowNavigationSearch(false)}
+            />
+          </View>
+        ) : null}
       </View>
     </SafeAreaProvider>
   );

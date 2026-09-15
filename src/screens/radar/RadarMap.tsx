@@ -14,6 +14,7 @@ import { announcementLocation, resolveAreaName } from '../../speech/formatAnnoun
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
 import { enabledTypesFromSettings } from '../../store/settingsDefaults';
+import { useNavigationStore } from '../../store/useNavigationStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
@@ -22,6 +23,7 @@ import { fontFamily } from '../../theme/typography';
 import { ClosestReportPanel } from './ClosestReportPanel';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
+import { ManeuverBanner } from './ManeuverBanner';
 import { PoliceLightBar } from './PoliceLightBar';
 
 /**
@@ -61,11 +63,10 @@ const AWARENESS_CIRCLE_VIEWPORT_COVERAGE = 0.78;
 /** Fixed zoom for a focused alert; the awareness view resumes when focus ends. */
 const FOCUSED_ALERT_ZOOM = 16;
 const AWARENESS_CIRCLE_SEGMENTS = 48;
-
-/** Temporarily hidden per user request (2026-09-04) while the "notifiable
- * area to scale" presentation is reworked; the circle's geometry/zoom-scale
- * logic below is unchanged and ready to re-enable once restyled. */
-const SHOW_AWARENESS_CIRCLE = false;
+/** Fixed heading-up follow zoom while navigating - tighter than the
+ * awareness/nearest views, matching a normal turn-by-turn app's driving
+ * view rather than this app's usual wide situational-awareness framing. */
+const NAVIGATING_ZOOM = 17;
 
 /**
  * How long the camera lingers on a genuinely-new alert's exact location
@@ -146,6 +147,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const navigationStatus = useNavigationStore((state) => state.status);
+  const activeRoute = useNavigationStore((state) => state.activeRoute);
+  const navCurrentStepIndex = useNavigationStore((state) => state.currentStepIndex);
+  const navDistanceToNextManeuverM = useNavigationStore((state) => state.distanceToNextManeuverM);
+  const isNavigating = navigationStatus === 'navigating' || navigationStatus === 'rerouting';
 
   useEffect(() => {
     if (rangeToggleToken === 0 || rangeToggleToken === rangeToggleSeenRef.current) return;
@@ -328,6 +334,21 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     };
   }, [driverPosition?.latitude, driverPosition?.longitude, announceDistanceMeters]);
 
+  /** The active navigation route as a GeoJSON LineString - converted from
+   * useNavigationStore's GeoPoint[] polyline (already [lat,lon]) back to
+   * Mapbox's own [lon,lat] coordinate order once here. */
+  const routeLine = useMemo(() => {
+    if (!activeRoute || activeRoute.polyline.length < 2) return null;
+    return {
+      type: 'Feature' as const,
+      properties: {},
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: activeRoute.polyline.map((point) => [point.longitude, point.latitude]),
+      },
+    };
+  }, [activeRoute]);
+
   const awarenessZoom = useMemo(() => {
     if (!driverPosition || mapViewport.width <= 0 || mapViewport.height <= 0) return DEFAULT_ZOOM;
     return awarenessZoomLevel({
@@ -402,6 +423,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
   const cameraCenterCoordinate = useMemo<[number, number] | undefined>(() => {
     if (!cameraFollowsPresentation) return undefined;
     if (cameraFocus) return [cameraFocus.longitude, cameraFocus.latitude];
+    // Navigating always centers exactly on the driver - unlike 'nearest'
+    // mode's midpoint-with-the-closest-alert framing, a turn-by-turn view
+    // needs to stay centered on the driver themselves, not drift toward
+    // whatever hazard happens to be nearby.
+    if (isNavigating && driverPosition) return [driverPosition.longitude, driverPosition.latitude];
     if (mapPresentation === 'nearest' && driverPosition && nearestMapAlert) {
       const center = midpoint(driverPosition, nearestMapAlert);
       return [center.longitude, center.latitude];
@@ -412,19 +438,46 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
     cameraFollowsPresentation,
     cameraFocus?.longitude,
     cameraFocus?.latitude,
+    isNavigating,
     mapPresentation,
     driverPosition?.longitude,
     driverPosition?.latitude,
     nearestMapAlert?.longitude,
     nearestMapAlert?.latitude,
   ]);
-  const cameraZoomLevel = (cameraFocus ? FOCUSED_ALERT_ZOOM : mapPresentation === 'nearest' && nearestMapAlert ? nearestAlertZoom : awarenessZoom) + zoomAdjustment;
+  const cameraZoomLevel =
+    (cameraFocus
+      ? FOCUSED_ALERT_ZOOM
+      : isNavigating
+        ? NAVIGATING_ZOOM
+        : mapPresentation === 'nearest' && nearestMapAlert
+          ? nearestAlertZoom
+          : awarenessZoom) + zoomAdjustment;
   // Range/notify mode keeps the same locked 50-degree drive perspective; the
   // notification label and awareness zoom still communicate the configured
-  // warning distance without switching the map to a flat camera.
-  const cameraHeading = cameraFollowsPresentation ? (cameraFocus || mapPresentation === 'range' ? 0 : driverHeadingDeg) : undefined;
+  // warning distance without switching the map to a flat camera. Navigating
+  // always follows the driver's heading (heading-up) regardless of
+  // mapPresentation - a turn-by-turn view has to rotate with the driver,
+  // not sit north-up the way range mode deliberately does.
+  const cameraHeading = !cameraFollowsPresentation
+    ? undefined
+    : cameraFocus
+      ? 0
+      : isNavigating
+        ? driverHeadingDeg
+        : mapPresentation === 'range'
+          ? 0
+          : driverHeadingDeg;
 
   const cameraRef = useRef<ComponentRef<MapboxModule['Camera']> | null>(null);
+  /** Tracks the map's actual live zoom (from Mapbox's own onCameraChanged),
+   * independent of `cameraZoomLevel` below - that value only reflects the
+   * declarative nearest/range presets and goes unused while the camera is
+   * in 'free' mode (a user pan/pinch), which previously left the ZOOM
+   * IN/OUT buttons with nothing to act on once the driver left those two
+   * presets. This ref is what those buttons nudge via cameraRef.zoomTo in
+   * free mode instead. */
+  const liveZoomRef = useRef(DEFAULT_ZOOM);
   const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (focusTransitionTimeoutRef.current !== null) {
@@ -546,6 +599,9 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
             setMapPresentation('free');
           }
         }}
+        onCameraChanged={(state) => {
+          liveZoomRef.current = state.properties.zoom;
+        }}
       >
         <Mapbox.Camera
           ref={cameraRef}
@@ -558,7 +614,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           animationDuration={600}
         />
 
-        {SHOW_AWARENESS_CIRCLE && awarenessCircle && !displayFocus ? (
+        {mapPresentation === 'range' && awarenessCircle && !displayFocus ? (
           <Mapbox.ShapeSource id="awareness-circle-source" shape={awarenessCircle}>
             <Mapbox.FillLayer
               id="awareness-circle-fill"
@@ -567,6 +623,15 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
             <Mapbox.LineLayer
               id="awareness-circle-outline"
               style={{ lineColor: hud.accent, lineWidth: 2, lineOpacity: 0.9 }}
+            />
+          </Mapbox.ShapeSource>
+        ) : null}
+
+        {routeLine ? (
+          <Mapbox.ShapeSource id="route-line-source" shape={routeLine}>
+            <Mapbox.LineLayer
+              id="route-line"
+              style={{ lineColor: hud.accent, lineWidth: 5, lineOpacity: 0.9, lineCap: 'round', lineJoin: 'round' }}
             />
           </Mapbox.ShapeSource>
         ) : null}
@@ -635,7 +700,10 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
             if (!driverPosition) return;
             setSelectedAlert(null);
             setZoomAdjustment(0);
-            setMapPresentation('range');
+            // 'nearest', not 'range' - recentering should return to the
+            // app's default driver-centered view, not silently switch on
+            // the RANGE button's own notification-range display.
+            setMapPresentation('nearest');
             cameraRef.current?.setCamera({
               centerCoordinate: [driverPosition.longitude, driverPosition.latitude],
               zoomLevel: awarenessZoom,
@@ -656,7 +724,16 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           style={styles.zoomButton}
           onPress={() => {
             setSelectedAlert(null);
-            setZoomAdjustment((value) => Math.min(3, value + 1));
+            if (cameraFollowsPresentation) {
+              setZoomAdjustment((value) => Math.min(3, value + 1));
+            } else {
+              // Free mode (the driver has panned/pinched): the declarative
+              // zoomAdjustment above has nothing to apply to, so nudge the
+              // map's actual live zoom directly instead of doing nothing.
+              const next = Math.min(MAX_ZOOM, liveZoomRef.current + 1);
+              liveZoomRef.current = next;
+              cameraRef.current?.zoomTo(next, 300);
+            }
           }}
           accessibilityRole="button"
           accessibilityLabel="ZOOM IN"
@@ -669,7 +746,13 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
           style={styles.zoomButton}
           onPress={() => {
             setSelectedAlert(null);
-            setZoomAdjustment((value) => Math.max(-3, value - 1));
+            if (cameraFollowsPresentation) {
+              setZoomAdjustment((value) => Math.max(-3, value - 1));
+            } else {
+              const next = Math.max(MIN_ZOOM, liveZoomRef.current - 1);
+              liveZoomRef.current = next;
+              cameraRef.current?.zoomTo(next, 300);
+            }
           }}
           accessibilityRole="button"
           accessibilityLabel="ZOOM OUT"
@@ -689,6 +772,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
               }`}
           </Text>
         </View>
+      ) : isNavigating && activeRoute ? (
+        <ManeuverBanner
+          instruction={activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.instruction ?? 'Arriving at destination'}
+          distanceMeters={navDistanceToNextManeuverM}
+        />
       ) : closest && !minimal ? (
         <ClosestReportPanel
           closest={closest}
@@ -748,7 +836,7 @@ function AlertMarker({
   const accessibilityLabel = nearbyReport
     ? nearbyReport.confirmedByThisDevice
       ? `${baseLabel}, reported by another driver, confirmed`
-      : `${baseLabel}, reported by another driver - double tap to confirm it's still there`
+      : `${baseLabel}, reported by another driver`
     : baseLabel;
 
   const marker = isPolice ? (
@@ -780,22 +868,32 @@ function AlertMarker({
     return <Pressable onPress={() => onSelect(alert)} accessibilityRole="button" accessibilityState={{ selected: isSelected }} accessibilityLabel={`${accessibilityLabel}. Show details`}>{marker}</Pressable>;
   }
 
-  // Another device's report: tappable to confirm ("still there?"), with a
-  // small chip below the usual marker showing whether this device already
-  // has. Waze's own alerts and this device's own reports never reach this
-  // branch (nearbyReport is only set for the map's other-devices layer).
+  // Another device's report: the marker itself opens details like any other
+  // alert; the STILL THERE? chip below it is its own separate control that
+  // actually confirms the report via onConfirm - it previously shared the
+  // marker's onSelect Pressable with no confirm action wired to it at all,
+  // despite its label promising one ("double tap to confirm it's still
+  // there"), so tapping it only ever opened the detail card.
   return (
-    <Pressable
-      onPress={() => onSelect(alert)}
-      accessibilityRole="button"
-      accessibilityState={{ selected: isSelected }}
-      accessibilityLabel={`${accessibilityLabel}. Show details`}
-    >
-      {marker}
-      <View style={[styles.confirmChip, nearbyReport.confirmedByThisDevice && styles.confirmChipDone]}>
+    <View>
+      <Pressable
+        onPress={() => onSelect(alert)}
+        accessibilityRole="button"
+        accessibilityState={{ selected: isSelected }}
+        accessibilityLabel={`${accessibilityLabel}. Show details`}
+      >
+        {marker}
+      </Pressable>
+      <Pressable
+        onPress={canConfirm ? () => onConfirm?.(alert.alert_id) : undefined}
+        disabled={!canConfirm}
+        style={[styles.confirmChip, nearbyReport.confirmedByThisDevice && styles.confirmChipDone]}
+        accessibilityRole={canConfirm ? 'button' : undefined}
+        accessibilityLabel={nearbyReport.confirmedByThisDevice ? 'Confirmed still there' : "Confirm it's still there"}
+      >
         <Text style={styles.confirmChipText}>{nearbyReport.confirmedByThisDevice ? 'CONFIRMED' : 'STILL THERE?'}</Text>
-      </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
@@ -910,7 +1008,7 @@ const styles = StyleSheet.create({
     minHeight: 92, padding: 15, paddingRight: 48, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.97)',
   },
-  alertDetailEyebrow: { fontFamily: fontFamily.bold, fontSize: 9, letterSpacing: 1.2, color: '#087566' },
+  alertDetailEyebrow: { fontFamily: fontFamily.bold, fontSize: 9, letterSpacing: 1.2, color: hud.accent },
   alertDetailTitle: { marginTop: 4, fontFamily: fontFamily.black, fontSize: 18, color: '#07313C' },
   alertDetailMeta: { marginTop: 3, fontFamily: fontFamily.medium, fontSize: 12, color: '#5E777D' },
   alertDetailClose: {
