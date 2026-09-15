@@ -1,8 +1,9 @@
 /**
- * Shapes verified against Mapbox's Directions v5 and Geocoding v6 (forward)
- * API docs. Only the fields this app actually reads are typed - both
- * responses carry a lot more than this (alternate geometry encodings,
- * congestion annotations, context arrays, etc.) that nothing here needs yet.
+ * Shapes verified against Mapbox's Directions v5 (driving-traffic profile)
+ * and Search Box v1 (/forward) API docs. Only the fields this app actually
+ * reads are typed - both responses carry a lot more than this (alternate
+ * geometry encodings, congestion annotations, context arrays, POI metadata
+ * like hours/phone/rating, etc.) that nothing here needs yet.
  */
 
 export interface MapboxGeoJsonLineString {
@@ -67,6 +68,11 @@ export interface MapboxGeocodeFeature {
     full_address?: string;
     name?: string;
     place_formatted?: string;
+    /** e.g. 'poi', 'address', 'place' - present on Search Box API results;
+     * not read anywhere yet, kept for a future "business vs address" icon. */
+    feature_type?: string;
+    /** e.g. ['restaurant'] - only present for feature_type 'poi'. */
+    poi_category?: string[];
     [key: string]: unknown;
   };
 }

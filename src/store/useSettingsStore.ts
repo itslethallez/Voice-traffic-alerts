@@ -13,6 +13,7 @@ import {
   MIN_BRIEFING_RADIUS_METERS,
   MIN_VOICE_RATE,
   MIN_VOICE_VOLUME,
+  type RouteType,
   type SettingsValues,
 } from './settingsDefaults';
 
@@ -23,7 +24,7 @@ interface SettingsStore extends SettingsValues {
   setVoiceVolume: (volume: number) => void;
   setVoiceRate: (rate: number) => void;
   toggleMasterMute: () => void;
-  toggleAvoidHazards: () => void;
+  setDefaultRouteType: (routeType: RouteType) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -53,7 +54,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ voiceVolume: clamp(volume, MIN_VOICE_VOLUME, MAX_VOICE_VOLUME) }),
       setVoiceRate: (rate) => set({ voiceRate: clamp(rate, MIN_VOICE_RATE, MAX_VOICE_RATE) }),
       toggleMasterMute: () => set((state) => ({ masterMute: !state.masterMute })),
-      toggleAvoidHazards: () => set((state) => ({ avoidHazards: !state.avoidHazards })),
+      setDefaultRouteType: (routeType) => set({ defaultRouteType: routeType }),
     }),
     {
       name: 'voice-traffic-alerts/settings',

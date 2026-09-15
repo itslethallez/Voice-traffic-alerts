@@ -10,6 +10,17 @@ export const ANNOUNCE_MAX_BEARING_DIFF_DEG = 45;
 export const ANNOUNCE_MAX_AGE_MINUTES = 30;
 
 /**
+ * Nav mode's own announce-eligibility width: "a few km" of the actively
+ * navigated route - wide enough that a hazard ahead on the road you're
+ * committed to is worth knowing about early, narrow enough not to speak up
+ * about something on a parallel road nowhere near your path. Used instead
+ * of ANNOUNCE_MAX_DISTANCE_M + bearing while a route is active (see
+ * engine/selectAlerts.ts's routeCorridor option) - the route geometry
+ * already encodes direction, so there's no separate bearing check needed.
+ */
+export const NAV_ROUTE_CORRIDOR_METERS = 3000;
+
+/**
  * How much closer (in metres) an already-announced alert must have gotten
  * before it's worth interrupting the driver again - "reminders of any
  * updates getting closer" from the spec. Small GPS jitter or a driver

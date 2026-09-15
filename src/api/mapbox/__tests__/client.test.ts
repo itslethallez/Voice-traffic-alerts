@@ -48,6 +48,20 @@ describe('fetchDirections', () => {
     expect(parsed.searchParams.get('geometries')).toBe('geojson');
     expect(parsed.searchParams.get('steps')).toBe('true');
     expect(parsed.searchParams.get('access_token')).toBe('test-token');
+    expect(parsed.hostname).toBe('api.mapbox.com');
+    expect(parsed.pathname).toContain('/directions/v5/mapbox/driving-traffic/');
+  });
+
+  it('sends an exclude param only when requested', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true, 200, OK_DIRECTIONS_BODY));
+
+    await fetchDirections([ORIGIN, DESTINATION], { exclude: 'motorway' });
+    const [urlWithExclude] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    expect(new URL(urlWithExclude).searchParams.get('exclude')).toBe('motorway');
+
+    await fetchDirections([ORIGIN, DESTINATION]);
+    const [urlWithoutExclude] = (globalThis.fetch as jest.Mock).mock.calls[1];
+    expect(new URL(urlWithoutExclude).searchParams.has('exclude')).toBe(false);
   });
 
   it('throws MapboxApiError with the status on a non-ok HTTP response', async () => {
@@ -115,6 +129,9 @@ describe('fetchGeocode', () => {
     expect(parsed.searchParams.get('q')).toBe('Main St');
     expect(parsed.searchParams.get('proximity')).toBe('138.6007,-34.9285');
     expect(parsed.searchParams.get('access_token')).toBe('test-token');
+    expect(parsed.searchParams.get('country')).toBe('AU');
+    expect(parsed.hostname).toBe('api.mapbox.com');
+    expect(parsed.pathname).toBe('/search/searchbox/v1/forward');
   });
 
   it('returns an empty array rather than throwing when there are no features', async () => {

@@ -1,3 +1,4 @@
+import type { LayoutChangeEvent } from 'react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import { hud, instrument } from '../../theme/colors';
 import { fontFamily } from '../../theme/typography';
@@ -6,6 +7,12 @@ import { formatCompactDistance } from './formatCompactDistance';
 interface ManeuverBannerProps {
   instruction: string;
   distanceMeters: number | null;
+  /** Reports this banner's actually-rendered height, same pattern as
+   * ClosestReportPanel's own onLayout - RadarMap.tsx uses it to keep the
+   * zoom/recenter button column (mapControls) clear of a two-line
+   * instruction instead of a fixed offset that a long instruction could
+   * grow past. */
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 /**
@@ -16,9 +23,9 @@ interface ManeuverBannerProps {
  * instruction is the single most important thing on screen while
  * navigating and should read that way.
  */
-export function ManeuverBanner({ instruction, distanceMeters }: ManeuverBannerProps) {
+export function ManeuverBanner({ instruction, distanceMeters, onLayout }: ManeuverBannerProps) {
   return (
-    <View style={styles.root} pointerEvents="none">
+    <View style={styles.root} pointerEvents="none" onLayout={onLayout}>
       {distanceMeters !== null ? (
         <Text style={styles.distance}>{formatCompactDistance(distanceMeters).toUpperCase()}</Text>
       ) : null}

@@ -7,12 +7,12 @@ import { formatManeuverInstruction } from '../speech/formatManeuverInstruction';
 import { speakAsync, stopSpeaking } from '../speech/ttsAdapter';
 import { visibleManualReportAlerts } from '../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../store/nearbyReportAlert';
-import { enabledTypesFromSettings } from '../store/settingsDefaults';
+import { enabledTypesFromSettings, type RouteType } from '../store/settingsDefaults';
 import { useNavigationStore, type NavigationRoute } from '../store/useNavigationStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { selectManeuverAnnouncement, type ManeuverCheckpoint } from './selectManeuverAnnouncement';
-import { scoreAndRankRoutes } from './routeSelection';
+import { routeTypeToRequestOptions, scoreAndRankRoutes } from './routeSelection';
 import { computeStepProgress } from './stepProgress';
 
 /**
@@ -79,10 +79,11 @@ function getHazardsForRouteScoring(driverPosition: GeoPoint, nowMs: number): Rou
 async function requestRoute(
   origin: GeoPoint,
   destination: GeoPoint,
-  avoidHazards: boolean,
+  routeType: RouteType,
   nowMs: number
 ): Promise<NavigationRoute> {
-  const response = await fetchDirections([origin, destination], { alternatives: true });
+  const { avoidHazards, exclude } = routeTypeToRequestOptions(routeType);
+  const response = await fetchDirections([origin, destination], { alternatives: true, exclude });
   if (response.routes.length === 0) {
     throw new MapboxApiError('Mapbox Directions API returned no routes', null);
   }
@@ -101,16 +102,17 @@ async function requestRoute(
 }
 
 export interface StartNavigationOptions {
-  avoidHazards: boolean;
+  routeType: RouteType;
 }
 
 /**
  * Fetches a route to `destination` from the driver's current position and
  * makes it the active route. Not a guarantee the chosen route avoids every
- * currently-reported hazard when avoidHazards is on - Mapbox's Directions
- * API has no way to request excluding arbitrary points server-side, only
- * the broad category excludes (motorway/toll/ferry). This instead requests
- * alternatives (Mapbox returns up to ~3) and picks whichever is least
+ * currently-reported hazard for the 'safest'/'sidestreets' route types -
+ * Mapbox's Directions API has no way to request excluding arbitrary points
+ * server-side, only the broad category excludes (motorway/toll/ferry, see
+ * routeSelection.ts's routeTypeToRequestOptions). This instead requests
+ * alternatives (Mapbox returns up to ~2) and picks whichever is least
  * hazard-exposed by routeSelection.ts's own scoring - the least-bad option
  * among what Mapbox happened to offer, not a guaranteed-clear route.
  */
@@ -122,10 +124,10 @@ export async function startNavigation(
 ): Promise<void> {
   const generation = ++navigationGeneration;
   resetStepTracking();
-  useNavigationStore.getState().setRouting();
+  useNavigationStore.getState().setRouting(options.routeType);
 
   try {
-    const route = await requestRoute(driver.position, destination, options.avoidHazards, Date.now());
+    const route = await requestRoute(driver.position, destination, options.routeType, Date.now());
     if (generation !== navigationGeneration) return; // superseded while this fetch was in flight
     useNavigationStore.getState().setActiveRoute({ destination, destinationLabel, route });
   } catch (error) {
@@ -143,17 +145,25 @@ export function stopNavigation(): void {
   useNavigationStore.getState().stop();
 }
 
-async function rerouteFromCurrentPosition(driver: DriverState, avoidHazards: boolean): Promise<void> {
+async function rerouteFromCurrentPosition(driver: DriverState): Promise<void> {
   const store = useNavigationStore.getState();
-  const { destination, destinationLabel } = store;
+  const { destination, destinationLabel, activeRouteType } = store;
   if (!destination) return;
+
+  // Reuses whichever route type the driver actually chose for this trip
+  // (persisted on the store by setRouting/setActiveRoute) rather than
+  // re-reading the settings default, which may have changed since - and
+  // falls back defensively to 'safest' in case a reroute is ever somehow
+  // triggered with no route type recorded (shouldn't happen: a route can't
+  // be active without one having been set first).
+  const routeType = activeRouteType ?? 'safest';
 
   const generation = ++navigationGeneration;
   store.setRerouting();
   resetStepTracking();
 
   try {
-    const route = await requestRoute(driver.position, destination, avoidHazards, Date.now());
+    const route = await requestRoute(driver.position, destination, routeType, Date.now());
     if (generation !== navigationGeneration) return;
     useNavigationStore.getState().setActiveRoute({ destination, destinationLabel, route });
   } catch (error) {
@@ -190,7 +200,11 @@ async function speakManeuverIfDue(route: NavigationRoute, stepIndex: number, dis
   firedManeuverCheckpoints.set(result.stepIndex, fired);
 
   const settings = useSettingsStore.getState();
-  const text = formatManeuverInstruction(route.steps[stepIndex + 1].maneuver, result.checkpoint);
+  // The live measured distance at the moment this checkpoint crossing fired,
+  // not the fixed checkpoint number itself - result.checkpoint only decides
+  // *when* to speak (see selectManeuverAnnouncement.ts), so the driver hears
+  // an accurate, natural distance rather than always "500"/"200"/"50".
+  const text = formatManeuverInstruction(route.steps[stepIndex + 1].maneuver, distanceToNextManeuverM);
 
   try {
     // Every driver-update call runs one at a time through tripRuntime.ts's
@@ -272,6 +286,32 @@ export async function updateNavigationForDriverUpdate(
   }
 
   if (nowMs - offRouteSinceMs >= OFF_ROUTE_SUSTAINED_MS) {
-    void rerouteFromCurrentPosition(driver, useSettingsStore.getState().avoidHazards);
+    void rerouteFromCurrentPosition(driver);
   }
+}
+
+/** Whether turn-by-turn navigation is currently driving the trip (nav mode)
+ * as opposed to plain cruising - used by tripRuntime.ts to decide whether
+ * hazard announcements should be gated to the active route's corridor
+ * instead of the usual radius-around-the-car window. */
+export function isNavigationActive(): boolean {
+  const status = useNavigationStore.getState().status;
+  return status === 'navigating' || status === 'rerouting';
+}
+
+/**
+ * The active route's geometry from the driver's current step onward - the
+ * part of the journey still ahead, not the whole route from origin to
+ * destination - so a hazard already passed doesn't keep counting as "near
+ * the route". Built from each remaining step's own geometry (rather than
+ * slicing the route's one polyline by distance) since steps already carry
+ * their own coordinates and are trivial to concatenate. Returns null
+ * whenever navigation isn't active.
+ */
+export function getRemainingRoutePolyline(): GeoPoint[] | null {
+  const route = useNavigationStore.getState().activeRoute;
+  if (!route) return null;
+  return route.steps
+    .slice(currentStepIndex)
+    .flatMap((step) => step.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
 }

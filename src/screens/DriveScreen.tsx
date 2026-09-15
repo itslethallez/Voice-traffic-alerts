@@ -48,6 +48,11 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
   const masterMute = useSettingsStore((state) => state.masterMute);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
   const [now, setNow] = useState(() => Date.now());
+  /** NavigationStatusBar's actually-rendered height (0 when status is
+   * 'idle' and it renders nothing) - passed to RadarMap so the tapped-marker
+   * detail card can clear it instead of a fixed offset tuned only for the
+   * pre-nav control row (see RadarMap.tsx's alertDetailCard). */
+  const [navStatusBarHeight, setNavStatusBarHeight] = useState(0);
   const latestAnnouncementKey = latestAnnouncement
     ? `${latestAnnouncement.alertId}:${latestAnnouncement.announcedAtMs}`
     : null;
@@ -87,7 +92,13 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
 
   return (
     <View style={styles.root}>
-      <RadarMap focusedAlert={focusedAlert} now={now} minimal rangeToggleToken={rangeToggleToken} />
+      <RadarMap
+        focusedAlert={focusedAlert}
+        now={now}
+        minimal
+        rangeToggleToken={rangeToggleToken}
+        navStatusBarHeight={navStatusBarHeight}
+      />
 
       <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
         <View style={[styles.topBar, isLandscape && styles.topBarLandscape]}>
@@ -129,7 +140,9 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
             <View style={styles.tickerPlaceholder} />
           )}
           <View style={styles.bottomStack}>
-            <NavigationStatusBar nowMs={now} />
+            <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
+              <NavigationStatusBar nowMs={now} />
+            </View>
             <View style={[styles.controlRow, isLandscape && styles.controlRowLandscape, compactControls && styles.controlRowCompact]}>
               <ReportBar />
               <Pressable

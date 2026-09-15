@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { MapboxRouteStep } from '../api/mapbox/types';
 import type { GeoPoint } from '../geo/types';
+import type { RouteType } from './settingsDefaults';
 
 export type NavigationStatus = 'idle' | 'routing' | 'navigating' | 'rerouting' | 'arrived' | 'error';
 
@@ -29,12 +30,17 @@ interface NavigationStoreState {
   destination: GeoPoint | null;
   destinationLabel: string | null;
   activeRoute: NavigationRoute | null;
+  /** The route type the driver actually chose for this trip - set on
+   * setRouting/setActiveRoute, read back by rerouteFromCurrentPosition so a
+   * reroute reuses it rather than whatever the settings default currently
+   * is. null only in the idle state. */
+  activeRouteType: RouteType | null;
   currentStepIndex: number;
   distanceToNextManeuverM: number | null;
   remainingDistanceM: number | null;
   etaMs: number | null;
   errorMessage: string | null;
-  setRouting: () => void;
+  setRouting: (routeType: RouteType) => void;
   setActiveRoute: (input: { destination: GeoPoint; destinationLabel: string | null; route: NavigationRoute }) => void;
   setStepProgress: (input: {
     currentStepIndex: number;
@@ -52,6 +58,7 @@ const IDLE_STATE = {
   destination: null,
   destinationLabel: null,
   activeRoute: null,
+  activeRouteType: null,
   currentStepIndex: 0,
   distanceToNextManeuverM: null,
   remainingDistanceM: null,
@@ -61,19 +68,20 @@ const IDLE_STATE = {
 
 export const useNavigationStore = create<NavigationStoreState>((set) => ({
   ...IDLE_STATE,
-  setRouting: () => set({ status: 'routing', errorMessage: null }),
+  setRouting: (routeType) => set({ status: 'routing', activeRouteType: routeType, errorMessage: null }),
   setActiveRoute: ({ destination, destinationLabel, route }) =>
-    set({
+    set((state) => ({
       status: 'navigating',
       destination,
       destinationLabel,
       activeRoute: route,
+      activeRouteType: state.activeRouteType,
       currentStepIndex: 0,
       distanceToNextManeuverM: route.steps[0]?.distance ?? null,
       remainingDistanceM: route.distanceMeters,
       etaMs: Date.now() + route.durationSeconds * 1000,
       errorMessage: null,
-    }),
+    })),
   setStepProgress: ({ currentStepIndex, distanceToNextManeuverM, remainingDistanceM, etaMs }) =>
     // Rerouting resolves back to 'navigating' the moment setActiveRoute
     // fires (a fresh route), not from this - so a stale progress tick that

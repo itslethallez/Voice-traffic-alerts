@@ -6,6 +6,7 @@ import { fetchGeocode } from '../api/mapbox/client';
 import type { MapboxGeocodeFeature } from '../api/mapbox/types';
 import type { DriverState } from '../engine/types';
 import { startNavigation } from '../navigation/navigationRuntime';
+import { ROUTE_TYPES, type RouteType } from '../store/settingsDefaults';
 import { useNavigationStore } from '../store/useNavigationStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
@@ -14,6 +15,12 @@ import { fontFamily } from '../theme/typography';
 
 const SEARCH_DEBOUNCE_MS = 350;
 const MIN_QUERY_LENGTH = 3;
+
+const ROUTE_TYPE_LABELS: Record<RouteType, string> = {
+  quickest: 'Quickest',
+  safest: 'Safest',
+  sidestreets: 'Sidestreets',
+};
 
 interface NavigationSearchScreenProps {
   onClose: () => void;
@@ -45,7 +52,8 @@ export function NavigationSearchScreen({ onClose, onNavigationStarted }: Navigat
   const driverPosition = useTripStore((state) => state.driverPosition);
   const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
   const driverSpeedKmh = useTripStore((state) => state.driverSpeedKmh);
-  const avoidHazards = useSettingsStore((state) => state.avoidHazards);
+  const defaultRouteType = useSettingsStore((state) => state.defaultRouteType);
+  const [routeType, setRouteType] = useState<RouteType>(defaultRouteType);
 
   useEffect(
     () => () => {
@@ -92,7 +100,7 @@ export function NavigationSearchScreen({ onClose, onNavigationStarted }: Navigat
 
     const driver: DriverState = { position: driverPosition, headingDeg: driverHeadingDeg, speedKmh: driverSpeedKmh };
     const [longitude, latitude] = feature.geometry.coordinates;
-    await startNavigation({ latitude, longitude }, featureLabel(feature), driver, { avoidHazards });
+    await startNavigation({ latitude, longitude }, featureLabel(feature), driver, { routeType });
 
     setStartingId(null);
     if (useNavigationStore.getState().status === 'navigating') {
@@ -128,6 +136,26 @@ export function NavigationSearchScreen({ onClose, onNavigationStarted }: Navigat
             returnKeyType="search"
             accessibilityLabel="Destination search"
           />
+        </View>
+
+        <View style={styles.routeTypeRow} accessibilityRole="tablist">
+          {ROUTE_TYPES.map((type) => {
+            const isSelected = type === routeType;
+            return (
+              <Pressable
+                key={type}
+                onPress={() => setRouteType(type)}
+                style={[styles.routeTypeButton, isSelected && styles.routeTypeButtonSelected]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`${ROUTE_TYPE_LABELS[type]} route`}
+              >
+                <Text style={[styles.routeTypeButtonText, isSelected && styles.routeTypeButtonTextSelected]}>
+                  {ROUTE_TYPE_LABELS[type].toUpperCase()}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         {!driverPosition ? (
@@ -202,6 +230,35 @@ const styles = StyleSheet.create({
     color: instrument.paper,
     fontFamily: fontFamily.medium,
     fontSize: 15,
+  },
+  routeTypeRow: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 14,
+    gap: 8,
+  },
+  routeTypeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: hud.rule,
+  },
+  routeTypeButtonSelected: {
+    backgroundColor: hud.accent,
+    borderColor: hud.accent,
+  },
+  routeTypeButtonText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    color: hud.muted,
+  },
+  routeTypeButtonTextSelected: {
+    color: '#062128',
   },
   notice: {
     marginHorizontal: 20,

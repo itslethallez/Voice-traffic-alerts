@@ -29,6 +29,10 @@ describe('defaultSettingsValues', () => {
     expect(defaultSettingsValues.masterMute).toBe(false);
   });
 
+  it('defaults the route type to safest', () => {
+    expect(defaultSettingsValues.defaultRouteType).toBe('safest');
+  });
+
   it('defaults the briefing radius within the slider range, separate from announce distance', () => {
     expect(defaultSettingsValues.briefingRadiusMeters).toBeGreaterThanOrEqual(
       MIN_BRIEFING_RADIUS_METERS

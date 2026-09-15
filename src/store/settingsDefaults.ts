@@ -44,6 +44,21 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * The three route choices offered when starting navigation
+ * (NavigationSearchScreen) and as a default in Settings:
+ * - 'quickest': Mapbox's own best route, no hazard scoring.
+ * - 'safest': navigationRuntime.ts scores Mapbox's alternative routes by
+ *   proximity to currently-reported hazards (the same set already visible
+ *   on the map/heard as alerts) and prefers the least-exposed one - not a
+ *   guarantee every hazard is dodged, see navigationRuntime.ts's own doc
+ *   comment for why.
+ * - 'sidestreets': same hazard scoring as 'safest', plus excludes motorways
+ *   from the route request entirely (Mapbox Directions' `exclude=motorway`).
+ */
+export type RouteType = 'quickest' | 'safest' | 'sidestreets';
+export const ROUTE_TYPES: RouteType[] = ['quickest', 'safest', 'sidestreets'];
+
 export interface SettingsValues {
   categoriesEnabled: Record<AlertCategory, boolean>;
   announceDistanceMeters: number;
@@ -51,12 +66,9 @@ export interface SettingsValues {
   voiceVolume: number;
   voiceRate: number;
   masterMute: boolean;
-  /** When on, navigationRuntime.ts scores Mapbox's alternative routes by
-   * proximity to currently-reported hazards (the same set already visible
-   * on the map/heard as alerts) and prefers the least-exposed one - not a
-   * guarantee every hazard is dodged, see navigationRuntime.ts's own doc
-   * comment for why. */
-  avoidHazards: boolean;
+  /** Seeds the route-type control on NavigationSearchScreen each time it
+   * opens - the driver can still pick a different type per trip there. */
+  defaultRouteType: RouteType;
 }
 
 export const defaultSettingsValues: SettingsValues = {
@@ -72,7 +84,7 @@ export const defaultSettingsValues: SettingsValues = {
   voiceVolume: DEFAULT_VOICE_VOLUME,
   voiceRate: DEFAULT_VOICE_RATE,
   masterMute: false,
-  avoidHazards: true,
+  defaultRouteType: 'safest',
 };
 
 /** The Set<WazeAlertType> shape selectAnnounceableAlerts()'s settings option expects. */

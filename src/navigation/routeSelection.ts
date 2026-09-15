@@ -1,6 +1,7 @@
 import type { MapboxDirectionsResponse, MapboxRoute } from '../api/mapbox/types';
 import { scoreRouteHazardExposure, type RouteHazard } from '../engine/routeHazardScore';
 import type { GeoPoint } from '../geo/types';
+import type { RouteType } from '../store/settingsDefaults';
 
 /** How far around a candidate route a currently-reported hazard still
  * counts against it - wide enough to catch a hazard on a parallel side
@@ -34,6 +35,25 @@ export function toPolyline(route: MapboxRoute): GeoPoint[] {
  * server-side, only scored after the fact against whichever alternatives
  * it happened to return (up to ~3).
  */
+/**
+ * Maps a driver-facing route choice onto the Mapbox Directions request
+ * options (`exclude`, verified against Mapbox's current Directions v5 docs)
+ * and the hazard-scoring flag scoreAndRankRoutes above already understands.
+ * 'sidestreets' both excludes motorways from the request entirely and
+ * scores the (necessarily non-motorway) alternatives by hazard exposure -
+ * a driver picking backstreets almost always also wants the quieter one.
+ */
+export function routeTypeToRequestOptions(routeType: RouteType): { avoidHazards: boolean; exclude?: string } {
+  switch (routeType) {
+    case 'quickest':
+      return { avoidHazards: false };
+    case 'safest':
+      return { avoidHazards: true };
+    case 'sidestreets':
+      return { avoidHazards: true, exclude: 'motorway' };
+  }
+}
+
 export function scoreAndRankRoutes(
   response: MapboxDirectionsResponse,
   hazards: readonly RouteHazard[],

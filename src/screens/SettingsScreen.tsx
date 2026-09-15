@@ -10,7 +10,9 @@ import {
   MIN_ANNOUNCE_DISTANCE_METERS,
   MIN_BRIEFING_RADIUS_METERS,
   MIN_VOICE_RATE,
+  ROUTE_TYPES,
   type AlertCategory,
+  type RouteType,
 } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { hud, instrument } from '../theme/colors';
@@ -24,6 +26,12 @@ const CATEGORY_LABELS: Record<AlertCategory, string> = {
   HAZARD: 'Hazards',
   ROAD_CLOSED: 'Road closures',
   JAM: 'Traffic jams',
+};
+
+const ROUTE_TYPE_LABELS: Record<RouteType, string> = {
+  quickest: 'Quickest',
+  safest: 'Safest',
+  sidestreets: 'Sidestreets',
 };
 
 /** The big numeral always keeps one decimal ("5.0") - distinct from
@@ -55,8 +63,8 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
   const voiceVolume = useSettingsStore((state) => state.voiceVolume);
   const voiceRate = useSettingsStore((state) => state.voiceRate);
   const masterMute = useSettingsStore((state) => state.masterMute);
-  const avoidHazards = useSettingsStore((state) => state.avoidHazards);
-  const toggleAvoidHazards = useSettingsStore((state) => state.toggleAvoidHazards);
+  const defaultRouteType = useSettingsStore((state) => state.defaultRouteType);
+  const setDefaultRouteType = useSettingsStore((state) => state.setDefaultRouteType);
   const toggleCategory = useSettingsStore((state) => state.toggleCategory);
   const setAnnounceDistanceMeters = useSettingsStore((state) => state.setAnnounceDistanceMeters);
   const setBriefingRadiusMeters = useSettingsStore((state) => state.setBriefingRadiusMeters);
@@ -222,25 +230,33 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
             <Text style={styles.sectionLabelText}>NAVIGATION</Text>
           </View>
 
-          <Pressable
-            onPress={toggleAvoidHazards}
-            style={styles.categoryRow}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: avoidHazards }}
-            accessibilityLabel="Avoid reported hazards while navigating"
-          >
-            <View style={styles.avoidHazardsCopy}>
-              <Text style={styles.categoryLabel}>AVOID REPORTED HAZARDS</Text>
-              <Text style={styles.avoidHazardsNote}>
-                Prefers routes with fewer nearby police/accident/hazard reports - not a guarantee every hazard is missed.
-              </Text>
+          <View style={styles.routeTypeSection}>
+            <Text style={styles.categoryLabel}>DEFAULT ROUTE TYPE</Text>
+            <Text style={styles.routeTypeNote}>
+              Starting point when you search a destination - Quickest ignores reports, Safest prefers routes with
+              fewer nearby police/accident/hazard reports, Sidestreets also avoids motorways. Not a guarantee every
+              hazard is missed. Can be changed per trip from the search screen.
+            </Text>
+            <View style={styles.routeTypeRow}>
+              {ROUTE_TYPES.map((type) => {
+                const isSelected = type === defaultRouteType;
+                return (
+                  <Pressable
+                    key={type}
+                    onPress={() => setDefaultRouteType(type)}
+                    style={[styles.routeTypeButton, isSelected && styles.routeTypeButtonSelected]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`${ROUTE_TYPE_LABELS[type]} default route`}
+                  >
+                    <Text style={[styles.routeTypeButtonText, isSelected && styles.routeTypeButtonTextSelected]}>
+                      {ROUTE_TYPE_LABELS[type].toUpperCase()}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-            <View style={[styles.stateBlock, avoidHazards ? styles.stateBlockOn : styles.stateBlockOff]}>
-              <Text style={[styles.stateBlockText, avoidHazards ? styles.stateBlockTextOn : styles.mutedText]}>
-                {avoidHazards ? 'ON' : 'OFF'}
-              </Text>
-            </View>
-          </Pressable>
+          </View>
 
           <Pressable
             style={styles.notificationSourceCard}
@@ -365,15 +381,46 @@ const styles = StyleSheet.create({
   mutedText: {
     color: hud.muted,
   },
-  avoidHazardsCopy: {
-    flex: 1,
-  },
-  avoidHazardsNote: {
+  routeTypeNote: {
     marginTop: 3,
     fontFamily: fontFamily.medium,
     fontSize: 11,
     lineHeight: 15,
     color: hud.muted,
+  },
+  routeTypeSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: hud.rowRule,
+  },
+  routeTypeRow: {
+    flexDirection: 'row',
+    marginTop: 10,
+    gap: 8,
+  },
+  routeTypeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    borderWidth: 1,
+    borderColor: hud.rowRule,
+  },
+  routeTypeButtonSelected: {
+    backgroundColor: hud.accent,
+    borderColor: hud.accent,
+  },
+  routeTypeButtonText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    color: hud.muted,
+  },
+  routeTypeButtonTextSelected: {
+    color: '#062128',
   },
   stateBlock: {
     paddingVertical: 4,

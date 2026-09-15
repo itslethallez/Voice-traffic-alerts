@@ -1,6 +1,14 @@
 import { buildMockAlerts, MOCK_DRIVER } from '../../api/waze/__mocks__/alerts.fixture';
+import { destinationPoint } from '../../geo/destination';
 import { selectAnnounceableAlerts } from '../selectAlerts';
 import type { DriverState } from '../types';
+
+/** A straight polyline from MOCK_DRIVER out `lengthMeters` along `bearingDeg`
+ * - enough to exercise routeCorridor without needing a real Mapbox route. */
+function corridorPolyline(bearingDeg: number, lengthMeters: number) {
+  const driverPoint = { latitude: MOCK_DRIVER.latitude, longitude: MOCK_DRIVER.longitude };
+  return [driverPoint, destinationPoint(driverPoint, lengthMeters, bearingDeg)];
+}
 
 /**
  * Expected outcomes below were derived by running the real geo functions
@@ -180,5 +188,51 @@ describe('selectAnnounceableAlerts', () => {
     });
     const ids = new Set(result.map((r) => r.alert.alert_id));
     expect(ids.has('wm-005')).toBe(true); // 2996.63m, excluded by the 2000m default, included at 3000m
+  });
+
+  describe('routeCorridor (nav mode)', () => {
+    it('announces a hazard beyond maxDistanceMeters when it sits within the route corridor', () => {
+      // wm-005: 3000m ahead, bearing 0 - excluded by the 2000m default cap,
+      // but the corridor runs straight along that same bearing.
+      const result = selectAnnounceableAlerts(alerts, driver, new Map(), now, {
+        maxDistanceMeters: 2000,
+        routeCorridor: { polyline: corridorPolyline(0, 4000), corridorMeters: 200 },
+      });
+      const ids = new Set(result.map((r) => r.alert.alert_id));
+      expect(ids.has('wm-005')).toBe(true);
+    });
+
+    it('does not require bearing alignment with the driver\'s heading, only proximity to the route', () => {
+      // wm-014: 46deg bearing, normally excluded by the 45deg bearing check -
+      // but a route corridor running along that bearing has no such limit.
+      const result = selectAnnounceableAlerts(alerts, driver, new Map(), now, {
+        maxDistanceMeters: 2000,
+        routeCorridor: { polyline: corridorPolyline(46, 2000), corridorMeters: 100 },
+      });
+      const ids = new Set(result.map((r) => r.alert.alert_id));
+      expect(ids.has('wm-014')).toBe(true);
+    });
+
+    it('excludes a hazard that would otherwise qualify by radius+bearing but sits off the route', () => {
+      // wm-018: 600m ahead, bearing -10 - normally announceable, but a
+      // corridor running due east passes nowhere near it.
+      const result = selectAnnounceableAlerts(alerts, driver, new Map(), now, {
+        maxDistanceMeters: 2000,
+        routeCorridor: { polyline: corridorPolyline(90, 2000), corridorMeters: 100 },
+      });
+      const ids = new Set(result.map((r) => r.alert.alert_id));
+      expect(ids.has('wm-018')).toBe(false);
+    });
+
+    it('still enforces the ANNOUNCE_MIN_DISTANCE_M floor inside a route corridor', () => {
+      // wm-006: 150m ahead, bearing 0 - too close even though it's dead
+      // center of the corridor.
+      const result = selectAnnounceableAlerts(alerts, driver, new Map(), now, {
+        maxDistanceMeters: 2000,
+        routeCorridor: { polyline: corridorPolyline(0, 4000), corridorMeters: 200 },
+      });
+      const ids = new Set(result.map((r) => r.alert.alert_id));
+      expect(ids.has('wm-006')).toBe(false);
+    });
   });
 });

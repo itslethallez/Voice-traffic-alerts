@@ -4,7 +4,12 @@ import { fetchAlertsForBoundingBox } from '../api/waze/fetchAlertsForBoundingBox
 import { WazeApiError } from '../api/waze/client';
 import { getDeviceId } from '../config/deviceId';
 import { FIXED_SPEED_CAMERAS, type FixedSpeedCamera } from '../data/fixedSpeedCameras';
-import { updateNavigationForDriverUpdate } from '../navigation/navigationRuntime';
+import {
+  getRemainingRoutePolyline,
+  isNavigationActive,
+  updateNavigationForDriverUpdate,
+} from '../navigation/navigationRuntime';
+import { NAV_ROUTE_CORRIDOR_METERS } from '../geo/announceWindow';
 import type { GeoPoint } from '../geo/types';
 import type { ManualReport, NearbyReport } from '../store/useTripStore';
 import { applyFetchResult, initialAlertsCache } from '../engine/cache';
@@ -419,6 +424,16 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   // ran regardless), only the speaking is suppressed.
   if (settings.masterMute || isSustainedLowSpeed(speedState, nowMs)) return;
 
+  // Nav mode: gate hazard announcements to the active route's corridor
+  // instead of the usual radius-around-the-car window - a hazard several km
+  // up the road you're actually driving is worth an early mention, while
+  // one just as close but off-route isn't (see selectAlerts.ts's
+  // routeCorridor option). Cruising (no active route) is unaffected.
+  const remainingRoutePolyline = isNavigationActive() ? getRemainingRoutePolyline() : null;
+  const routeCorridor = remainingRoutePolyline
+    ? { polyline: remainingRoutePolyline, corridorMeters: NAV_ROUTE_CORRIDOR_METERS }
+    : undefined;
+
   const candidates = selectAnnounceableAlerts(
     alertsCache.alerts,
     driver,
@@ -427,6 +442,7 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     {
       enabledTypes: enabledTypesFromSettings(settings.categoriesEnabled),
       maxDistanceMeters: settings.announceDistanceMeters,
+      routeCorridor,
     }
   );
   announcerState = submitCandidates(announcerState, candidates);

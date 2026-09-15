@@ -123,11 +123,23 @@ interface RadarMapProps {
   onSpotlightChange?: (active: boolean) => void;
   /** Incremented by DriveScreen's lower RANGE button. */
   rangeToggleToken?: number;
+  /** DriveScreen's own measured height for NavigationStatusBar (0 when it
+   * isn't rendering, i.e. status is 'idle') - used to keep alertDetailCard
+   * clear of it instead of a fixed offset tuned only for the pre-nav
+   * control row. */
+  navStatusBarHeight?: number;
 }
 
 type MapPresentation = 'nearest' | 'range' | 'free';
 
-export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightChange, minimal = false, rangeToggleToken = 0 }: RadarMapProps) {
+export function RadarMap({
+  focusedAlert = null,
+  now = Date.now(),
+  onSpotlightChange,
+  minimal = false,
+  rangeToggleToken = 0,
+  navStatusBarHeight = 0,
+}: RadarMapProps) {
   // Start in overview mode: show the driver's travel arrow and the closest
   // visible report. A single tap switches to the exact Warn me from radius;
   // a pan or pinch leaves the camera entirely in the driver's control.
@@ -389,6 +401,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
    */
   const [focusPanelHeight, setFocusPanelHeight] = useState(0);
   const showsFocusPanel = !minimal && closest !== null && !displayFocus;
+  /** ManeuverBanner's actually-rendered height, reported the same way as
+   * focusPanelHeight above - lets mapControls (the zoom/recenter column)
+   * shift down to clear a two-line turn instruction instead of assuming a
+   * fixed height it could grow past. 0 whenever the banner isn't showing. */
+  const [maneuverBannerHeight, setManeuverBannerHeight] = useState(0);
   /**
    * @rnmapbox/maps's Camera re-issues its native setCamera command whenever
    * this `padding` object's *reference* changes (its own internal
@@ -675,7 +692,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
       </Mapbox.MapView>
 
       {selectedAlert ? (
-        <View style={styles.alertDetailCard}>
+        <View style={[styles.alertDetailCard, navStatusBarHeight > 0 && { bottom: 112 + navStatusBarHeight + 10 }]}>
           <Text style={styles.alertDetailEyebrow}>REPORTED {Math.max(0, Math.round(ageMinutesOf(selectedAlert, now)))} MIN AGO</Text>
           <Text style={styles.alertDetailTitle}>{alertTypeMeta(selectedAlert.type, selectedAlert.subtype).label.toUpperCase()}</Text>
           <Text style={styles.alertDetailMeta}>{resolveAreaName(selectedAlert) ?? ([selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED')}</Text>
@@ -693,7 +710,12 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         </View>
       ) : null}
 
-      <View style={styles.mapControls}>
+      <View
+        style={[
+          styles.mapControls,
+          isNavigating && activeRoute ? { top: 78 + maneuverBannerHeight + 10 } : null,
+        ]}
+      >
         <Pressable
           style={[styles.recenterButton, !driverPosition && styles.recenterButtonDisabled]}
           onPress={() => {
@@ -776,6 +798,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), onSpotlightCha
         <ManeuverBanner
           instruction={activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.instruction ?? 'Arriving at destination'}
           distanceMeters={navDistanceToNextManeuverM}
+          onLayout={(event) => setManeuverBannerHeight(event.nativeEvent.layout.height)}
         />
       ) : closest && !minimal ? (
         <ClosestReportPanel

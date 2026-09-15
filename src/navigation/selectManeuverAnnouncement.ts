@@ -1,10 +1,14 @@
 /**
  * Turn-by-turn's counterpart to engine/selectSpeedCameraWarning.ts's
  * SPEED_WARNING_CHECKPOINTS_M/firedCheckpoints pattern: fixed distance
- * checkpoints per maneuver, never re-fired once passed. Farthest first -
- * if GPS sampling is sparse enough to jump straight from outside 500m to
- * inside 200m in one update, 500 fires first (briefly "late" but simple
- * and self-correcting - 200 fires on the very next update).
+ * checkpoints per maneuver, never re-fired once passed. These only decide
+ * *when* a cue fires, not what's spoken - speech/formatManeuverInstruction.ts
+ * reads the real live distance at the moment a checkpoint crossing is
+ * detected, so the driver hears an accurate, natural number rather than a
+ * fixed "500 metres"/"200 metres" every time. Farthest first - if GPS
+ * sampling is sparse enough to jump straight from outside 500m to inside
+ * 200m in one update, 500 fires first (briefly "late" but simple and
+ * self-correcting - 200 fires on the very next update).
  */
 export const MANEUVER_CHECKPOINTS_M = [500, 200, 50] as const;
 export type ManeuverCheckpoint = (typeof MANEUVER_CHECKPOINTS_M)[number];

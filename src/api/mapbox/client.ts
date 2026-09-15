@@ -15,9 +15,18 @@ export class MapboxApiError extends Error {
 }
 
 /** Trailing slash deliberate - see env.ts's withTrailingSlash doc comment on
- * why new URL(relative, base) needs one to append rather than replace. */
-const DIRECTIONS_BASE_URL = 'https://api.mapbox.com/directions/v5/mapbox/driving/';
-const GEOCODE_URL = 'https://api.mapbox.com/search/geocode/v6/forward';
+ * why new URL(relative, base) needs one to append rather than replace.
+ * driving-traffic (not plain driving) factors in current and historic
+ * traffic conditions - what actually makes a 'quickest' route choice mean
+ * anything, and improves the ETA math everywhere else in the app too. */
+const DIRECTIONS_BASE_URL = 'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/';
+/** Search Box API's one-shot forward search - unlike Geocoding v6 (used
+ * previously), this covers POI/business names as well as addresses, and
+ * (unlike Search Box's own /suggest+/retrieve pair) needs no session_token
+ * since it's a single request. */
+const GEOCODE_URL = 'https://api.mapbox.com/search/searchbox/v1/forward';
+/** Every destination search is scoped to Australia - see fetchGeocode. */
+const GEOCODE_COUNTRY = 'AU';
 
 /** Mapbox coordinate order is [longitude, latitude] - opposite of this
  * app's GeoPoint - everywhere a request is built. */
@@ -26,11 +35,15 @@ function formatCoordinate(point: GeoPoint): string {
 }
 
 export interface FetchDirectionsOptions {
-  /** Requests up to Mapbox's usual 3 candidate routes instead of just the
+  /** Requests up to Mapbox's usual 2-3 candidate routes instead of just the
    * one it would pick itself - the hazard-avoidance scorer needs more than
    * one option to choose between. Defaults on since that's the only reason
    * this app calls Directions at all. */
   alternatives?: boolean;
+  /** Mapbox's `exclude` param, e.g. 'motorway' for sidestreets-only routing
+   * (routeSelection.ts's routeTypeToRequestOptions). Comma-separate for
+   * more than one value; omitted entirely when undefined. */
+  exclude?: string;
   signal?: AbortSignal;
 }
 
@@ -41,7 +54,7 @@ export interface FetchDirectionsOptions {
  */
 export async function fetchDirections(
   waypoints: readonly GeoPoint[],
-  { alternatives = true, signal }: FetchDirectionsOptions = {}
+  { alternatives = true, exclude, signal }: FetchDirectionsOptions = {}
 ): Promise<MapboxDirectionsResponse> {
   const coordinates = waypoints.map(formatCoordinate).join(';');
   const url = new URL(coordinates, DIRECTIONS_BASE_URL);
@@ -49,6 +62,9 @@ export async function fetchDirections(
   url.searchParams.set('geometries', 'geojson');
   url.searchParams.set('steps', 'true');
   url.searchParams.set('overview', 'full');
+  if (exclude) {
+    url.searchParams.set('exclude', exclude);
+  }
   url.searchParams.set('access_token', env.mapboxAccessToken);
 
   let response: Response;
@@ -77,7 +93,11 @@ export interface FetchGeocodeOptions {
   signal?: AbortSignal;
 }
 
-/** Forward geocoding (place name/address -> coordinates) for destination search. */
+/** Forward search (address or business/POI name -> coordinates) for
+ * destination search, via Mapbox's Search Box API. Always scoped to
+ * Australia (GEOCODE_COUNTRY) - every address and business this app cares
+ * about is there, and it keeps an unrelated same-named result overseas
+ * from ever outranking the local one. */
 export async function fetchGeocode(
   query: string,
   { proximity, limit = 5, signal }: FetchGeocodeOptions = {}
@@ -85,6 +105,7 @@ export async function fetchGeocode(
   const url = new URL(GEOCODE_URL);
   url.searchParams.set('q', query);
   url.searchParams.set('limit', String(limit));
+  url.searchParams.set('country', GEOCODE_COUNTRY);
   url.searchParams.set('access_token', env.mapboxAccessToken);
   if (proximity) {
     url.searchParams.set('proximity', formatCoordinate(proximity));
