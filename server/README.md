@@ -24,7 +24,12 @@ npm run migrate        # applies migrations/ against DATABASE_URL
 ```
 
 Run locally with `vercel dev` once a Vercel project is linked, or exercise
-the handlers via `pnpm jest server/` from the repo root.
+the handlers via `pnpm jest server/` from the repo root. For the live
+end-to-end check (real HTTP + real Neon, inserts and cleans up one row):
+
+```sh
+pnpm jest --testMatch '**/server/e2e/*.test.ts'   # from repo root
+```
 
 ## Verify the ingest path
 
@@ -49,5 +54,6 @@ SELECT id, type, ST_AsText(location::geometry) FROM alerts ORDER BY created_at D
   for a handful of endpoints.
 - `alerts.location` is PostGIS `geography(Point,4326)` — `ST_DWithin`
   works in metres directly for the corridor query in Phase 1.
-- Redis is a cache only; live delivery is Expo push + polling, and
-  scheduled/queue work is Vercel Cron + QStash (see `../.windsurfrules`).
+- Redis is a cache only; live delivery is Expo push + polling, scheduled
+  jobs are GitHub Actions cron (see `../.github/workflows/`), and queued
+  work is QStash (see `../.windsurfrules`).

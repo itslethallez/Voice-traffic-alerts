@@ -25,7 +25,10 @@ side-streets-only routing).
   layer only, NOT a pub/sub broadcast transport
 - Ingestion: queue-based via Upstash QStash (HTTP-based, triggers Vercel
   functions), never synchronous scraping inline with API requests
-- Scheduled jobs: Vercel Cron Jobs — no node-cron, no worker process
+- Scheduled jobs: GitHub Actions cron, matching the existing
+  refresh-waze-alerts.yml / refresh-fixed-cameras.yml pattern — no
+  node-cron, no worker process, and no Vercel Cron (the repo has no
+  linked Vercel project, and GHA scheduling already works here)
 - Billing: RevenueCat
 - Error tracking: Sentry, wired in from the first commit
 - Dev/staging infra: Neon branch databases for dev (pairs with Vercel
