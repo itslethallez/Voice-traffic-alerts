@@ -4,10 +4,19 @@
   "private": true,
   "description": "Thin Vercel serverless API in front of the Neon Postgres database holding fixed camera locations and user-submitted reports. The Expo app never holds DB credentials directly - it only ever calls this.",
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0"
+    "@neondatabase/serverless": "^1.1.0",
+    "@sentry/node": "^10.74.0",
+    "@upstash/redis": "^1.38.4",
+    "node-pg-migrate": "^9.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@vercel/node": "^8.1.0",
     "typescript": "^5.7.0"
+  },
+  "scripts": {
+    "migrate": "node-pg-migrate up",
+    "migrate:down": "node-pg-migrate down",
+    "typecheck": "tsc"
   }
 }

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from '../lib/db';
+import { withSentry, captureException } from '../lib/sentry';
 
 /**
  * All fixed cameras, no pagination - SAPOL's own table is under 100 rows
@@ -7,7 +8,7 @@ import { sql } from '../lib/db';
  * small enough for one response. Cached at the edge for an hour since this
  * only changes when someone re-runs that script.
  */
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
@@ -28,7 +29,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
     res.status(200).json(rows);
   } catch (error) {
+    captureException(error);
     console.error('[api/cameras] query failed', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withSentry(handler);

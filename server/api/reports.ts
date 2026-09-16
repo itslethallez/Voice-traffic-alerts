@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from '../lib/db';
+import { withSentry, captureException } from '../lib/sentry';
 
 /**
  * Abuse prevention (deliberately the simplest of three options presented -
@@ -46,7 +47,7 @@ const REPORTS_SELECT_COLUMNS = `
   last_confirmed_at AS "lastConfirmedAt"
 `;
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'POST') {
     await handlePost(req, res);
     return;
@@ -120,6 +121,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse): Promise<void
     `;
     res.status(201).json(rows[0]);
   } catch (error) {
+    captureException(error);
     console.error('[api/reports] insert failed', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -149,6 +151,7 @@ async function handleGet(req: VercelRequest, res: VercelResponse): Promise<void>
     `;
     res.status(200).json(rows);
   } catch (error) {
+    captureException(error);
     console.error('[api/reports] query failed', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -209,6 +212,7 @@ async function handleGetNearby(req: VercelRequest, res: VercelResponse, deviceId
     `;
     res.status(200).json(rows);
   } catch (error) {
+    captureException(error);
     console.error('[api/reports] nearby query failed', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -268,6 +272,7 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse): Promise<v
           `;
     res.status(200).json(rows[0]);
   } catch (error) {
+    captureException(error);
     console.error('[api/reports] confirm failed', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -303,7 +308,10 @@ async function handleDelete(req: VercelRequest, res: VercelResponse): Promise<vo
     }
     res.status(200).json({ id: rows[0].id });
   } catch (error) {
+    captureException(error);
     console.error('[api/reports] delete failed', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withSentry(handler);
