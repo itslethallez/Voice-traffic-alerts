@@ -35,6 +35,14 @@ side-streets-only routing).
   preview deployments) + Upstash free tier for Redis/QStash — no local
   Docker; point at the real services from day one
 
+## Dev environment
+- The repo-root `.env` is the PROD reference. Nothing in dev reads it.
+  Verification runs, tests, migrations, and any ad-hoc script must use the
+  `DATABASE_URL` in `server/.env`, which points at a Neon *branch*.
+- Ask before running anything against a connection string you can't
+  identify as a branch — a DATABASE_URL copied from root `.env` is prod,
+  and "it's only an additive change" is not a reason to run it there.
+
 ## Non-negotiables
 - Every alert, regardless of source, MUST conform to the alert schema
   in /shared/alert-schema.ts before it touches the database. No source

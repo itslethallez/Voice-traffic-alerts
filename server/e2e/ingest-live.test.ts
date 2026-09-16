@@ -5,35 +5,58 @@
  *
  *   npx jest --runTestsByPath server/e2e/ingest-live.test.ts
  *
- * Needs DATABASE_URL + INGEST_SECRET in server/.env (falls back to the
- * repo-root .env). Inserts one test alert, verifies the PostGIS point, then
- * deletes that same row.
+ * Needs DATABASE_URL (a Neon BRANCH string) + INGEST_SECRET in
+ * server/.env. Deliberately reads ONLY server/.env: the repo-root .env
+ * holds the production DATABASE_URL and this test must never touch it
+ * (see .windsurfrules "Dev environment"). It also refuses to run if
+ * server/.env's DATABASE_URL is literally the prod string copied across.
+ * Inserts one test alert, verifies the PostGIS point, then deletes that
+ * same row.
  */
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-for (const envPath of [
-  path.join(__dirname, '..', '.env'),
-  path.join(__dirname, '..', '..', '.env'),
+function readEnvValue(envPath: string, key: string): string | undefined {
+  if (!fs.existsSync(envPath)) return undefined;
+  const m = fs.readFileSync(envPath, 'utf8').match(new RegExp(`^${key}=(.+)$`, 'm'));
+  return m?.[1].trim();
+}
+
+const serverEnvPath = path.join(__dirname, '..', '.env');
+for (const key of [
+  'DATABASE_URL',
+  'INGEST_SECRET',
+  'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN',
+  'SENTRY_DSN',
 ]) {
-  if (!fs.existsSync(envPath)) continue;
-  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
-  }
+  const value = readEnvValue(serverEnvPath, key);
+  if (value && !process.env[key]) process.env[key] = value;
 }
 process.env.INGEST_SECRET = process.env.INGEST_SECRET || 'dev-secret';
 
-const hasDb = Boolean(process.env.DATABASE_URL);
-// Deferred requires: lib/db reads DATABASE_URL at module load, so env must
-// be populated before these imports happen.
-const handler = require('../api/ingest').default as (
-  req: VercelRequest,
-  res: VercelResponse
-) => Promise<void>;
-const { sql } = require('../lib/db') as typeof import('../lib/db');
+const rootProdUrl = readEnvValue(path.join(__dirname, '..', '..', '.env'), 'DATABASE_URL');
+const dbUrl = process.env.DATABASE_URL;
+const isProdString = Boolean(dbUrl && rootProdUrl && dbUrl === rootProdUrl);
+const hasDb = Boolean(dbUrl) && !isProdString;
+if (!hasDb) {
+  console.warn(
+    isProdString
+      ? '[ingest-live] server/.env DATABASE_URL is the PROD string from the root .env - refusing to run. Use a Neon branch.'
+      : '[ingest-live] no DATABASE_URL in server/.env - skipping. Paste a Neon branch connection string first.'
+  );
+}
+// Deferred requires gated on hasDb: lib/db reads DATABASE_URL at module
+// load (and throws without it), so env must be populated first and the
+// requires must not happen at all when the test is skipping.
+const handler = (
+  hasDb ? require('../api/ingest').default : async () => {}
+) as (req: VercelRequest, res: VercelResponse) => Promise<void>;
+const { sql } = (
+  hasDb ? require('../lib/db') : { sql: null }
+) as typeof import('../lib/db');
 
 const TEST_ALERT = {
   type: 'police',
