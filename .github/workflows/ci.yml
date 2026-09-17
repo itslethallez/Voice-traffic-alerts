@@ -18,11 +18,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # tsc on this tree needs more than Node's default ~4GB heap.
+      # tsc on this tree needs more than Node's default ~4GB heap, and
+      # TS6's flow analysis overflows the default call stack.
       - name: Typecheck
         run: pnpm typecheck
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=6144 --stack-size=16384
 
       - name: Test
         run: pnpm test

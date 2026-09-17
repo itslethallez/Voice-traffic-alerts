@@ -5,6 +5,8 @@
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/rajdhani": "^0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/slider": "5.2.0",
     "@rnmapbox/maps": "^10.3.5",
@@ -23,6 +25,7 @@
     "expo-updates": "~57.0.15",
     "lucide-react-native": "^1.35.0",
     "mapbox-gl": "^3.29.0",
+    "puppeteer-core": "^25.11.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
@@ -54,7 +57,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node --stack-size=16384 node_modules/typescript/bin/tsc --noEmit",
     "test": "jest"
   },
   "private": true

@@ -59,23 +59,23 @@ side-streets-only routing).
 
 ## Code conventions
 - TypeScript strict mode, no `any` without a comment explaining why
-- One file per source integration under /backend/sources/
-- All spatial queries go through /backend/lib/postgis-helpers.ts,
+- One file per source integration under /server/sources/
+- All spatial queries go through /server/lib/postgis-helpers.ts,
   never raw inline SQL scattered across services
 - Tests live next to the file they test (*.test.ts, colocated
   __tests__/ directories)
 
 ## UI rules (enforced, not aspirational — see checklist below)
 - Every screen imports spacing, colour and type values from
-  /app/theme/tokens.ts. No hardcoded hex codes, no hardcoded pixel
+  /src/theme/tokens.ts. No hardcoded hex codes, no hardcoded pixel
   values for padding/margin/gap anywhere in a screen or component file.
 - Absolute positioning (`position: 'absolute'`) is banned outside of
-  /app/components/MapOverlayPanel.tsx. If a screen "needs" absolute
+  /src/components/MapOverlayPanel.tsx. If a screen "needs" absolute
   positioning to stop things overlapping, that's a sign it should be
   using a layout primitive (flex row/column with gap) instead — fix
   the layout, don't patch it with positioning.
 - Every screen is built from the base component set in
-  /app/components/base/ (Card, AlertPill, BottomSheet, MapOverlayPanel,
+  /src/components/base/ (Card, AlertPill, BottomSheet, MapOverlayPanel,
   ScreenContainer). No screen defines its own one-off card, pill, or
   sheet styling — extend or compose the base components.
 - ScreenContainer enforces safe-area insets and a consistent outer

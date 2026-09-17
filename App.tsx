@@ -8,6 +8,8 @@ import {
   Archivo_700Bold,
   Archivo_900Black,
 } from '@expo-google-fonts/archivo';
+import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import { Rajdhani_600SemiBold, Rajdhani_700Bold } from '@expo-google-fonts/rajdhani';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { WazeAlert } from './src/api/waze/types';
 import { BottomNav, type NavTab } from './src/navigation/BottomNav';
@@ -17,9 +19,14 @@ import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { useDriveLoop } from './src/screens/useDriveLoop';
 import { useFacebookNotificationSource } from './src/notifications/useFacebookNotificationSource';
+import { DesignSystemPreviewScreen } from './src/screens/DesignSystemPreviewScreen';
 import { hud } from './src/theme/colors';
 
 const REPORT_FOCUS_DURATION_MS = 5000;
+
+/** Debug toggle: set true to mount the design-system preview instead of the
+ * app — the base components in src/components/base render against it. */
+const SHOW_DESIGN_SYSTEM_PREVIEW = false;
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -27,6 +34,11 @@ export default function App() {
     Archivo_500Medium,
     Archivo_700Bold,
     Archivo_900Black,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Rajdhani_600SemiBold,
+    Rajdhani_700Bold,
   });
   const [tab, setTab] = useState<NavTab>('map');
   const [focusedAlert, setFocusedAlert] = useState<WazeAlert | null>(null);
@@ -51,6 +63,15 @@ export default function App() {
 
   if (!fontsLoaded) {
     return <View style={styles.loading} />;
+  }
+
+  if (SHOW_DESIGN_SYSTEM_PREVIEW) {
+    return (
+      <SafeAreaProvider>
+        <DesignSystemPreviewScreen />
+        <StatusBar style="light" />
+      </SafeAreaProvider>
+    );
   }
 
   return (
