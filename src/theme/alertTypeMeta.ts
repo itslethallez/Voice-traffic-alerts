@@ -1,6 +1,6 @@
 import { policeSubtypeLabel } from '../api/waze/policeSubtype';
 import type { WazeAlertType } from '../api/waze/types';
-import { colors } from './colors';
+import { colors } from './tokens';
 
 export interface AlertTypeMeta {
   /** Short label for radar-UI markers - a presentation concern, kept
@@ -18,17 +18,23 @@ export interface AlertTypeMeta {
   letter: string;
 }
 
+/** Marker colours follow AlertPill's PILL_META severity tiers (police
+ * informational blue, traffic/accident critical red, closure/hazard caution
+ * amber, roadkill brand teal) so a pin's colour matches its filter pill. */
 const ALERT_TYPE_META: Partial<Record<string, AlertTypeMeta>> = {
-  POLICE: { label: 'Police', color: colors.accent, emoji: '🚓', letter: 'P' },
-  ACCIDENT: { label: 'Crash', color: '#E85D5D', emoji: '💥', letter: 'X' },
-  HAZARD: { label: 'Hazard', color: colors.warning, emoji: '⚠️', letter: 'H' },
-  ROAD_CLOSED: { label: 'Closed', color: '#E85D5D', emoji: '🚧', letter: 'C' },
-  JAM: { label: 'Jam', color: colors.warning, emoji: '🚗', letter: 'J' },
+  POLICE: { label: 'Police', color: colors.coolBlue, emoji: '🚓', letter: 'P' },
+  ACCIDENT: { label: 'Crash', color: colors.critical, emoji: '💥', letter: 'X' },
+  HAZARD: { label: 'Hazard', color: colors.caution, emoji: '⚠️', letter: 'H' },
+  ROAD_CLOSED: { label: 'Closed', color: colors.caution, emoji: '🚧', letter: 'C' },
+  JAM: { label: 'Jam', color: colors.critical, emoji: '🚗', letter: 'J' },
+  // Normalized-schema type arriving via the corridor feed (mapped in
+  // api/backend/corridorAlert.ts) - no Waze equivalent.
+  ROADKILL: { label: 'Roadkill', color: colors.accent, emoji: '🦘', letter: 'R' },
 };
 
 const DEFAULT_ALERT_TYPE_META: AlertTypeMeta = {
   label: 'Alert',
-  color: colors.inkFaint,
+  color: colors.textMuted,
   emoji: '❗',
   letter: '!',
 };

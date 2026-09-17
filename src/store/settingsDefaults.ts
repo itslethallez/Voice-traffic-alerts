@@ -1,3 +1,4 @@
+import type { AlertType } from '../../shared/alert-schema';
 import type { WazeAlertType } from '../api/waze/types';
 
 export type AlertCategory = 'POLICE' | 'ACCIDENT' | 'HAZARD' | 'ROAD_CLOSED' | 'JAM';
@@ -9,6 +10,44 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
   'ROAD_CLOSED',
   'JAM',
 ];
+
+/**
+ * The six normalized alert categories from shared/alert-schema.ts - the
+ * Drive screen's filter pills, and the taxonomy every backend alert already
+ * arrives in. Distinct from AlertCategory above, which is the legacy
+ * Waze-shaped SPEAK THESE voice toggles: this set matches the alert schema
+ * 1:1, including 'roadkill', which has no Waze feed equivalent. Type-only
+ * import of AlertType keeps zod out of this module's runtime graph.
+ */
+export type AlertFilterCategory = AlertType;
+
+export const ALERT_FILTER_CATEGORIES: AlertFilterCategory[] = [
+  'police',
+  'traffic',
+  'accident',
+  'closure',
+  'roadkill',
+  'hazard',
+];
+
+/**
+ * Which filter-pill category each known Waze feed type belongs to - e.g.
+ * Waze's JAM is the pill labelled "traffic". Feed types not listed here
+ * (unrecognized upstream values) aren't pill-controllable: they keep
+ * whatever behaviour they already had.
+ */
+const WAZE_TYPE_TO_FILTER: Partial<Record<string, AlertFilterCategory>> = {
+  POLICE: 'police',
+  JAM: 'traffic',
+  ACCIDENT: 'accident',
+  ROAD_CLOSED: 'closure',
+  ROADKILL: 'roadkill',
+  HAZARD: 'hazard',
+};
+
+export function wazeTypeToAlertFilter(type: WazeAlertType): AlertFilterCategory | null {
+  return WAZE_TYPE_TO_FILTER[type] ?? null;
+}
 
 /** "Announcement distance slider, 500m to 20km." Only the upper bound is
  * user-configurable - the 300m lower bound stays fixed (announcing
@@ -61,6 +100,11 @@ export const ROUTE_TYPES: RouteType[] = ['quickest', 'safest', 'sidestreets'];
 
 export interface SettingsValues {
   categoriesEnabled: Record<AlertCategory, boolean>;
+  /** The Drive screen's category-filter pills - true means the category is
+   * shown on the map/sheet and eligible for voice. Defaults all-on; the
+   * persisted store merges over this, so older installs without the key
+   * pick the defaults up automatically. */
+  alertTypeFilters: Record<AlertFilterCategory, boolean>;
   announceDistanceMeters: number;
   briefingRadiusMeters: number;
   voiceVolume: number;
@@ -79,6 +123,14 @@ export const defaultSettingsValues: SettingsValues = {
     ROAD_CLOSED: true,
     JAM: true,
   },
+  alertTypeFilters: {
+    police: true,
+    traffic: true,
+    accident: true,
+    closure: true,
+    roadkill: true,
+    hazard: true,
+  },
   announceDistanceMeters: DEFAULT_ANNOUNCE_DISTANCE_METERS,
   briefingRadiusMeters: DEFAULT_BRIEFING_RADIUS_METERS,
   voiceVolume: DEFAULT_VOICE_VOLUME,
@@ -92,4 +144,27 @@ export function enabledTypesFromSettings(
   categoriesEnabled: Record<AlertCategory, boolean>
 ): ReadonlySet<WazeAlertType> {
   return new Set(ALERT_CATEGORIES.filter((category) => categoriesEnabled[category]));
+}
+
+/**
+ * The effective enabled-type set once the Drive screen's filter pills are
+ * layered on top of the SPEAK THESE voice toggles: a Waze type stays in
+ * only when *both* switches allow it (a hidden category is never spoken or
+ * shown, and a pill can't re-enable a category voice-muted in Settings).
+ * 'ROADKILL' is a normalized-schema type with no SPEAK THESE entry, so its
+ * pill alone decides. Unrecognized upstream feed types keep their existing
+ * behaviour - enabledTypesFromSettings only ever yields the five known
+ * categories, so they were never announceable anyway.
+ */
+export function enabledTypesFromFilters(
+  categoriesEnabled: Record<AlertCategory, boolean>,
+  alertTypeFilters: Record<AlertFilterCategory, boolean>
+): ReadonlySet<WazeAlertType> {
+  const enabled = new Set<WazeAlertType>();
+  for (const type of enabledTypesFromSettings(categoriesEnabled)) {
+    const filter = wazeTypeToAlertFilter(type);
+    if (filter !== null && alertTypeFilters[filter]) enabled.add(type);
+  }
+  if (alertTypeFilters.roadkill) enabled.add('ROADKILL');
+  return enabled;
 }

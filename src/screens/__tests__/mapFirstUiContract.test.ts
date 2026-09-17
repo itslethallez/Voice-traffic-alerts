@@ -5,12 +5,12 @@ const root = path.resolve(__dirname, '../../..');
 const source = (relative: string) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 describe('simplified map-first UI contract', () => {
-  it('exposes Map, Reports, and Settings as accessible primary tabs', () => {
+  it('exposes Map and Settings as accessible primary tabs', () => {
     const nav = source('src/navigation/BottomNav.tsx');
 
     expect(nav).toContain("{ key: 'map', label: 'MAP' }");
-    expect(nav).toContain("{ key: 'reports', label: 'REPORTS' }");
     expect(nav).toContain("{ key: 'settings', label: 'SETTINGS' }");
+    expect(nav).not.toContain("'reports'");
     expect(nav).toContain('accessibilityRole="tab"');
     expect(nav).toContain('accessibilityState={{ selected: isActive }}');
   });
@@ -21,7 +21,7 @@ describe('simplified map-first UI contract', () => {
     expect(drive).toContain('<RadarMap');
     expect(drive).toContain('minimal');
     expect(drive).toContain('<ReportBar');
-    expect(drive).toContain('LIVE REPORTS');
+    expect(drive).toContain('alerts nearby');
     expect(drive).not.toContain('<ScrollView');
     expect(drive).toContain('<Speedometer');
     expect(drive).toContain('latestAnnouncement');
@@ -46,14 +46,17 @@ describe('simplified map-first UI contract', () => {
     expect(webMap).toContain('accessibilityLabel');
   });
 
-  it('labels the second screen as a closest-first list of current reports', () => {
-    const reports = source('src/screens/ReportsScreen.tsx');
+  it('keeps the unverified community intake reviewable inside the Drive sheet', () => {
+    // ReportsScreen was removed when its list/focus behavior folded into the
+    // map sheet, but the Facebook-review queue is the one piece with no
+    // other surface — it must stay reachable or unverified fb_agent notices
+    // would have no human-in-the-loop checkpoint in the app.
+    const drive = source('src/screens/DriveScreen.tsx');
 
-    expect(reports).toContain('CURRENT REPORTS');
-    expect(reports).toContain('CLOSEST FIRST');
-    expect(reports).toContain('accessibilityRole="button"');
-    expect(reports).toContain('sortCurrentReportsByDistance');
-    expect(reports).toContain('<PoliceLightBar');
+    expect(drive).toContain('COMMUNITY INTAKE');
+    expect(drive).toContain('useCommunityReportStore');
+    expect(drive).toContain('dismissCandidate');
+    expect(drive).toContain('UNVERIFIED');
 
     const nativeMap = source('src/screens/radar/RadarMap.tsx');
     expect(nativeMap).toContain('selectedAlert');

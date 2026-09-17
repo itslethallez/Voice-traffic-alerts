@@ -1,6 +1,11 @@
 import { env } from '../../config/env';
 import type { GeoPoint } from '../../geo/types';
-import type { ManualReportCategory, RemoteFixedCamera, RemoteManualReport } from './types';
+import type {
+  ManualReportCategory,
+  RemoteCorridorAlert,
+  RemoteFixedCamera,
+  RemoteManualReport,
+} from './types';
 
 export class BackendApiError extends Error {
   status: number | null;
@@ -110,4 +115,34 @@ export async function deleteManualReport(input: DeleteManualReportInput): Promis
 
 export async function fetchFixedCameras(): Promise<RemoteFixedCamera[]> {
   return requestJson<RemoteFixedCamera[]>('cameras');
+}
+
+export interface FetchCorridorAlertsInput {
+  position: GeoPoint;
+  /** Degrees clockwise from north, or null when the driver is stationary
+   * enough that heading is meaningless (the endpoint degrades to a plain
+   * radius in that case). */
+  headingDeg: number | null;
+  radiusMeters: number;
+  /** The caller's enabled categories (normalized schema types) - filtered
+   * server-side so a hidden category is never even downloaded. */
+  types: string[];
+}
+
+/** Corridor-relevant alerts from the normalized `alerts` table: within a
+ * buffer ahead of the direction of travel, not just on the exact road -
+ * see server/lib/postgis-helpers.ts for the PostGIS query itself. */
+export async function fetchCorridorAlerts(
+  input: FetchCorridorAlertsInput
+): Promise<RemoteCorridorAlert[]> {
+  const params = new URLSearchParams({
+    lat: String(input.position.latitude),
+    lng: String(input.position.longitude),
+    radiusMeters: String(input.radiusMeters),
+    types: input.types.join(','),
+  });
+  if (input.headingDeg !== null) {
+    params.set('heading', String(input.headingDeg));
+  }
+  return requestJson<RemoteCorridorAlert[]>(`alerts/nearby?${params.toString()}`);
 }

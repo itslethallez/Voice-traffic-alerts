@@ -15,7 +15,6 @@ import type { WazeAlert } from './src/api/waze/types';
 import { BottomNav, type NavTab } from './src/navigation/BottomNav';
 import { DriveScreen } from './src/screens/DriveScreen';
 import { NavigationSearchScreen } from './src/screens/NavigationSearchScreen';
-import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { useDriveLoop } from './src/screens/useDriveLoop';
 import { useFacebookNotificationSource } from './src/notifications/useFacebookNotificationSource';
@@ -46,7 +45,7 @@ export default function App() {
 
   // The trip lifecycle stays at the application level, and all screens stay
   // mounted. This preserves the existing Mapbox/location crash workaround
-  // while making the primary navigation map → reports → settings.
+  // while making the primary navigation map → settings.
   useDriveLoop();
   const notificationSource = useFacebookNotificationSource();
 
@@ -85,11 +84,6 @@ export default function App() {
               onOpenSearch={() => setShowNavigationSearch(true)}
             />
           </View>
-          <View style={[styles.screen, tab !== 'reports' && styles.hiddenScreen]}>
-            <ReportsScreen
-              onSelectAlert={focusAlertOnMap}
-            />
-          </View>
           <View style={[styles.screen, tab !== 'settings' && styles.hiddenScreen]}>
             <SettingsScreen
               onClose={() => setTab('map')}
@@ -98,7 +92,7 @@ export default function App() {
           </View>
         </View>
         <BottomNav active={tab} onChange={setTab} />
-        <StatusBar style={tab === 'reports' ? 'dark' : 'light'} />
+        <StatusBar style="light" />
         {showNavigationSearch ? (
           <View style={styles.screen}>
             <NavigationSearchScreen

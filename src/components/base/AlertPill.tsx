@@ -30,6 +30,11 @@ export interface AlertPillProps {
   /** Hide the leading colour dot when the pill sits next to a category
    * icon that already carries the colour. */
   showDot?: boolean;
+  /** `false` renders the disabled state: near-opaque dark surface with
+   * muted dot/label. Never dim a selected pill with `opacity` — the tinted
+   * background is only 14% alpha, so fading it further over a map reads as
+   * invisible. The off state needs to be *more* opaque, not less. */
+  enabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -38,7 +43,7 @@ export interface AlertPillProps {
  * with a colour dot and an uppercase label. All colour comes from
  * PILL_META keyed on `type`.
  */
-export function AlertPill({ type, label, size = 'md', showDot = true, style }: AlertPillProps) {
+export function AlertPill({ type, label, size = 'md', showDot = true, enabled = true, style }: AlertPillProps) {
   const meta = PILL_META[type];
   const small = size === 'sm';
   return (
@@ -46,8 +51,8 @@ export function AlertPill({ type, label, size = 'md', showDot = true, style }: A
       style={[
         styles.pill,
         {
-          backgroundColor: alpha(meta.color, 0.14),
-          borderColor: alpha(meta.color, 0.4),
+          backgroundColor: enabled ? alpha(meta.color, 0.14) : alpha(colors.charcoal, 0.88),
+          borderColor: enabled ? alpha(meta.color, 0.4) : colors.borderStrong,
           paddingHorizontal: small ? spacing.xs : spacing.sm,
           paddingVertical: small ? spacing.xxs : spacing.xs,
           gap: spacing.xs,
@@ -55,11 +60,14 @@ export function AlertPill({ type, label, size = 'md', showDot = true, style }: A
         style,
       ]}
     >
-      {showDot ? <View style={[styles.dot, { backgroundColor: meta.color }]} /> : null}
+      {showDot ? <View style={[styles.dot, { backgroundColor: enabled ? meta.color : colors.textMuted }]} /> : null}
       <Text
         style={[
           styles.label,
-          { color: meta.color, fontSize: small ? typography.fontSize.eyebrow : typography.fontSize.caption },
+          {
+            color: enabled ? meta.color : colors.textSecondary,
+            fontSize: small ? typography.fontSize.eyebrow : typography.fontSize.caption,
+          },
         ]}
       >
         {(label ?? meta.label).toUpperCase()}

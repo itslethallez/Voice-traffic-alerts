@@ -1,9 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { hud } from '../theme/colors';
-import { fontFamily } from '../theme/typography';
+import { alpha, colors, radii, typography } from '../theme/tokens';
 
-export type NavTab = 'map' | 'reports' | 'settings';
+export type NavTab = 'map' | 'settings';
 
 interface TabDef {
   key: NavTab;
@@ -12,7 +11,6 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: 'map', label: 'MAP' },
-  { key: 'reports', label: 'REPORTS' },
   { key: 'settings', label: 'SETTINGS' },
 ];
 
@@ -21,9 +19,8 @@ interface BottomNavProps {
   onChange: (tab: NavTab) => void;
 }
 
-/** Matches DriveScreen's topBar background (hud.ground) so the header and
- * footer read as one consistent dark chrome, rather than the previous
- * white bar that clashed with the dark map-first screens above it. */
+/** Two-tab chrome — the alert list moved into DriveScreen's bottom sheet,
+ * so the only destinations left are the map itself and settings. */
 export function BottomNav({ active, onChange }: BottomNavProps) {
   const insets = useSafeAreaInsets();
 
@@ -53,9 +50,9 @@ const styles = StyleSheet.create({
   root: {
     minHeight: 64,
     flexDirection: 'row',
-    backgroundColor: hud.ground,
+    backgroundColor: colors.background,
     borderTopWidth: 1,
-    borderTopColor: hud.rule,
+    borderTopColor: colors.border,
   },
   tab: {
     minHeight: 58,
@@ -65,27 +62,27 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   tabActive: {
-    backgroundColor: 'rgba(38, 185, 154, 0.12)',
+    backgroundColor: alpha(colors.accent, 0.12),
   },
   tabPressed: {
     opacity: 0.72,
   },
   label: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    color: hud.muted,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textMuted,
   },
   labelActive: {
-    color: hud.accent,
+    color: colors.accent,
   },
   indicator: {
     width: 28,
     height: 3,
-    borderRadius: 2,
+    borderRadius: radii.sm,
     backgroundColor: 'transparent',
   },
   indicatorActive: {
-    backgroundColor: hud.accent,
+    backgroundColor: colors.accent,
   },
 });

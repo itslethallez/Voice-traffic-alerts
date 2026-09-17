@@ -134,6 +134,10 @@ interface TripStoreState {
    * driverPosition/driverHeadingDeg above. */
   driverSpeedKmh: number;
   visibleAlerts: WazeAlert[];
+  /** ms epoch of the last successful alert fetch - the Drive sheet's
+   * "Live · {n}m ago" header. Stays at the last *successful* fetch on
+   * failure, so a growing age doubles as a staleness signal. */
+  alertsFetchedAtMs: number | null;
   /** Read-only mirror of tripRuntime.ts's getActiveFixedCameras() (the
    * live central-DB fetch, falling back to the bundled SAPOL snapshot) -
    * same "radar UI mirror" pattern as driverPosition above. Never filtered
@@ -180,6 +184,7 @@ interface TripStoreState {
   setLocationError: (message: string | null) => void;
   setDriverPosition: (position: GeoPoint, headingDeg: number, speedKmh: number) => void;
   setVisibleAlerts: (alerts: WazeAlert[]) => void;
+  setAlertsFetchedAtMs: (atMs: number) => void;
   setFixedCameras: (cameras: FixedSpeedCamera[]) => void;
   setTripStartedAtMs: (atMs: number) => void;
 }
@@ -193,6 +198,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   driverHeadingDeg: 0,
   driverSpeedKmh: 0,
   visibleAlerts: [],
+  alertsFetchedAtMs: null,
   fixedCameras: [],
   manualReports: [],
   nearbyReports: [],
@@ -377,6 +383,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   setDriverPosition: (position, headingDeg, speedKmh) =>
     set({ driverPosition: position, driverHeadingDeg: headingDeg, driverSpeedKmh: speedKmh }),
   setVisibleAlerts: (alerts) => set({ visibleAlerts: alerts }),
+  setAlertsFetchedAtMs: (atMs) => set({ alertsFetchedAtMs: atMs }),
   setFixedCameras: (cameras) => set({ fixedCameras: cameras }),
   setTripStartedAtMs: (atMs) => set({ tripStartedAtMs: atMs }),
 }));

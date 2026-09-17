@@ -5,7 +5,7 @@ DB credentials — it only calls this.
 
 ## Layout
 
-- `api/` — one Vercel function per endpoint (`/api/reports`, `/api/cameras`, `/api/ingest`)
+- `api/` — one Vercel function per endpoint (`/api/reports`, `/api/cameras`, `/api/ingest`, `/api/alerts/nearby`)
 - `lib/` — `db.ts` (Neon), `redis.ts` (Upstash cache), `sentry.ts`, `notify.ts` (alert fan-out)
 - `migrations/` — node-pg-migrate migrations for the `alerts` table and onward
 - `../shared/alert-schema.ts` — the Zod schema every alert is validated against at `/api/ingest`

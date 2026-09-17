@@ -2,8 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { X } from 'lucide-react-native';
 import { stopNavigation } from '../../navigation/navigationRuntime';
 import { useNavigationStore } from '../../store/useNavigationStore';
-import { hud, instrument } from '../../theme/colors';
-import { fontFamily } from '../../theme/typography';
+import { colors, radii, spacing, typography } from '../../theme/tokens';
 import { formatCompactDistance } from './formatCompactDistance';
 
 function formatMinutesRemaining(etaMs: number, nowMs: number): string {
@@ -56,7 +55,7 @@ export function NavigationStatusBar({ nowMs }: { nowMs: number }) {
         accessibilityRole="button"
         accessibilityLabel="End navigation"
       >
-        <X size={18} strokeWidth={2.4} color={instrument.paper} />
+        <X size={18} strokeWidth={2.4} color={colors.textPrimary} />
         <Text style={styles.endButtonLabel}>END</Text>
       </Pressable>
     </View>
@@ -68,58 +67,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    marginHorizontal: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-    backgroundColor: hud.ground,
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.navigation,
   },
   info: {
     flex: 1,
     minWidth: 0,
   },
   status: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    letterSpacing: 1,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.navigation,
   },
   statusError: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    letterSpacing: 0.5,
-    color: hud.sevHighText,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.critical,
   },
   eta: {
-    fontFamily: fontFamily.black,
-    fontSize: 16,
-    letterSpacing: 0.5,
-    color: instrument.paper,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
   },
   meta: {
-    marginTop: 2,
-    fontFamily: fontFamily.medium,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    color: hud.muted,
+    marginTop: spacing.xxs,
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textMuted,
   },
   endButton: {
     flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: hud.sevHighText,
+    gap: spacing.xxs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: colors.critical,
   },
   endButtonLabel: {
-    fontFamily: fontFamily.black,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: instrument.paper,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textPrimary,
   },
 });

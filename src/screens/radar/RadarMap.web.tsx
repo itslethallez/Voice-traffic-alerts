@@ -8,12 +8,11 @@ import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
 import { env } from '../../config/env';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
-import { enabledTypesFromSettings } from '../../store/settingsDefaults';
+import { enabledTypesFromFilters } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { hud } from '../../theme/colors';
-import { fontFamily } from '../../theme/typography';
+import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
 import { formatCompactDistance } from './formatCompactDistance';
 
 // Keep Mapbox GL's very deep style-expression generics outside the Expo/RN
@@ -46,6 +45,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
   const nearbyReports = useTripStore((state) => state.nearbyReports);
   const fixedCameras = useTripStore((state) => state.fixedCameras);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
+  const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
 
   useEffect(() => {
@@ -72,20 +72,20 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
   }, [rangeToggleToken]);
 
   const mapVisibleCameras = useMemo(() => {
-    if (!driverPosition || !categoriesEnabled.POLICE) return [];
+    if (!driverPosition || !categoriesEnabled.POLICE || !alertTypeFilters.police) return [];
     return fixedCameras.filter(
       (camera) => haversineDistance(driverPosition, camera.position) <= announceDistanceMeters
     );
-  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, announceDistanceMeters]);
+  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, alertTypeFilters.police, announceDistanceMeters]);
 
   const mapVisibleAlerts = useMemo(() => {
-    const enabledTypes = enabledTypesFromSettings(categoriesEnabled);
+    const enabledTypes = enabledTypesFromFilters(categoriesEnabled, alertTypeFilters);
     return [
       ...visibleAlerts,
       ...visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters),
       ...visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters),
     ].filter((alert) => enabledTypes.has(alert.type));
-  }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, categoriesEnabled]);
+  }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, categoriesEnabled, alertTypeFilters]);
 
   const mapRenderableAlerts = useMemo(() => {
     if (!focusedAlert || mapVisibleAlerts.some((alert) => alert.alert_id === focusedAlert.alert_id)) {
@@ -134,7 +134,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
       Object.assign(driver.style, {
         width: '24px',
         height: '30px',
-        background: '#ffffff',
+        background: colors.white,
         clipPath: 'polygon(50% 0, 100% 100%, 50% 78%, 0 100%)',
         filter: 'drop-shadow(0 3px 5px rgba(0,0,0,.65))',
       });
@@ -162,8 +162,8 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
         width: '32px',
         height: '24px',
         borderRadius: '6px',
-        border: `2px solid ${hud.accent}`,
-        background: '#061B1F',
+        border: `2px solid ${colors.textPrimary}`,
+        background: colors.surface,
         boxSizing: 'border-box',
       });
       const cameraBump = document.createElement('span');
@@ -174,7 +174,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
         width: '10px',
         height: '6px',
         borderRadius: '3px 3px 0 0',
-        background: hud.accent,
+        background: colors.textPrimary,
       });
       const cameraLens = document.createElement('span');
       Object.assign(cameraLens.style, {
@@ -184,8 +184,8 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
         width: '10px',
         height: '10px',
         borderRadius: '50%',
-        border: `2px solid ${hud.accent}`,
-        background: '#0D3A40',
+        border: `2px solid ${colors.textPrimary}`,
+        background: colors.surface,
         boxSizing: 'border-box',
       });
       cameraBody.append(cameraLens);
@@ -203,28 +203,21 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
       marker.type = 'button';
       marker.setAttribute('aria-label', `${meta.label} report${alert.street ? ` on ${alert.street}` : ''}`);
       marker.textContent = meta.letter;
-      const color = alert.type === 'POLICE'
-        ? '#3978C5'
-        : alert.type === 'ACCIDENT' || alert.type === 'ROAD_CLOSED'
-          ? '#E34F45'
-          : alert.type === 'HAZARD' || alert.type === 'JAM'
-            ? '#E8930C'
-            : meta.color;
       Object.assign(marker.style, {
         width: '36px',
         height: '36px',
         borderRadius: alert.type === 'POLICE' ? '4px' : '50%',
-        border: focusedAlert?.alert_id === alert.alert_id ? `4px solid ${hud.accent}` : '3px solid #fff',
-        background: color,
-        color: '#fff',
-        font: '800 14px Archivo, Arial, sans-serif',
-        boxShadow: '0 5px 12px rgba(0,0,0,.5)',
+        border: focusedAlert?.alert_id === alert.alert_id ? `4px solid ${colors.accent}` : `3px solid ${colors.white}`,
+        background: meta.color,
+        color: colors.white,
+        font: `700 14px ${typography.fontFamily.display}, Arial, sans-serif`,
+        boxShadow: `0 5px 12px ${alpha(colors.charcoal, 0.5)}`,
         cursor: 'pointer',
       });
       if (alert.type === 'POLICE') {
         marker.textContent = '';
         const lights = document.createElement('span');
-        Object.assign(lights.style, { position: 'absolute', top: '3px', left: '6px', right: '6px', height: '7px', borderRadius: '4px', background: 'linear-gradient(90deg,#ff3d3d 0 50%,#3d6bff 50%)' });
+        Object.assign(lights.style, { position: 'absolute', top: '3px', left: '6px', right: '6px', height: '7px', borderRadius: '4px', background: `linear-gradient(90deg,${colors.critical} 0 50%,${colors.coolBlue} 50%)` });
         const letter = document.createElement('span');
         letter.textContent = 'P';
         Object.assign(letter.style, { position: 'absolute', left: '0', right: '0', bottom: '4px' });
@@ -317,7 +310,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
           accessibilityLabel="RECENTER ON MY LOCATION"
           accessibilityHint="Centers the map on your current location"
         >
-          <LocateFixed size={20} strokeWidth={2.2} color={hud.accent} />
+          <LocateFixed size={20} strokeWidth={2.2} color={colors.accent} />
         </Pressable>
         <Pressable
           style={styles.zoomButton}
@@ -348,61 +341,61 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     position: 'relative',
-    backgroundColor: hud.mapGround,
+    backgroundColor: colors.background,
     overflow: 'hidden',
   },
   fallback: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
+    padding: spacing.xl,
   },
   fallbackTitle: {
-    fontFamily: fontFamily.bold,
-    fontSize: 15,
-    letterSpacing: 1.5,
-    color: hud.rowTitle,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.body,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textPrimary,
   },
   fallbackCopy: {
-    marginTop: 8,
-    fontFamily: fontFamily.medium,
-    fontSize: 13,
+    marginTop: spacing.xs,
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
     lineHeight: 20,
-    color: hud.muted,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   rangeLabelBadge: {
     position: 'absolute',
     alignSelf: 'center',
     top: 78,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    backgroundColor: 'rgba(6,27,31,0.94)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.lg,
+    backgroundColor: alpha(colors.charcoal, 0.94),
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
   },
   rangeLabelText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
   },
   mapControls: {
     position: 'absolute',
-    right: 14,
+    right: spacing.sm,
     top: 128,
     flexDirection: 'column',
-    gap: 8,
+    gap: spacing.xs,
   },
   recenterButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(6,27,31,0.94)',
+    backgroundColor: alpha(colors.charcoal, 0.94),
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
   },
   recenterButtonDisabled: {
     opacity: 1,
@@ -410,24 +403,24 @@ const styles = StyleSheet.create({
   zoomButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(6,27,31,0.94)',
+    backgroundColor: alpha(colors.charcoal, 0.94),
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
   },
   zoomButtonGlyph: {
-    fontFamily: fontFamily.bold,
-    fontSize: 18,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
     lineHeight: 16,
-    color: hud.accent,
+    color: colors.accent,
   },
   zoomButtonLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 8,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
     lineHeight: 10,
-    letterSpacing: 0.5,
-    color: hud.accent,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.accent,
   },
 });

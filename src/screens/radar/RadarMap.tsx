@@ -13,13 +13,12 @@ import { nearestAlertToDriver } from '../../geo/nearestAlert';
 import { announcementLocation, resolveAreaName } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
-import { enabledTypesFromSettings } from '../../store/settingsDefaults';
+import { enabledTypesFromFilters } from '../../store/settingsDefaults';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { hud, instrument } from '../../theme/colors';
-import { fontFamily } from '../../theme/typography';
+import { colors, radii, spacing, typography } from '../../theme/tokens';
 import { ClosestReportPanel } from './ClosestReportPanel';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
@@ -158,6 +157,7 @@ export function RadarMap({
   const confirmNearbyReport = useTripStore((state) => state.confirmNearbyReport);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
+  const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
   const navigationStatus = useNavigationStore((state) => state.status);
   const activeRoute = useNavigationStore((state) => state.activeRoute);
@@ -174,11 +174,15 @@ export function RadarMap({
 
   /** Same enabled-categories state that already drives speech filtering
    * (engine/selectAlerts.ts, engine/selectBriefingAlerts.ts both take this
-   * same enabledTypesFromSettings() result as their `enabledTypes` option)
+   * same enabledTypesFromFilters() result as their `enabledTypes` option)
    * - reused here, not reimplemented, so a category switched off in
-   * Settings disappears from the map the same instant it stops being
-   * announced, via the exact same source of truth. */
-  const enabledTypes = useMemo(() => enabledTypesFromSettings(categoriesEnabled), [categoriesEnabled]);
+   * Settings or via the Drive screen's filter pills disappears from the
+   * map the same instant it stops being announced, via the exact same
+   * source of truth. */
+  const enabledTypes = useMemo(
+    () => enabledTypesFromFilters(categoriesEnabled, alertTypeFilters),
+    [categoriesEnabled, alertTypeFilters]
+  );
   const mapVisibleAlerts = useMemo(() => {
     const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
     // Each report's own category gates it now, not a blanket POLICE check -
@@ -245,11 +249,11 @@ export function RadarMap({
    * every camera in the whole (statewide) dataset at once.
    */
   const mapVisibleCameras = useMemo(() => {
-    if (!driverPosition || !categoriesEnabled.POLICE) return [];
+    if (!driverPosition || !categoriesEnabled.POLICE || !alertTypeFilters.police) return [];
     return fixedCameras.filter(
       (camera) => haversineDistance(driverPosition, camera.position) <= announceDistanceMeters
     );
-  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, announceDistanceMeters]);
+  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, alertTypeFilters.police, announceDistanceMeters]);
 
   const nearbyReportsById = useMemo(() => new Map(nearbyReports.map((report) => [report.id, report])), [nearbyReports]);
 
@@ -635,11 +639,11 @@ export function RadarMap({
           <Mapbox.ShapeSource id="awareness-circle-source" shape={awarenessCircle}>
             <Mapbox.FillLayer
               id="awareness-circle-fill"
-              style={{ fillColor: hud.accent, fillOpacity: 0.08, fillAntialias: true }}
+              style={{ fillColor: colors.accent, fillOpacity: 0.08, fillAntialias: true }}
             />
             <Mapbox.LineLayer
               id="awareness-circle-outline"
-              style={{ lineColor: hud.accent, lineWidth: 2, lineOpacity: 0.9 }}
+              style={{ lineColor: colors.accent, lineWidth: 2, lineOpacity: 0.9 }}
             />
           </Mapbox.ShapeSource>
         ) : null}
@@ -648,7 +652,7 @@ export function RadarMap({
           <Mapbox.ShapeSource id="route-line-source" shape={routeLine}>
             <Mapbox.LineLayer
               id="route-line"
-              style={{ lineColor: hud.accent, lineWidth: 5, lineOpacity: 0.9, lineCap: 'round', lineJoin: 'round' }}
+              style={{ lineColor: colors.navigation, lineWidth: 5, lineOpacity: 0.9, lineCap: 'round', lineJoin: 'round' }}
             />
           </Mapbox.ShapeSource>
         ) : null}
@@ -740,7 +744,7 @@ export function RadarMap({
           accessibilityLabel="RECENTER ON MY LOCATION"
           accessibilityHint="Centers the map on your current location"
         >
-          <LocateFixed size={20} strokeWidth={2.2} color={hud.accent} />
+          <LocateFixed size={20} strokeWidth={2.2} color={colors.accent} />
         </Pressable>
         <Pressable
           style={styles.zoomButton}
@@ -914,7 +918,9 @@ function AlertMarker({
         accessibilityRole={canConfirm ? 'button' : undefined}
         accessibilityLabel={nearbyReport.confirmedByThisDevice ? 'Confirmed still there' : "Confirm it's still there"}
       >
-        <Text style={styles.confirmChipText}>{nearbyReport.confirmedByThisDevice ? 'CONFIRMED' : 'STILL THERE?'}</Text>
+        <Text style={[styles.confirmChipText, nearbyReport.confirmedByThisDevice && styles.confirmChipTextDone]}>
+          {nearbyReport.confirmedByThisDevice ? 'CONFIRMED' : 'STILL THERE?'}
+        </Text>
       </Pressable>
     </View>
   );
@@ -946,7 +952,7 @@ function FixedCameraMarker({
   return (
     <View accessibilityLabel={accessibilityLabel} style={styles.cameraMarker}>
       <View style={styles.cameraSquare}>
-        <CameraIcon size={20} strokeWidth={2.2} color={hud.accent} />
+        <CameraIcon size={20} strokeWidth={2.2} color={colors.textPrimary} />
       </View>
       {distanceMeters !== null ? (
         <View style={styles.cameraDistanceChip}>
@@ -978,76 +984,98 @@ const styles = StyleSheet.create({
   unsupported: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: hud.mapGround,
-    paddingHorizontal: 32,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.xl,
   },
   unsupportedText: {
-    fontFamily: fontFamily.medium,
-    fontSize: 16,
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.body,
     lineHeight: 22,
-    color: instrument.mutedOnInk,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   headingChip: {
     position: 'absolute',
     top: 78,
     left: 20,
-    backgroundColor: hud.ground,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.xxs,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
   },
   headingChipText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: instrument.paper,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textPrimary,
   },
   mapControls: {
     position: 'absolute',
     right: 12,
     top: 128,
     flexDirection: 'column',
-    gap: 8,
+    gap: spacing.xs,
   },
   rangeLabelBadge: {
     position: 'absolute',
     alignSelf: 'center',
     top: 78,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    backgroundColor: hud.ground,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
   },
   rangeLabelText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
   },
   alertDetailCard: {
     position: 'absolute', left: 16, right: 16, bottom: 112,
-    minHeight: 92, padding: 15, paddingRight: 48, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.97)',
+    minHeight: 92, padding: spacing.md, paddingRight: spacing.xxl, borderRadius: radii.lg,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  alertDetailEyebrow: { fontFamily: fontFamily.bold, fontSize: 9, letterSpacing: 1.2, color: hud.accent },
-  alertDetailTitle: { marginTop: 4, fontFamily: fontFamily.black, fontSize: 18, color: '#07313C' },
-  alertDetailMeta: { marginTop: 3, fontFamily: fontFamily.medium, fontSize: 12, color: '#5E777D' },
+  alertDetailEyebrow: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
+  },
+  alertDetailTitle: {
+    marginTop: spacing.xxs,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
+    color: colors.textPrimary,
+  },
+  alertDetailMeta: {
+    marginTop: spacing.xxs,
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
+    color: colors.textSecondary,
+  },
   alertDetailClose: {
-    position: 'absolute', right: 8, top: 8, width: 36, height: 36,
+    position: 'absolute', right: spacing.xs, top: spacing.xs, width: 36, height: 36,
     alignItems: 'center', justifyContent: 'center',
   },
-  alertDetailCloseText: { fontFamily: fontFamily.medium, fontSize: 24, color: '#587177' },
+  alertDetailCloseText: {
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.title,
+    color: colors.textMuted,
+  },
   recenterButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: hud.ground,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
   },
   recenterButtonDisabled: {
     opacity: 1,
@@ -1055,45 +1083,45 @@ const styles = StyleSheet.create({
   zoomButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: hud.ground,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
   },
   zoomButtonGlyph: {
-    fontFamily: fontFamily.bold,
-    fontSize: 18,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
     lineHeight: 16,
-    color: hud.accent,
+    color: colors.accent,
   },
   zoomButtonLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 8,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
     lineHeight: 10,
-    letterSpacing: 0.5,
-    color: hud.accent,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.accent,
   },
   alertMarker: {
     alignItems: 'flex-start',
-    gap: 3,
+    gap: spacing.xxs,
   },
   policeSquare: {
     width: POLICE_MARKER_SIZE,
     height: POLICE_MARKER_SIZE,
-    borderRadius: 4,
+    borderRadius: radii.sm,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    backgroundColor: instrument.paper,
+    backgroundColor: colors.coolBlue,
   },
   policeLetter: {
     marginTop: 1,
-    fontFamily: fontFamily.black,
-    fontSize: 15,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.body,
     lineHeight: 15,
-    color: instrument.ink,
+    color: colors.white,
   },
   alertPin: {
     width: ALERT_PIN_SIZE,
@@ -1101,70 +1129,76 @@ const styles = StyleSheet.create({
     borderRadius: ALERT_PIN_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: instrument.ink,
+    backgroundColor: colors.surface,
     borderWidth: ALERT_PIN_BORDER_WIDTH,
-    borderColor: instrument.paper,
+    borderColor: colors.white,
   },
   alertPinLetter: {
-    fontFamily: fontFamily.black,
-    fontSize: 15,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.body,
     lineHeight: 15,
-    color: instrument.paper,
+    color: colors.white,
   },
   selectedMarker: {
     borderWidth: 3,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
     transform: [{ scale: 1.18 }],
-    shadowColor: hud.accent,
+    shadowColor: colors.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9,
     shadowRadius: 7,
     elevation: 8,
   },
   alertDistanceChip: {
-    paddingVertical: 1,
-    paddingHorizontal: 4,
-    backgroundColor: instrument.ink,
+    paddingVertical: spacing.xxs,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
   },
   alertDistanceText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 0.5,
-    color: instrument.paper,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
   },
   cameraMarker: {
     alignItems: 'flex-start',
-    gap: 3,
+    gap: spacing.xxs,
   },
   cameraSquare: {
     width: FIXED_CAMERA_MARKER_SIZE,
     height: FIXED_CAMERA_MARKER_SIZE,
-    borderRadius: 4,
+    borderRadius: radii.sm,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: instrument.ink,
+    backgroundColor: colors.surface,
   },
   cameraDistanceChip: {
-    paddingVertical: 1,
-    paddingHorizontal: 4,
-    backgroundColor: hud.ground,
+    paddingVertical: spacing.xxs,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
   },
   confirmChip: {
-    marginTop: 3,
+    marginTop: spacing.xxs,
     alignSelf: 'flex-start',
-    paddingVertical: 2,
-    paddingHorizontal: 5,
-    backgroundColor: hud.accent,
+    paddingVertical: spacing.xxs,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+    backgroundColor: colors.accent,
   },
   confirmChipDone: {
-    backgroundColor: instrument.ink,
+    backgroundColor: colors.surface,
     opacity: 0.7,
   },
   confirmChipText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 9,
-    letterSpacing: 0.5,
-    color: instrument.paper,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.charcoal,
+  },
+  confirmChipTextDone: {
+    color: colors.textSecondary,
   },
 });

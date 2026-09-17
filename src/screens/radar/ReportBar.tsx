@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CarFront, Plus, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import { useTripStore, type ManualReportCategory } from '../../store/useTripStore';
-import { hud, instrument } from '../../theme/colors';
-import { fontFamily } from '../../theme/typography';
+import { colors, radii, spacing, typography } from '../../theme/tokens';
 
 const ICON_SIZE = 22;
 const ICON_STROKE_WIDTH = 2;
@@ -27,17 +26,20 @@ interface ReportCellDef {
   stroke: string;
 }
 
+/** Per-category icon colours reuse the AlertPill coding (AlertPill.tsx's
+ * PILL_META): police informational blue, accident/traffic critical red,
+ * hazard caution amber. */
 const CELLS: ReportCellDef[] = [
-  { category: 'POLICE', label: 'POLICE', Icon: Siren, stroke: hud.sevHighText },
-  { category: 'ACCIDENT', label: 'ACCIDENT', Icon: CarFront, stroke: hud.accentBright },
-  { category: 'HAZARD', label: 'HAZARD', Icon: TriangleAlert, stroke: hud.sevMed },
+  { category: 'POLICE', label: 'POLICE', Icon: Siren, stroke: colors.coolBlue },
+  { category: 'ACCIDENT', label: 'ACCIDENT', Icon: CarFront, stroke: colors.red },
+  { category: 'HAZARD', label: 'HAZARD', Icon: TriangleAlert, stroke: colors.amber },
   {
     // JAM is already a first-class alert type. This cast keeps the requested
     // UI-only change local while the older manual-report store type catches up.
     category: 'JAM' as ManualReportCategory,
     label: 'JAM',
     Icon: TrafficCone,
-    stroke: '#F5C451',
+    stroke: colors.red,
   },
 ];
 
@@ -45,8 +47,9 @@ const CELLS: ReportCellDef[] = [
  * The Drive screen's report control (2026-09 redesign: a single circular
  * REPORT dial, the same footprint as Speedometer and mirrored to its
  * opposite side, replacing the old always-visible 4-cell bar). Tapping the
- * dial fans the four category buttons out above it (design reference:
- * the dotted-line radial layout); tapping a category files the report via
+ * dial fans the four category buttons out above it in normal flow (the
+ * column grows upward inside the bottom-anchored overlay panel, so the
+ * dial itself never moves); tapping a category files the report via
  * useTripStore's pushManualReport and collapses back to the resting dial.
  * Tapping the dial again while expanded collapses it with no report filed.
  */
@@ -117,13 +120,13 @@ export function ReportBar() {
         accessibilityState={{ expanded }}
       >
         {isPending ? (
-          <Text style={styles.dialLabel}>UNDO</Text>
+          <Text style={[styles.dialLabel, styles.dialLabelOnAccent]}>UNDO</Text>
         ) : (
           <>
             <Plus
               size={28}
               strokeWidth={2.4}
-              color={hud.accentBright}
+              color={colors.accent}
               style={expanded ? styles.plusRotated : undefined}
             />
             <Text style={styles.dialLabel}>REPORT</Text>
@@ -162,32 +165,34 @@ const styles = StyleSheet.create({
     borderRadius: REPORT_DIAL_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(6, 20, 24, 0.96)',
+    gap: spacing.xxs,
+    backgroundColor: colors.surface,
     borderWidth: 2,
-    borderColor: hud.accentBright,
+    borderColor: colors.accent,
   },
   dialExpanded: {
-    borderColor: hud.accent,
+    borderColor: colors.coolBlue,
   },
   dialPending: {
-    backgroundColor: instrument.ink,
-    borderColor: instrument.paper,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   plusRotated: {
     transform: [{ rotate: '45deg' }],
   },
   dialLabel: {
-    fontFamily: fontFamily.black,
-    fontSize: 12,
-    letterSpacing: 1,
-    color: hud.rowTitle,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
+  },
+  dialLabelOnAccent: {
+    color: colors.charcoal,
   },
   fanOut: {
-    position: 'absolute',
-    bottom: REPORT_DIAL_SIZE + 12,
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
   categoryButton: {
     width: CATEGORY_BUTTON_SIZE,
@@ -195,15 +200,15 @@ const styles = StyleSheet.create({
     borderRadius: CATEGORY_BUTTON_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    backgroundColor: 'rgba(6, 20, 24, 0.96)',
+    gap: spacing.xxs,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(150, 210, 204, 0.4)',
+    borderColor: colors.border,
   },
   categoryLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 7,
-    letterSpacing: 0.4,
-    color: hud.rowTitle,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
   },
 });

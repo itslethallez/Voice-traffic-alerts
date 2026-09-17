@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { hud } from '../theme/colors';
-import { fontFamily } from '../theme/typography';
+import { Card } from '../components/base/Card';
+import { colors, radii, spacing, typography } from '../theme/tokens';
 
 /**
  * expo-updates' native module has been a moving target this whole
@@ -40,12 +40,12 @@ export function BuildInfoCard() {
 
   if (!Updates) {
     return (
-      <View style={styles.card}>
+      <Card variant="outlined" padding="md">
         <Text style={styles.status}>
           Build info unavailable - this binary doesn't have expo-updates linked. Rebuilding (not
           just an OTA push) should fix this.
         </Text>
-      </View>
+      </Card>
     );
   }
 
@@ -84,7 +84,7 @@ export function BuildInfoCard() {
   };
 
   return (
-    <View style={styles.card}>
+    <Card variant="outlined" padding="md">
       <View style={styles.row}>
         <Text style={styles.label}>RUNNING</Text>
         <Text style={styles.value}>
@@ -133,7 +133,7 @@ export function BuildInfoCard() {
             accessibilityLabel="Check for updates"
           >
             {state === 'checking' || state === 'downloading' ? (
-              <ActivityIndicator color={hud.rowTitle} />
+              <ActivityIndicator color={colors.charcoal} />
             ) : (
               <Text style={styles.buttonText}>CHECK FOR UPDATES</Text>
             )}
@@ -148,70 +148,67 @@ export function BuildInfoCard() {
         ) : null}
         {state === 'error' && message ? <Text style={styles.errorText}>{message}</Text> : null}
       </View>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginTop: 4,
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: hud.rule,
+    borderBottomColor: colors.border,
   },
   label: {
-    fontFamily: fontFamily.medium,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: hud.muted,
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textMuted,
   },
   value: {
-    fontFamily: fontFamily.bold,
-    fontSize: 13,
-    color: hud.rowTitle,
+    fontFamily: typography.fontFamily.bodySemibold,
+    fontSize: typography.fontSize.caption,
+    color: colors.textPrimary,
     flexShrink: 1,
     textAlign: 'right',
   },
   actionRow: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    gap: 8,
+    paddingVertical: spacing.md,
+    gap: spacing.xs,
   },
   button: {
     height: 44,
-    backgroundColor: hud.accent,
+    borderRadius: radii.md,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonPressed: {
-    backgroundColor: hud.accentBright,
+    backgroundColor: colors.teal,
+    opacity: 0.8,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    fontFamily: fontFamily.black,
-    fontSize: 15,
-    letterSpacing: 1,
-    color: hud.rowTitle,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.body,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.charcoal,
   },
   status: {
-    fontFamily: fontFamily.medium,
-    fontSize: 13,
-    color: hud.muted,
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.caption,
+    color: colors.textMuted,
     textAlign: 'center',
   },
   errorText: {
-    fontFamily: fontFamily.medium,
-    fontSize: 13,
-    color: '#E85D5D',
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.caption,
+    color: colors.critical,
     textAlign: 'center',
   },
 });

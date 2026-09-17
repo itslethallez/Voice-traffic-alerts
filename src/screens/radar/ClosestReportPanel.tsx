@@ -6,8 +6,8 @@ import { announcementLocation } from '../../speech/formatAnnouncement';
 import type { NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { confidenceLabel } from '../../theme/confidence';
-import { hud } from '../../theme/colors';
-import { fontFamily } from '../../theme/typography';
+import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
+import { formatRelativeTime } from '../formatRelativeTime';
 import { formatClosingTime } from './formatClosingTime';
 import { splitCompactDistance } from './formatCompactDistance';
 import { PoliceLightBar } from './PoliceLightBar';
@@ -32,10 +32,10 @@ function confidenceTierLabel(reliability: number): string {
   return confidenceLabel(reliability).split(' ')[0].toUpperCase();
 }
 
-function ageLabel(ageMinutes: number): string {
-  const rounded = Math.round(ageMinutes);
-  if (rounded <= 0) return 'JUST NOW';
-  return `${rounded} MIN AGO`;
+/** "5M AGO" — formatRelativeTime owns the unit ladder (s/m/h/d) so a
+ * months-old fixed camera row can't print a six-digit minute count. */
+function ageLabel(nowMs: number, publishedMs: number): string {
+  return formatRelativeTime(publishedMs, nowMs).toUpperCase();
 }
 
 export interface ClosestReportPanelProps {
@@ -166,7 +166,7 @@ export function ClosestReportPanel({
         <View style={styles.footerCell}>
           <Text style={styles.footerLabel}>REPORTED</Text>
           <Text style={styles.footerValue} numberOfLines={1}>
-            {ageLabel(ageMinutes)}
+            {ageLabel(nowMs, Date.parse(alert.publish_datetime_utc))}
           </Text>
         </View>
         {canConfirm ? (
@@ -191,67 +191,68 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(7,9,12,0.94)',
+    backgroundColor: alpha(colors.charcoal, 0.94),
     borderTopWidth: 1,
-    borderTopColor: hud.accent,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 10,
+    borderTopColor: colors.accent,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 8,
+    gap: spacing.xs,
   },
   headerLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 2,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
   },
   headerStatus: {
     marginLeft: 'auto',
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1.5,
-    color: hud.muted,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textMuted,
   },
   mainRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginTop: 5,
+    gap: spacing.sm,
+    marginTop: spacing.xxs,
   },
   typeBadge: {
     width: TYPE_BADGE_SIZE,
     height: TYPE_BADGE_SIZE,
     flexShrink: 0,
+    borderRadius: radii.sm,
     borderWidth: 2,
-    borderColor: hud.ink,
+    borderColor: colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   typeBadgeLetter: {
-    fontFamily: fontFamily.black,
-    fontSize: 15,
-    color: hud.ink,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.body,
+    color: colors.textPrimary,
   },
   mainText: {
     flex: 1,
     minWidth: 0,
   },
   typeLabel: {
-    fontFamily: fontFamily.black,
-    fontSize: 20,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
     lineHeight: 21,
-    color: hud.rowTitle,
+    color: colors.textPrimary,
   },
   locationLine: {
-    marginTop: 2,
-    fontFamily: fontFamily.medium,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    color: hud.rowSubHigh,
+    marginTop: spacing.xxs,
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textSecondary,
   },
   distanceBlock: {
     flexShrink: 0,
@@ -260,115 +261,116 @@ const styles = StyleSheet.create({
   distanceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 4,
+    gap: spacing.xxs,
   },
   distanceValue: {
-    fontFamily: fontFamily.black,
-    fontSize: 30,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.stat,
     letterSpacing: -1,
     lineHeight: 30,
-    color: hud.sevHighText,
+    color: colors.accent,
     fontVariant: ['tabular-nums'],
   },
   distanceUnit: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: hud.sevHighText,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.accent,
   },
   closingTime: {
-    marginTop: 2,
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1.5,
-    color: hud.muted,
+    marginTop: spacing.xxs,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 10,
-    marginTop: 7,
-    paddingTop: 7,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
     borderTopWidth: 1,
-    borderTopColor: hud.rule,
+    borderTopColor: colors.border,
   },
   footerCell: {
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
-    gap: 2,
+    gap: spacing.xxs,
   },
   footerLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1.5,
-    color: hud.mutedLabel,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textMuted,
   },
   footerValue: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    letterSpacing: 0.5,
-    color: hud.rowSubHigh,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textSecondary,
     fontVariant: ['tabular-nums'],
   },
   footerValueAccent: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    letterSpacing: 0.5,
-    color: hud.sevHighText,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.accent,
   },
   confirmButton: {
     flexShrink: 0,
     width: 138,
     height: 44,
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: hud.ruleStrong,
-    backgroundColor: '#14395C',
+    borderColor: colors.borderStrong,
+    backgroundColor: alpha(colors.coolBlue, 0.2),
   },
   confirmButtonDone: {
-    borderColor: hud.rule,
-    backgroundColor: '#0A2338',
+    borderColor: colors.border,
+    backgroundColor: alpha(colors.coolBlue, 0.1),
     opacity: 0.7,
   },
   confirmCaption: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1.5,
-    color: hud.accentBright,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.navigation,
   },
   confirmLabel: {
-    fontFamily: fontFamily.black,
-    fontSize: 12,
-    color: hud.rowTitle,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.caption,
+    color: colors.textPrimary,
   },
   quietRoot: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(7,9,12,0.94)',
+    backgroundColor: alpha(colors.charcoal, 0.94),
     borderTopWidth: 1,
-    borderTopColor: hud.rule,
-    paddingHorizontal: 20,
-    paddingVertical: 9,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.screenPadding,
+    paddingVertical: spacing.sm,
   },
   quietHeader: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 2,
-    color: hud.mutedLabel,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textMuted,
   },
   quietBody: {
-    marginTop: 5,
-    fontFamily: fontFamily.bold,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: hud.muted,
+    marginTop: spacing.xxs,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textSecondary,
   },
   quietBodyMuted: {
-    color: hud.rowSubHigh,
+    color: colors.textMuted,
   },
 });

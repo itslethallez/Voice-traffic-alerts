@@ -78,7 +78,11 @@ export function BottomSheet({
       onPanResponderRelease: (_evt, gesture) => {
         const projected = gestureStartY.current + gesture.dy;
         let snap: SheetSnap;
-        if (gesture.vy < -FLING_VELOCITY) snap = 'expanded';
+        // A near-motionless touch is a tap on the grabber/header — toggle,
+        // rather than snapping back to wherever the sheet already was.
+        if (Math.abs(gesture.dy) <= 4) {
+          snap = snapRef.current === 'expanded' ? 'collapsed' : 'expanded';
+        } else if (gesture.vy < -FLING_VELOCITY) snap = 'expanded';
         else if (gesture.vy > FLING_VELOCITY) snap = 'collapsed';
         else snap = projected < collapsedYRef.current / 2 ? 'expanded' : 'collapsed';
 

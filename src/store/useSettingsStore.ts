@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   type AlertCategory,
+  type AlertFilterCategory,
   clamp,
   defaultSettingsValues,
   MAX_ANNOUNCE_DISTANCE_METERS,
@@ -19,6 +20,7 @@ import {
 
 interface SettingsStore extends SettingsValues {
   toggleCategory: (category: AlertCategory) => void;
+  toggleAlertTypeFilter: (category: AlertFilterCategory) => void;
   setAnnounceDistanceMeters: (meters: number) => void;
   setBriefingRadiusMeters: (meters: number) => void;
   setVoiceVolume: (volume: number) => void;
@@ -36,6 +38,13 @@ export const useSettingsStore = create<SettingsStore>()(
           categoriesEnabled: {
             ...state.categoriesEnabled,
             [category]: !state.categoriesEnabled[category],
+          },
+        })),
+      toggleAlertTypeFilter: (category) =>
+        set((state) => ({
+          alertTypeFilters: {
+            ...state.alertTypeFilters,
+            [category]: !state.alertTypeFilters[category],
           },
         })),
       setAnnounceDistanceMeters: (meters) =>

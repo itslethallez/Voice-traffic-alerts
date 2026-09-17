@@ -1,7 +1,6 @@
 import type { LayoutChangeEvent } from 'react-native';
 import { StyleSheet, Text, View } from 'react-native';
-import { hud, instrument } from '../../theme/colors';
-import { fontFamily } from '../../theme/typography';
+import { colors, radii, spacing, typography } from '../../theme/tokens';
 import { formatCompactDistance } from './formatCompactDistance';
 
 interface ManeuverBannerProps {
@@ -40,26 +39,26 @@ const styles = StyleSheet.create({
   root: {
     position: 'absolute',
     top: 78,
-    left: 16,
-    right: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 18,
-    backgroundColor: hud.ground,
+    left: spacing.md,
+    right: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: hud.accent,
+    borderColor: colors.navigation,
   },
   distance: {
-    fontFamily: fontFamily.black,
-    fontSize: 20,
-    letterSpacing: 0.5,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.navigation,
   },
   instruction: {
-    marginTop: 2,
-    fontFamily: fontFamily.bold,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: instrument.paper,
+    marginTop: spacing.xxs,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
   },
 });

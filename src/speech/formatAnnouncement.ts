@@ -16,6 +16,9 @@ const ANNOUNCEMENT_LABELS: Partial<Record<string, string>> = {
   HAZARD: 'Hazard',
   ROAD_CLOSED: 'Road closed',
   JAM: 'Traffic jam',
+  // Normalized-schema type (api/backend/corridorAlert.ts) - no Waze feed
+  // equivalent, so it gets its own spoken label rather than riding HAZARD.
+  ROADKILL: 'Roadkill',
 };
 
 /** Exported for direct testing and reuse - used internally by spokenLabel

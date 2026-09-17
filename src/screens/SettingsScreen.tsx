@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { AlertPill, type AlertPillType } from '../components/base/AlertPill';
+import { Card } from '../components/base/Card';
+import { Column, Row, Stack } from '../components/base/Layout';
+import { ScreenContainer } from '../components/base/ScreenContainer';
 import { RangeSlider } from '../components/RangeSlider';
 import {
   ALERT_CATEGORIES,
@@ -15,17 +18,18 @@ import {
   type RouteType,
 } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { hud, instrument } from '../theme/colors';
-import { fontFamily } from '../theme/typography';
+import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
 import { BuildInfoCard } from './BuildInfoCard';
 import type { FacebookNotificationSourceControls } from '../notifications/useFacebookNotificationSource';
 
-const CATEGORY_LABELS: Record<AlertCategory, string> = {
-  POLICE: 'Police',
-  ACCIDENT: 'Accidents',
-  HAZARD: 'Hazards',
-  ROAD_CLOSED: 'Road closures',
-  JAM: 'Traffic jams',
+/** The legacy Waze categories still own the voice-announcer toggles — each
+ * maps to its normalized pill category for display (JAM reads as Traffic). */
+const CATEGORY_PILL: Record<AlertCategory, AlertPillType> = {
+  POLICE: 'police',
+  ACCIDENT: 'accident',
+  HAZARD: 'hazard',
+  ROAD_CLOSED: 'closure',
+  JAM: 'traffic',
 };
 
 const ROUTE_TYPE_LABELS: Record<RouteType, string> = {
@@ -56,6 +60,10 @@ interface SettingsScreenProps {
   notificationSource: FacebookNotificationSourceControls;
 }
 
+function SectionLabel({ children }: { children: string }) {
+  return <Text style={styles.sectionLabel}>{children}</Text>;
+}
+
 export function SettingsScreen({ onClose, notificationSource }: SettingsScreenProps) {
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
@@ -81,505 +89,400 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
     setExpandedVoiceControl((current) => (current === control ? null : control));
 
   return (
-    <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <Image source={require('../../assets/shotgun-icon.png')} style={styles.brandIcon} resizeMode="contain" />
-            <Text style={styles.title}>SETTINGS</Text>
-            <View style={styles.headerSpacer} />
-            <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button">
-              <Text style={styles.doneText}>DONE</Text>
-            </Pressable>
-          </View>
-        </View>
+    <ScreenContainer>
+      <Row align="center" gap="sm" style={styles.header}>
+        <Image
+          source={require('../../assets/shotgun-icon.png')}
+          style={styles.brandIcon}
+          resizeMode="contain"
+        />
+        <Text style={styles.title}>SETTINGS</Text>
+        <View style={styles.headerSpacer} />
+        <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button" accessibilityLabel="Done">
+          <Text style={styles.doneText}>DONE</Text>
+        </Pressable>
+      </Row>
 
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.sectionLabelBottomOnly}>
-            <Text style={styles.sectionLabelText}>SPEAK THESE</Text>
-          </View>
-          {ALERT_CATEGORIES.map((category) => {
-            const enabled = categoriesEnabled[category];
-            return (
-              <Pressable
-                key={category}
-                onPress={() => toggleCategory(category)}
-                style={styles.categoryRow}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: enabled }}
-                accessibilityLabel={CATEGORY_LABELS[category]}
-              >
-                <Text style={[styles.categoryLabel, !enabled && styles.mutedText]}>
-                  {CATEGORY_LABELS[category]}
-                </Text>
-                <View style={[styles.stateBlock, enabled ? styles.stateBlockOn : styles.stateBlockOff]}>
-                  <Text style={[styles.stateBlockText, enabled ? styles.stateBlockTextOn : styles.mutedText]}>
-                    {enabled ? 'ON' : 'OFF'}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-
-          <View style={styles.sectionLabel}>
-            <Text style={styles.sectionLabelText}>RANGE</Text>
-          </View>
-
-          <View style={styles.rangeRow}>
-            <View style={styles.rangeHeaderRow}>
-              <Text style={styles.rangeLabel}>WARN ME FROM</Text>
-              <Text style={styles.rangeValue}>{formatKmFixed1(announceDistanceMeters)}</Text>
-              <Text style={styles.rangeUnit}>KM</Text>
-            </View>
-            <View style={styles.rangeSliderWrap}>
-              <RangeSlider
-                value={announceDistanceMeters}
-                min={MIN_ANNOUNCE_DISTANCE_METERS}
-                max={MAX_ANNOUNCE_DISTANCE_METERS}
-                step={100}
-                onChange={setAnnounceDistanceMeters}
-                minLabel={formatKmTrimmed(MIN_ANNOUNCE_DISTANCE_METERS)}
-                maxLabel={`${formatKmTrimmed(MAX_ANNOUNCE_DISTANCE_METERS)} KM`}
-              />
-            </View>
-          </View>
-
-          <View style={styles.rangeRow}>
-            <View style={styles.rangeHeaderRow}>
-              <Text style={styles.rangeLabel}>BRIEF ME WITHIN</Text>
-              <Text style={styles.rangeValue}>{formatKmFixed1(briefingRadiusMeters)}</Text>
-              <Text style={styles.rangeUnit}>KM</Text>
-            </View>
-            <View style={styles.rangeSliderWrap}>
-              <RangeSlider
-                value={briefingRadiusMeters}
-                min={MIN_BRIEFING_RADIUS_METERS}
-                max={MAX_BRIEFING_RADIUS_METERS}
-                step={500}
-                onChange={setBriefingRadiusMeters}
-                minLabel={formatKmTrimmed(MIN_BRIEFING_RADIUS_METERS)}
-                maxLabel={`${formatKmTrimmed(MAX_BRIEFING_RADIUS_METERS)} KM`}
-              />
-            </View>
-          </View>
-
-          <View style={styles.sectionLabel}>
-            <Text style={styles.sectionLabelText}>VOICE</Text>
-          </View>
-
-          <View style={styles.voiceRow}>
-            <Pressable style={styles.voiceCell} onPress={() => toggleVoiceControl('volume')}>
-              <Text style={styles.voiceCaption}>VOLUME</Text>
-              <View style={styles.voiceValueRow}>
-                <Text style={styles.voiceValue}>{Math.round(voiceVolume * 100)}</Text>
-                <Text style={styles.voiceUnit}>%</Text>
-              </View>
-            </Pressable>
-            <Pressable style={[styles.voiceCell, styles.voiceCellRight]} onPress={() => toggleVoiceControl('rate')}>
-              <Text style={styles.voiceCaption}>RATE</Text>
-              <View style={styles.voiceValueRow}>
-                <Text style={styles.voiceValue}>{voiceRate.toFixed(1)}</Text>
-                <Text style={styles.voiceUnit}>×</Text>
-              </View>
-            </Pressable>
-          </View>
-
-          {expandedVoiceControl === 'volume' ? (
-            <View style={styles.expandedSliderRow}>
-              <RangeSlider
-                value={voiceVolume}
-                min={0}
-                max={1}
-                step={0.05}
-                onChange={setVoiceVolume}
-                minLabel="0"
-                maxLabel="100%"
-              />
-            </View>
-          ) : null}
-          {expandedVoiceControl === 'rate' ? (
-            <View style={styles.expandedSliderRow}>
-              <RangeSlider
-                value={voiceRate}
-                min={MIN_VOICE_RATE}
-                max={MAX_VOICE_RATE}
-                step={0.1}
-                onChange={setVoiceRate}
-                minLabel={`${MIN_VOICE_RATE.toFixed(1)}×`}
-                maxLabel={`${MAX_VOICE_RATE.toFixed(1)}×`}
-              />
-            </View>
-          ) : null}
-
-          <Pressable
-            onPress={toggleMasterMute}
-            style={styles.muteRow}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: masterMute }}
-            accessibilityLabel="Mute everything"
-          >
-            <Text style={styles.categoryLabel}>MUTE EVERYTHING</Text>
-            <View style={[styles.stateBlock, masterMute ? styles.stateBlockOn : styles.stateBlockOff]}>
-              <Text style={[styles.stateBlockText, masterMute ? styles.stateBlockTextOn : styles.mutedText]}>
-                {masterMute ? 'ON' : 'OFF'}
-              </Text>
-            </View>
-          </Pressable>
-
-          <View style={styles.sectionLabel}>
-            <Text style={styles.sectionLabelText}>NAVIGATION</Text>
-          </View>
-
-          <View style={styles.routeTypeSection}>
-            <Text style={styles.categoryLabel}>DEFAULT ROUTE TYPE</Text>
-            <Text style={styles.routeTypeNote}>
-              Starting point when you search a destination - Quickest ignores reports, Safest prefers routes with
-              fewer nearby police/accident/hazard reports, Sidestreets also avoids motorways. Not a guarantee every
-              hazard is missed. Can be changed per trip from the search screen.
-            </Text>
-            <View style={styles.routeTypeRow}>
-              {ROUTE_TYPES.map((type) => {
-                const isSelected = type === defaultRouteType;
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Stack gap="lg">
+          <Column gap="xs">
+            <SectionLabel>SPEAK THESE</SectionLabel>
+            <Card variant="outlined" padding="sm">
+              {ALERT_CATEGORIES.map((category, index) => {
+                const enabled = categoriesEnabled[category];
                 return (
                   <Pressable
-                    key={type}
-                    onPress={() => setDefaultRouteType(type)}
-                    style={[styles.routeTypeButton, isSelected && styles.routeTypeButtonSelected]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected }}
-                    accessibilityLabel={`${ROUTE_TYPE_LABELS[type]} default route`}
+                    key={category}
+                    onPress={() => toggleCategory(category)}
+                    style={[styles.categoryRow, index > 0 && styles.rowDivider]}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: enabled }}
+                    accessibilityLabel={`${CATEGORY_PILL[category]} announcements`}
                   >
-                    <Text style={[styles.routeTypeButtonText, isSelected && styles.routeTypeButtonTextSelected]}>
-                      {ROUTE_TYPE_LABELS[type].toUpperCase()}
+                    <AlertPill
+                      type={CATEGORY_PILL[category]}
+                      size="sm"
+                      style={!enabled ? styles.pillOff : undefined}
+                    />
+                    <Text
+                      style={[styles.stateText, enabled ? styles.stateTextOn : styles.stateTextOff]}
+                    >
+                      {enabled ? 'ON' : 'OFF'}
                     </Text>
                   </Pressable>
                 );
               })}
-            </View>
-          </View>
+              <Pressable
+                onPress={toggleMasterMute}
+                style={[styles.categoryRow, styles.rowDivider]}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: masterMute }}
+                accessibilityLabel="Mute everything"
+              >
+                <Text style={styles.muteLabel}>MUTE EVERYTHING</Text>
+                <Text
+                  style={[styles.stateText, masterMute ? styles.stateTextOn : styles.stateTextOff]}
+                >
+                  {masterMute ? 'ON' : 'OFF'}
+                </Text>
+              </Pressable>
+            </Card>
+          </Column>
 
-          <Pressable
-            style={styles.notificationSourceCard}
-            onPress={() => void notificationSource.openAccessSettings()}
-            accessibilityRole="button"
-            accessibilityLabel={
-              notificationSource.accessStatus === 'granted'
-                ? 'Facebook notification access enabled'
-                : 'Open Android notification access settings'
-            }
-          >
-            <View style={styles.notificationSourceCopy}>
-              <Text style={styles.notificationSourceTitle}>FACEBOOK NOTIFICATIONS</Text>
-              <Text style={styles.notificationSourceBody}>
-                {notificationSource.accessStatus === 'unsupported'
-                  ? 'ANDROID ONLY · unavailable in this build'
-                  : notificationSource.accessStatus === 'granted'
-                    ? 'ACCESS ENABLED · unverified community source'
-                    : 'ACCESS REQUIRED · tap to open Android settings'}
-              </Text>
-              <Text style={styles.notificationSourceNote}>
-                Notices are sorted locally and held for review. They never become police-confirmed alerts automatically.
-              </Text>
-            </View>
-            <View style={styles.notificationSourceBadge}>
-              <Text style={styles.notificationSourceBadgeValue}>{notificationSource.pendingCount}</Text>
-              <Text style={styles.notificationSourceBadgeLabel}>PENDING</Text>
-            </View>
-          </Pressable>
+          <Column gap="xs">
+            <SectionLabel>RANGE</SectionLabel>
+            <Card variant="outlined" padding="md">
+              <Stack gap="md">
+                <Column gap="sm">
+                  <Row align="baseline" gap="xs">
+                    <Text style={styles.rowTitle}>WARN ME FROM</Text>
+                    <View style={styles.headerSpacer} />
+                    <Text style={styles.statValue}>{formatKmFixed1(announceDistanceMeters)}</Text>
+                    <Text style={styles.statUnit}>KM</Text>
+                  </Row>
+                  <RangeSlider
+                    value={announceDistanceMeters}
+                    min={MIN_ANNOUNCE_DISTANCE_METERS}
+                    max={MAX_ANNOUNCE_DISTANCE_METERS}
+                    step={100}
+                    onChange={setAnnounceDistanceMeters}
+                    minLabel={formatKmTrimmed(MIN_ANNOUNCE_DISTANCE_METERS)}
+                    maxLabel={`${formatKmTrimmed(MAX_ANNOUNCE_DISTANCE_METERS)} KM`}
+                  />
+                </Column>
+                <Column gap="sm">
+                  <Row align="baseline" gap="xs">
+                    <Text style={styles.rowTitle}>BRIEF ME WITHIN</Text>
+                    <View style={styles.headerSpacer} />
+                    <Text style={styles.statValue}>{formatKmFixed1(briefingRadiusMeters)}</Text>
+                    <Text style={styles.statUnit}>KM</Text>
+                  </Row>
+                  <RangeSlider
+                    value={briefingRadiusMeters}
+                    min={MIN_BRIEFING_RADIUS_METERS}
+                    max={MAX_BRIEFING_RADIUS_METERS}
+                    step={500}
+                    onChange={setBriefingRadiusMeters}
+                    minLabel={formatKmTrimmed(MIN_BRIEFING_RADIUS_METERS)}
+                    maxLabel={`${formatKmTrimmed(MAX_BRIEFING_RADIUS_METERS)} KM`}
+                  />
+                </Column>
+              </Stack>
+            </Card>
+          </Column>
+
+          <Column gap="xs">
+            <SectionLabel>VOICE</SectionLabel>
+            <Card variant="outlined" padding="md">
+              <Row gap="md">
+                <Pressable style={styles.voiceCell} onPress={() => toggleVoiceControl('volume')}>
+                  <Text style={styles.voiceCaption}>VOLUME</Text>
+                  <Row align="baseline" gap="xs">
+                    <Text style={styles.statValue}>{Math.round(voiceVolume * 100)}</Text>
+                    <Text style={styles.voiceUnit}>%</Text>
+                  </Row>
+                </Pressable>
+                <Pressable style={styles.voiceCell} onPress={() => toggleVoiceControl('rate')}>
+                  <Text style={styles.voiceCaption}>RATE</Text>
+                  <Row align="baseline" gap="xs">
+                    <Text style={styles.statValue}>{voiceRate.toFixed(1)}</Text>
+                    <Text style={styles.voiceUnit}>×</Text>
+                  </Row>
+                </Pressable>
+              </Row>
+              {expandedVoiceControl === 'volume' ? (
+                <View style={styles.expandedSlider}>
+                  <RangeSlider
+                    value={voiceVolume}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    onChange={setVoiceVolume}
+                    minLabel="0"
+                    maxLabel="100%"
+                  />
+                </View>
+              ) : null}
+              {expandedVoiceControl === 'rate' ? (
+                <View style={styles.expandedSlider}>
+                  <RangeSlider
+                    value={voiceRate}
+                    min={MIN_VOICE_RATE}
+                    max={MAX_VOICE_RATE}
+                    step={0.1}
+                    onChange={setVoiceRate}
+                    minLabel={`${MIN_VOICE_RATE.toFixed(1)}×`}
+                    maxLabel={`${MAX_VOICE_RATE.toFixed(1)}×`}
+                  />
+                </View>
+              ) : null}
+            </Card>
+          </Column>
+
+          <Column gap="xs">
+            <SectionLabel>NAVIGATION</SectionLabel>
+            <Card variant="outlined" padding="md">
+              <Stack gap="sm">
+                <Text style={styles.rowTitle}>DEFAULT ROUTE TYPE</Text>
+                <Text style={styles.note}>
+                  Starting point when you search a destination - Quickest ignores reports, Safest
+                  prefers routes with fewer nearby police/accident/hazard reports, Sidestreets also
+                  avoids motorways. Not a guarantee every hazard is missed. Can be changed per trip
+                  from the search screen.
+                </Text>
+                <Row gap="xs">
+                  {ROUTE_TYPES.map((type) => {
+                    const isSelected = type === defaultRouteType;
+                    return (
+                      <Pressable
+                        key={type}
+                        onPress={() => setDefaultRouteType(type)}
+                        style={[styles.routeButton, isSelected && styles.routeButtonSelected]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected }}
+                        accessibilityLabel={`${ROUTE_TYPE_LABELS[type]} default route`}
+                      >
+                        <Text
+                          style={[
+                            styles.routeButtonText,
+                            isSelected && styles.routeButtonTextSelected,
+                          ]}
+                        >
+                          {ROUTE_TYPE_LABELS[type].toUpperCase()}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </Row>
+              </Stack>
+            </Card>
+          </Column>
+
+          <Column gap="xs">
+            <SectionLabel>SOURCES</SectionLabel>
+            <Pressable
+              onPress={() => void notificationSource.openAccessSettings()}
+              accessibilityRole="button"
+              accessibilityLabel={
+                notificationSource.accessStatus === 'granted'
+                  ? 'Facebook notification access enabled'
+                  : 'Open Android notification access settings'
+              }
+            >
+              <Card variant="outlined" padding="md">
+                <Row gap="sm" align="center">
+                  <Column gap="xxs" flex={1}>
+                    <Text style={styles.rowTitle}>FACEBOOK NOTIFICATIONS</Text>
+                    <Text style={styles.sourceStatus}>
+                      {notificationSource.accessStatus === 'unsupported'
+                        ? 'ANDROID ONLY · UNAVAILABLE IN THIS BUILD'
+                        : notificationSource.accessStatus === 'granted'
+                          ? 'ACCESS ENABLED · UNVERIFIED COMMUNITY SOURCE'
+                          : 'ACCESS REQUIRED · TAP TO OPEN ANDROID SETTINGS'}
+                    </Text>
+                    <Text style={styles.note}>
+                      Notices are sorted locally and held for review. They never become
+                      police-confirmed alerts automatically.
+                    </Text>
+                  </Column>
+                  <Column align="center" style={styles.pendingBadge}>
+                    <Text style={styles.pendingValue}>{notificationSource.pendingCount}</Text>
+                    <Text style={styles.pendingLabel}>PENDING</Text>
+                  </Column>
+                </Row>
+              </Card>
+            </Pressable>
+          </Column>
 
           <BuildInfoCard />
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+        </Stack>
+      </ScrollView>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: instrument.ink,
-  },
-  safeArea: {
-    flex: 1,
-  },
   header: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 10,
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: hud.rule,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  title: {
-    fontFamily: fontFamily.black,
-    fontSize: 34,
-    letterSpacing: -0.5,
-    color: hud.rowTitle,
+    borderBottomColor: colors.border,
   },
   brandIcon: {
-    width: 40,
-    height: 40,
-    marginRight: 6,
+    width: 36,
+    height: 36,
+    borderRadius: radii.sm,
+  },
+  title: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.heading,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
   },
   headerSpacer: {
     flex: 1,
   },
   doneText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
   },
   content: {
-    paddingBottom: 40,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl,
   },
   sectionLabel: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
-    borderTopWidth: 1,
-    borderTopColor: hud.rule,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rule,
-  },
-  sectionLabelBottomOnly: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rule,
-  },
-  sectionLabelText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 2,
-    color: hud.mutedLabel,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textMuted,
   },
   categoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xxs,
   },
-  categoryLabel: {
-    flex: 1,
-    fontFamily: fontFamily.bold,
-    fontSize: 17,
-    letterSpacing: 0.5,
-    color: hud.rowTitle,
+  rowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  mutedText: {
-    color: hud.muted,
+  pillOff: {
+    opacity: 0.4,
   },
-  routeTypeNote: {
-    marginTop: 3,
-    fontFamily: fontFamily.medium,
-    fontSize: 11,
-    lineHeight: 15,
-    color: hud.muted,
+  stateText: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.eyebrow,
   },
-  routeTypeSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
+  stateTextOn: {
+    color: colors.accent,
   },
-  routeTypeRow: {
-    flexDirection: 'row',
-    marginTop: 10,
-    gap: 8,
+  stateTextOff: {
+    color: colors.textMuted,
   },
-  routeTypeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.04)',
-    borderWidth: 1,
-    borderColor: hud.rowRule,
+  muteLabel: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.body,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
   },
-  routeTypeButtonSelected: {
-    backgroundColor: hud.accent,
-    borderColor: hud.accent,
+  rowTitle: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.body,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
   },
-  routeTypeButtonText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    color: hud.muted,
-  },
-  routeTypeButtonTextSelected: {
-    color: '#062128',
-  },
-  stateBlock: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  stateBlockOn: {
-    backgroundColor: hud.accent,
-  },
-  stateBlockOff: {
-    borderWidth: 2,
-    borderColor: hud.muted,
-  },
-  stateBlockText: {
-    fontFamily: fontFamily.black,
-    fontSize: 11,
-    letterSpacing: 1.5,
-  },
-  stateBlockTextOn: {
-    color: hud.rowTitle,
-  },
-  rangeRow: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
-  },
-  rangeHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 10,
-  },
-  rangeLabel: {
-    flex: 1,
-    fontFamily: fontFamily.bold,
-    fontSize: 17,
-    letterSpacing: 0.5,
-    color: hud.rowTitle,
-  },
-  rangeValue: {
-    fontFamily: fontFamily.black,
-    fontSize: 26,
-    lineHeight: 26,
-    color: hud.rowTitle,
+  statValue: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.stat,
+    lineHeight: typography.fontSize.stat,
+    color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
   },
-  rangeUnit: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: hud.mutedLabel,
-  },
-  rangeSliderWrap: {
-    marginTop: 12,
-  },
-  voiceRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
+  statUnit: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textMuted,
   },
   voiceCell: {
     flex: 1,
-    paddingTop: 8,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  voiceCellRight: {
-    borderLeftWidth: 1,
-    borderLeftColor: hud.rule,
+    gap: spacing.xxs,
   },
   voiceCaption: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: hud.mutedLabel,
-  },
-  voiceValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
-  voiceValue: {
-    fontFamily: fontFamily.black,
-    fontSize: 30,
-    color: hud.rowTitle,
-    fontVariant: ['tabular-nums'],
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textMuted,
   },
   voiceUnit: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.caption,
+    color: colors.accent,
   },
-  expandedSliderRow: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
+  expandedSlider: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  muteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
+  note: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
+    lineHeight: 18,
+    color: colors.textSecondary,
   },
-  notificationSourceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    minHeight: 104,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    backgroundColor: '#292725',
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
-  },
-  notificationSourceCopy: {
+  routeButton: {
     flex: 1,
-    gap: 4,
-  },
-  notificationSourceTitle: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    color: hud.rowTitle,
-  },
-  notificationSourceBody: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 0.4,
-    color: hud.accentBright,
-  },
-  notificationSourceNote: {
-    fontFamily: fontFamily.regular,
-    fontSize: 11,
-    lineHeight: 15,
-    color: instrument.mutedOnInk,
-  },
-  notificationSourceBadge: {
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 58,
-    minHeight: 48,
-    paddingHorizontal: 8,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: hud.ruleStrong,
+    borderColor: colors.border,
   },
-  notificationSourceBadgeValue: {
-    fontFamily: fontFamily.black,
-    fontSize: 22,
-    lineHeight: 24,
-    color: hud.accentBright,
+  routeButtonSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
-  notificationSourceBadgeLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 8,
-    letterSpacing: 1,
-    color: hud.mutedLabel,
+  routeButtonText: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textMuted,
+  },
+  routeButtonTextSelected: {
+    color: colors.charcoal,
+  },
+  sourceStatus: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.accent,
+  },
+  pendingBadge: {
+    minWidth: 56,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: alpha(colors.caution, 0.08),
+  },
+  pendingValue: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
+    lineHeight: typography.fontSize.title,
+    color: colors.caution,
+    fontVariant: ['tabular-nums'],
+  },
+  pendingLabel: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textMuted,
   },
 });

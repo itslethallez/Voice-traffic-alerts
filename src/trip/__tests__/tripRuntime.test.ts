@@ -12,9 +12,11 @@ const pushAnnouncement = jest.fn();
 const setOffline = jest.fn();
 const setDriverPosition = jest.fn();
 const setVisibleAlerts = jest.fn();
+const setAlertsFetchedAtMs = jest.fn();
 const setFixedCameras = jest.fn();
 const setTripStartedAtMs = jest.fn();
 const setManualReports = jest.fn();
+const setNearbyReports = jest.fn();
 let tripBannerMessage: string | null = null;
 const setBannerMessage = jest.fn((message: string | null) => {
   tripBannerMessage = message;
@@ -33,9 +35,11 @@ jest.mock('../../store/useTripStore', () => ({
       setBannerMessage,
       setDriverPosition,
       setVisibleAlerts,
+      setAlertsFetchedAtMs,
       setFixedCameras,
       setTripStartedAtMs,
       setManualReports,
+      setNearbyReports,
       get bannerMessage() {
         return tripBannerMessage;
       },
@@ -57,9 +61,13 @@ jest.mock('../../store/useTripStore', () => ({
  */
 const fetchFixedCameras = jest.fn().mockRejectedValue(new Error('not mocked in this test'));
 const fetchOwnReports = jest.fn().mockResolvedValue([]);
+const fetchNearbyReports = jest.fn().mockResolvedValue([]);
+const fetchCorridorAlerts = jest.fn().mockResolvedValue([]);
 jest.mock('../../api/backend/client', () => ({
   fetchFixedCameras: (...args: unknown[]) => fetchFixedCameras(...args),
   fetchOwnReports: (...args: unknown[]) => fetchOwnReports(...args),
+  fetchNearbyReports: (...args: unknown[]) => fetchNearbyReports(...args),
+  fetchCorridorAlerts: (...args: unknown[]) => fetchCorridorAlerts(...args),
 }));
 
 const getDeviceId = jest.fn().mockResolvedValue('test-device-id');

@@ -50,10 +50,10 @@ describe('RadarMap interaction and marker contract', () => {
   });
 
   it('uses squared flashing-light marks for police and camera glyphs for fixed cameras', () => {
-    expect(source).toMatch(/policeSquare:[\s\S]*?borderRadius: 4,/);
+    expect(source).toMatch(/policeSquare:[\s\S]*?borderRadius: radii\.sm,/);
     expect(source).toContain('Camera as CameraIcon');
     expect(source).toContain('<CameraIcon size={20}');
-    expect(source).toMatch(/cameraSquare:[\s\S]*?borderRadius: 4,/);
+    expect(source).toMatch(/cameraSquare:[\s\S]*?borderRadius: radii\.sm,/);
     expect(webSource).toContain('Fixed speed camera');
     expect(webSource).toContain('cameraLens');
   });

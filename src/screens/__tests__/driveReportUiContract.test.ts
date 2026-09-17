@@ -13,13 +13,18 @@ describe('Drive report UI contract', () => {
     expect(drive).not.toMatch(/>SHOTGUN<\/Text>/);
   });
 
-  it('adapts the header and control row for landscape orientation', () => {
+  it('builds the screen chrome from the design-system base components only', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
-    expect(drive).toContain("import { useIsLandscape } from '../hooks/useIsLandscape';");
-    expect(drive).toContain('const isLandscape = useIsLandscape();');
-    expect(drive).toMatch(/style=\{\[styles\.topBar, isLandscape && styles\.topBarLandscape\]\}/);
-    expect(drive).toMatch(/style=\{\[styles\.controlRow, isLandscape && styles\.controlRowLandscape, compactControls && styles\.controlRowCompact\]\}/);
+    for (const component of ['ScreenContainer', 'MapOverlayPanel', 'BottomSheet', 'AlertPill', 'Card']) {
+      expect(drive).toContain(`<${component}`);
+    }
+    // No legacy palette or typography imports, no hardcoded hex colours,
+    // and no absolute positioning (MapOverlayPanel/BottomSheet own that).
+    expect(drive).not.toContain("../theme/colors");
+    expect(drive).not.toContain('../theme/typography');
+    expect(drive).not.toMatch(/#[0-9A-Fa-f]{3,8}\b/);
+    expect(drive).not.toContain("position: 'absolute'");
   });
 
   it('automatically dismisses each announced-report ticker after 20 seconds', () => {
@@ -32,16 +37,34 @@ describe('Drive report UI contract', () => {
     expect(drive).toContain('clearTimeout(timeout);');
   });
 
-  it('keeps a compact live-report ticker in a dedicated lane below the header', () => {
+  it('keeps a compact live-report ticker in the top overlay panel', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
-    expect(drive).toContain('<View pointerEvents="box-none" style={styles.mapChrome}>');
-    expect(drive).toMatch(/mapChrome:\s*\{\s*flex: 1,\s*minHeight: 0,\s*justifyContent: 'space-between',/);
-    expect(drive).toContain("backgroundColor: hud.ground");
     expect(drive).toContain('<ReportTicker');
     expect(drive).toContain('LIVE REPORT');
     expect(drive).toContain('TAP TO SHOW ON MAP');
     expect(drive).not.toContain('announcementCard');
+  });
+
+  it('drives the category filter row from the persisted six-pill filter set', () => {
+    const drive = source('src/screens/DriveScreen.tsx');
+    const defaults = source('src/store/settingsDefaults.ts');
+
+    expect(drive).toContain('ALERT_FILTER_CATEGORIES');
+    expect(drive).toContain('toggleAlertTypeFilter');
+    expect(drive).toContain('alertTypeFilters');
+    for (const category of ['police', 'traffic', 'accident', 'closure', 'roadkill', 'hazard']) {
+      expect(defaults).toContain(`'${category}'`);
+    }
+  });
+
+  it('renders the nearby-alerts list in the BottomSheet with Card + AlertPill rows', () => {
+    const drive = source('src/screens/DriveScreen.tsx');
+
+    expect(drive).toContain('<BottomSheet');
+    expect(drive).toContain('alerts nearby');
+    expect(drive).toContain('<FlatList');
+    expect(drive).toMatch(/<Card variant="raised"[\s\S]*?<AlertPill/);
   });
 
   it('provides a top map recenter control on native and web map adapters', () => {
@@ -88,17 +111,15 @@ describe('Drive report UI contract', () => {
   it('gives the bottom tab bar the same dark chrome as the header', () => {
     const bottomNav = source('src/navigation/BottomNav.tsx');
 
-    expect(bottomNav).toContain("import { hud } from '../theme/colors';");
-    expect(bottomNav).toMatch(/root:\s*\{[\s\S]*?backgroundColor: hud\.ground,/);
+    expect(bottomNav).toContain("from '../theme/tokens'");
+    expect(bottomNav).toMatch(/root:\s*\{[\s\S]*?backgroundColor: colors\.background,/);
     expect(bottomNav).not.toContain("backgroundColor: '#FFFFFF'");
   });
 
-  it('keeps the ticker and map controls at least 44dp tall', () => {
-    const drive = source('src/screens/DriveScreen.tsx');
+  it('keeps the map controls at least 44dp tall', () => {
     const nativeMap = source('src/screens/radar/RadarMap.tsx');
     const webMap = source('src/screens/radar/RadarMap.web.tsx');
 
-    expect(drive).toMatch(/tickerBanner:\s*\{[\s\S]*?height: 48,/);
     for (const map of [nativeMap, webMap]) {
       expect(map).toMatch(/recenterButton:\s*\{[\s\S]*?width: 44,\s*height: 44,/);
       expect(map).toMatch(/zoomButton:\s*\{[\s\S]*?width: 44,\s*height: 44,/);

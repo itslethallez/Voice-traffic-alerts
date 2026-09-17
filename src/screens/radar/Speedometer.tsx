@@ -1,8 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTripStore } from '../../store/useTripStore';
-import { hud } from '../../theme/colors';
-import { fontFamily } from '../../theme/typography';
+import { colors, spacing, typography } from '../../theme/tokens';
 
 /** Matches ReportBar's REPORT_DIAL_SIZE (design reference: the two
  * circular controls are the same size, mirrored left/right in the bottom
@@ -20,7 +19,12 @@ export function Speedometer() {
   const speedKmh = useTripStore((state) => state.driverSpeedKmh);
 
   return (
-    <LinearGradient colors={['#0A1E30', '#060D16']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
+    <LinearGradient
+      colors={[colors.surfaceRaised, colors.surface]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.container}
+    >
       <Text style={styles.caption}>SPEED</Text>
       <View style={styles.valueRow}>
         <Text style={styles.value}>{Math.round(speedKmh)}</Text>
@@ -38,30 +42,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: hud.accent,
+    borderColor: colors.accent,
   },
   caption: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1.6,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
   },
   valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
   },
   value: {
-    fontFamily: fontFamily.black,
-    fontSize: 34,
-    lineHeight: 36,
-    letterSpacing: -1,
-    color: hud.ink,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.stat,
+    letterSpacing: typography.letterSpacing.none,
+    color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
   },
   unit: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1.2,
-    color: hud.accent,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.accent,
   },
 });

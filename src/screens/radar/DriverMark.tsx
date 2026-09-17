@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { hud, instrument } from '../../theme/colors';
+import { colors } from '../../theme/tokens';
 
 /**
  * The driver's position on the radar map (design_handoff_instrument_face) -
@@ -25,8 +25,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 26,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: instrument.paper,
-    shadowColor: hud.accent,
+    borderBottomColor: colors.white,
+    shadowColor: colors.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: 12,
     shadowOpacity: 0.9,

@@ -28,7 +28,10 @@ module.exports = {
     android: {
       package: 'com.itslethallez.voicetrafficalerts',
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
+        // Charcoal to match the token palette (colors.charcoal #0B0F12) —
+        // the old light blue peeked through on launchers that edge-mask
+        // the foreground image.
+        backgroundColor: '#0B0F12',
         foregroundImage: './assets/shotgun-icon.png',
         backgroundImage: './assets/android-icon-background.png',
         monochromeImage: './assets/android-icon-monochrome.png',

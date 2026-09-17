@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { PanResponder, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import { hud } from '../theme/colors';
-import { fontFamily } from '../theme/typography';
+import { alpha, colors, spacing, typography } from '../theme/tokens';
 
 const THUMB_WIDTH = 6;
 const TRACK_HEIGHT = 18;
@@ -96,29 +95,30 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: hud.faintTrack,
+    backgroundColor: alpha(colors.textSecondary, 0.25),
   },
   filledLine: {
     position: 'absolute',
     left: 0,
     height: 2,
-    backgroundColor: hud.accent,
+    backgroundColor: colors.accent,
   },
   thumb: {
     position: 'absolute',
     top: 0,
     width: THUMB_WIDTH,
     height: TRACK_HEIGHT,
-    backgroundColor: hud.accent,
+    backgroundColor: colors.accent,
   },
   labelsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: spacing.xxs,
   },
   label: {
-    fontFamily: fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 1,
-    color: hud.muted,
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textMuted,
   },
 });

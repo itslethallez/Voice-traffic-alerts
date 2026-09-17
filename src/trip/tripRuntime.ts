@@ -1,4 +1,10 @@
-import { fetchFixedCameras, fetchNearbyReports, fetchOwnReports } from '../api/backend/client';
+import {
+  fetchCorridorAlerts,
+  fetchFixedCameras,
+  fetchNearbyReports,
+  fetchOwnReports,
+} from '../api/backend/client';
+import { corridorAlertToWazeAlert } from '../api/backend/corridorAlert';
 import type { ManualReportCategory, RemoteManualReport } from '../api/backend/types';
 import { fetchAlertsForBoundingBox } from '../api/waze/fetchAlertsForBoundingBox';
 import { WazeApiError } from '../api/waze/client';
@@ -23,7 +29,9 @@ import {
   type SpeedWarningCheckpoint,
 } from '../engine/selectSpeedCameraWarning';
 import { initialSpeedState, isSustainedLowSpeed, updateSpeedState } from '../engine/speedGate';
+import { STATIONARY_SPEED_THRESHOLD_KMH } from '../engine/constants';
 import type { AlertsCache, DriverState, MovementState, SpeedState } from '../engine/types';
+import type { WazeAlert } from '../api/waze/types';
 import type { WazeBoundingBoxParams } from '../geo/boundingBox';
 import { radiusBoundingBox } from '../geo/radiusBoundingBox';
 import { getCachedSpeedLimit, prefetchSpeedLimit } from '../geo/speedLimitLookup';
@@ -39,7 +47,10 @@ import { delay } from '../speech/delay';
 import { formatBriefingAlert, NO_BRIEFING_ALERTS_MESSAGE } from '../speech/formatAnnouncement';
 import { formatSpeedCameraWarning } from '../speech/formatSpeedCameraWarning';
 import { speakAsync } from '../speech/ttsAdapter';
-import { enabledTypesFromSettings } from '../store/settingsDefaults';
+import {
+  ALERT_FILTER_CATEGORIES,
+  enabledTypesFromFilters,
+} from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { computeRateLimitBackoffMs } from './backoff';
@@ -71,6 +82,25 @@ let rateLimitBannerShown = false;
  * for which target id (a fixed camera or a corroborated police report)
  * this trip - see engine/selectSpeedCameraWarning.ts. */
 let speedWarningFiredCheckpoints: Map<string, Set<SpeedWarningCheckpoint>> = new Map();
+
+/**
+ * The normalized-alerts counterpart of alertsCache: the latest
+ * GET /api/alerts/nearby corridor result, already mapped to synthetic
+ * WazeAlerts (api/backend/corridorAlert.ts) so it feeds the same announcer,
+ * dedupe and map-marker paths Waze alerts use. Kept separate from
+ * alertsCache rather than merged into it because the two refresh on
+ * different lifecycles - applyFetchResult owns alertsCache.alerts' replace-
+ * on-success/keep-on-failure semantics, and a corridor fetch resolving
+ * later must not clobber them.
+ */
+let corridorAlerts: WazeAlert[] = [];
+
+/** The single writer of useTripStore.visibleAlerts - always publishes the
+ * fused set (Waze box alerts + corridor alerts) so neither refresh path can
+ * briefly hide the other's markers while they're both live. */
+function publishVisibleAlerts(): void {
+  useTripStore.getState().setVisibleAlerts([...alertsCache.alerts, ...corridorAlerts]);
+}
 
 /**
  * null until a live fetch from the central `fixed_cameras` table succeeds
@@ -189,6 +219,41 @@ async function refreshNearbyReports(position: GeoPoint, radiusMeters: number): P
   }
 }
 
+/**
+ * Refreshes the fused-source corridor feed (GET /api/alerts/nearby) on the
+ * same cadence as the Waze poll - fire-and-forget like
+ * refreshNearbyReports/refreshFixedCameras, so a slow or failed fetch never
+ * delays the Waze alerts this same tick already applied. A failure leaves
+ * the previous corridor snapshot in place (same stale-cache posture as the
+ * Waze path), and the poll cadence retries it.
+ *
+ * headingDeg is only sent when the driver is actually moving - below
+ * STATIONARY_SPEED_THRESHOLD_KMH the GPS heading is noise, so the endpoint
+ * gets none and degrades to a plain radius, which is what a stopped driver
+ * wants anyway (ambient awareness, no "ahead").
+ */
+async function refreshCorridorAlerts(driver: DriverState): Promise<void> {
+  try {
+    const settings = useSettingsStore.getState();
+    const types = ALERT_FILTER_CATEGORIES.filter((category) => settings.alertTypeFilters[category]);
+    const remote = await fetchCorridorAlerts({
+      position: driver.position,
+      headingDeg: driver.speedKmh >= STATIONARY_SPEED_THRESHOLD_KMH ? driver.headingDeg : null,
+      radiusMeters: settings.announceDistanceMeters,
+      types,
+    });
+    corridorAlerts = remote
+      .map(corridorAlertToWazeAlert)
+      .filter((alert): alert is WazeAlert => alert !== null);
+    for (const alert of corridorAlerts) {
+      prefetchSuburb({ latitude: alert.latitude, longitude: alert.longitude }).catch(() => {});
+    }
+    publishVisibleAlerts();
+  } catch (error) {
+    console.warn('[alerts] failed to fetch corridor alerts', error);
+  }
+}
+
 /** Call when a new trip starts (e.g. app cold start) to clear all of the above. */
 export function resetTripRuntime(): void {
   announcerState = createInitialAnnouncerState();
@@ -199,6 +264,7 @@ export function resetTripRuntime(): void {
   consecutiveRateLimitHits = 0;
   rateLimitBannerShown = false;
   speedWarningFiredCheckpoints = new Map();
+  corridorAlerts = [];
   // Also start a fresh serialization chain - otherwise a call already
   // queued behind the old chain (from before this reset) would still run
   // afterwards and write into the just-reset state.
@@ -238,7 +304,8 @@ async function fetchAndApplyAlerts(boundingBox: WazeBoundingBoxParams, nowMs: nu
     const { alerts, quadrantRateLimited } = await fetchAlertsForBoundingBox(boundingBox);
     alertsCache = applyFetchResult(alertsCache, { ok: true, alerts, nowMs });
     useTripStore.getState().setOffline(false);
-    useTripStore.getState().setVisibleAlerts(alertsCache.alerts);
+    useTripStore.getState().setAlertsFetchedAtMs(nowMs);
+    publishVisibleAlerts();
 
     // Kick off suburb resolution as early as possible - fire-and-forget,
     // never awaited - so it has the whole announce-window approach (an
@@ -310,6 +377,7 @@ async function pollIfDue(driver: DriverState, nowMs: number, announceDistanceMet
   // no separate polling loop of its own, and a slow/failed fetch here
   // never delays the Waze alerts this same tick already fetched.
   void refreshNearbyReports(driver.position, announceDistanceMeters);
+  void refreshCorridorAlerts(driver);
 }
 
 /**
@@ -435,12 +503,12 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     : undefined;
 
   const candidates = selectAnnounceableAlerts(
-    alertsCache.alerts,
+    [...alertsCache.alerts, ...corridorAlerts],
     driver,
     announcerState.announcedDistances,
     nowMs,
     {
-      enabledTypes: enabledTypesFromSettings(settings.categoriesEnabled),
+      enabledTypes: enabledTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
       maxDistanceMeters: settings.announceDistanceMeters,
       routeCorridor,
     }
@@ -552,8 +620,8 @@ export async function runBriefing(
   if (settings.masterMute) return;
 
   const candidates = hasUsableAlerts
-    ? selectBriefingAlerts(alertsCache.alerts, driver.position, Date.now(), {
-        enabledTypes: enabledTypesFromSettings(settings.categoriesEnabled),
+    ? selectBriefingAlerts([...alertsCache.alerts, ...corridorAlerts], driver.position, Date.now(), {
+        enabledTypes: enabledTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
         radiusMeters: settings.briefingRadiusMeters,
       })
     : [];
