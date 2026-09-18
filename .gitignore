@@ -45,3 +45,6 @@ yarn-error.*
 /*.zip
 dist-web/
 dist-android/
+
+.vercel
+.env*

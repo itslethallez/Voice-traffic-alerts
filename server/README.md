@@ -19,7 +19,7 @@ New tables go through `migrations/` instead.
 ```sh
 cd server
 npm install
-cp .env.example .env   # fill in DATABASE_URL (Neon branch), INGEST_SECRET, etc.
+cp .env.example .env   # fill in DATABASE_URL (Neon branch), INGEST_SECRET_*, etc.
 npm run migrate        # applies migrations/ against DATABASE_URL
 ```
 
@@ -37,8 +37,12 @@ pnpm jest --testMatch '**/server/e2e/*.test.ts'   # from repo root
 curl -X POST http://localhost:3000/api/ingest \
   -H 'content-type: application/json' \
   -H 'x-ingest-secret: dev-secret' \
-  -d '{"type":"police","lat":-34.92,"lng":138.60,"radius_m":250,"confidence":80,"source":"user_report","first_seen":"2026-09-17T04:00:00Z","expires_at":"2026-09-17T05:00:00Z","corroboration_count":0}'
+  -d '{"type":"mobile_camera","lat":-34.92,"lng":138.60,"radius_m":250,"confidence":80,"source":"police_notice","first_seen":"2026-09-17T04:00:00Z","expires_at":"2026-09-17T05:00:00Z","corroboration_count":0}'
 ```
+
+The secret in the header must be the one configured for the payload's
+`source` (`INGEST_SECRET_POLICE_NOTICE` here) — the endpoint resolves
+the secret to a source and 403s on a mismatch.
 
 Then confirm in Postgres (`geography` column should read back as a point):
 

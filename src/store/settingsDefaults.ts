@@ -1,10 +1,19 @@
 import type { AlertType } from '../../shared/alert-schema';
 import type { WazeAlertType } from '../api/waze/types';
 
-export type AlertCategory = 'POLICE' | 'ACCIDENT' | 'HAZARD' | 'ROAD_CLOSED' | 'JAM';
+export type AlertCategory =
+  | 'POLICE'
+  | 'MOBILE_CAMERA'
+  | 'FIXED_CAMERA'
+  | 'ACCIDENT'
+  | 'HAZARD'
+  | 'ROAD_CLOSED'
+  | 'JAM';
 
 export const ALERT_CATEGORIES: AlertCategory[] = [
   'POLICE',
+  'MOBILE_CAMERA',
+  'FIXED_CAMERA',
   'ACCIDENT',
   'HAZARD',
   'ROAD_CLOSED',
@@ -12,9 +21,9 @@ export const ALERT_CATEGORIES: AlertCategory[] = [
 ];
 
 /**
- * The six normalized alert categories from shared/alert-schema.ts - the
+ * The normalized alert categories from shared/alert-schema.ts - the
  * Drive screen's filter pills, and the taxonomy every backend alert already
- * arrives in. Distinct from AlertCategory above, which is the legacy
+ * arrives in. Distinct from AlertCategory above, which is the
  * Waze-shaped SPEAK THESE voice toggles: this set matches the alert schema
  * 1:1, including 'roadkill', which has no Waze feed equivalent. Type-only
  * import of AlertType keeps zod out of this module's runtime graph.
@@ -23,6 +32,8 @@ export type AlertFilterCategory = AlertType;
 
 export const ALERT_FILTER_CATEGORIES: AlertFilterCategory[] = [
   'police',
+  'mobile_camera',
+  'fixed_camera',
   'traffic',
   'accident',
   'closure',
@@ -38,6 +49,10 @@ export const ALERT_FILTER_CATEGORIES: AlertFilterCategory[] = [
  */
 const WAZE_TYPE_TO_FILTER: Partial<Record<string, AlertFilterCategory>> = {
   POLICE: 'police',
+  // Synthetic corridor types (api/backend/corridorAlert.ts) - the camera
+  // family, distinct from a live POLICE sighting.
+  MOBILE_CAMERA: 'mobile_camera',
+  FIXED_CAMERA: 'fixed_camera',
   JAM: 'traffic',
   ACCIDENT: 'accident',
   ROAD_CLOSED: 'closure',
@@ -118,6 +133,13 @@ export interface SettingsValues {
 export const defaultSettingsValues: SettingsValues = {
   categoriesEnabled: {
     POLICE: true,
+    MOBILE_CAMERA: true,
+    // Static infrastructure a regular already knows - announced every
+    // pass it's exactly the noise that gets an app muted. Map markers
+    // stay on (visibleTypes is pill-driven); this is voice only, and the
+    // speeding-triggered camera warning still fires (it gates on the
+    // pill, not this toggle).
+    FIXED_CAMERA: false,
     ACCIDENT: true,
     HAZARD: true,
     ROAD_CLOSED: true,
@@ -125,6 +147,8 @@ export const defaultSettingsValues: SettingsValues = {
   },
   alertTypeFilters: {
     police: true,
+    mobile_camera: true,
+    fixed_camera: true,
     traffic: true,
     accident: true,
     closure: true,
@@ -147,24 +171,43 @@ export function enabledTypesFromSettings(
 }
 
 /**
- * The effective enabled-type set once the Drive screen's filter pills are
- * layered on top of the SPEAK THESE voice toggles: a Waze type stays in
- * only when *both* switches allow it (a hidden category is never spoken or
- * shown, and a pill can't re-enable a category voice-muted in Settings).
- * 'ROADKILL' is a normalized-schema type with no SPEAK THESE entry, so its
- * pill alone decides. Unrecognized upstream feed types keep their existing
- * behaviour - enabledTypesFromSettings only ever yields the five known
- * categories, so they were never announceable anyway.
+ * What the map and nearby sheet show: every category whose Drive-screen
+ * filter pill is on. Deliberately NOT intersected with the SPEAK THESE
+ * voice toggles - those gate speech only (speakableTypesFromFilters
+ * below), so muting a category's voice no longer blinds its map markers,
+ * and a category can be map-marker-only by design (a pill with voice
+ * off). Unrecognized upstream feed types never enter the set, matching
+ * the old intersected behaviour.
  */
-export function enabledTypesFromFilters(
+export function visibleTypesFromFilters(
+  alertTypeFilters: Record<AlertFilterCategory, boolean>
+): ReadonlySet<WazeAlertType> {
+  const visible = new Set<WazeAlertType>();
+  for (const [wazeType, filterCategory] of Object.entries(WAZE_TYPE_TO_FILTER)) {
+    if (filterCategory && alertTypeFilters[filterCategory]) visible.add(wazeType);
+  }
+  return visible;
+}
+
+/**
+ * What the announcer and cold-start briefing may speak: a Waze type needs
+ * BOTH its Drive-screen pill and its SPEAK THESE voice toggle (a hidden
+ * category is never spoken, and a pill can't re-enable a category
+ * voice-muted in Settings). 'ROADKILL' is a normalized-schema type with
+ * no SPEAK THESE entry, so its pill alone decides. Unrecognized upstream
+ * feed types keep their existing behaviour - enabledTypesFromSettings
+ * only ever yields the known categories, so they were never announceable
+ * anyway.
+ */
+export function speakableTypesFromFilters(
   categoriesEnabled: Record<AlertCategory, boolean>,
   alertTypeFilters: Record<AlertFilterCategory, boolean>
 ): ReadonlySet<WazeAlertType> {
-  const enabled = new Set<WazeAlertType>();
+  const speakable = new Set<WazeAlertType>();
   for (const type of enabledTypesFromSettings(categoriesEnabled)) {
     const filter = wazeTypeToAlertFilter(type);
-    if (filter !== null && alertTypeFilters[filter]) enabled.add(type);
+    if (filter !== null && alertTypeFilters[filter]) speakable.add(type);
   }
-  if (alertTypeFilters.roadkill) enabled.add('ROADKILL');
-  return enabled;
+  if (alertTypeFilters.roadkill) speakable.add('ROADKILL');
+  return speakable;
 }

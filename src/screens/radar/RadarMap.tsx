@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { Camera as CameraIcon, LocateFixed } from 'lucide-react-native';
 import type { WazeAlert } from '../../api/waze/types';
@@ -13,12 +13,12 @@ import { nearestAlertToDriver } from '../../geo/nearestAlert';
 import { announcementLocation, resolveAreaName } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
-import { enabledTypesFromFilters } from '../../store/settingsDefaults';
+import { visibleTypesFromFilters } from '../../store/settingsDefaults';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { colors, radii, spacing, typography } from '../../theme/tokens';
+import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
 import { ClosestReportPanel } from './ClosestReportPanel';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
@@ -156,7 +156,6 @@ export function RadarMap({
   const nearbyReports = useTripStore((state) => state.nearbyReports);
   const confirmNearbyReport = useTripStore((state) => state.confirmNearbyReport);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
-  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
   const navigationStatus = useNavigationStore((state) => state.status);
@@ -172,16 +171,13 @@ export function RadarMap({
     setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'));
   }, [rangeToggleToken]);
 
-  /** Same enabled-categories state that already drives speech filtering
-   * (engine/selectAlerts.ts, engine/selectBriefingAlerts.ts both take this
-   * same enabledTypesFromFilters() result as their `enabledTypes` option)
-   * - reused here, not reimplemented, so a category switched off in
-   * Settings or via the Drive screen's filter pills disappears from the
-   * map the same instant it stops being announced, via the exact same
-   * source of truth. */
+  /** What the map shows: every category whose Drive-screen filter pill is
+   * on. Speech is gated separately (speakableTypesFromFilters in
+   * tripRuntime.ts feeds engine/selectAlerts.ts) - a voice-muted category
+   * keeps its markers, and a hidden one is neither shown nor spoken. */
   const enabledTypes = useMemo(
-    () => enabledTypesFromFilters(categoriesEnabled, alertTypeFilters),
-    [categoriesEnabled, alertTypeFilters]
+    () => visibleTypesFromFilters(alertTypeFilters),
+    [alertTypeFilters]
   );
   const mapVisibleAlerts = useMemo(() => {
     const waze = visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
@@ -240,20 +236,20 @@ export function RadarMap({
    * bundled fallback - tripRuntime.ts's getActiveFixedCameras) as their own
    * map layer, distinct from mapVisibleAlerts above: a camera is permanent
    * infrastructure, not a live Waze/report alert, so it has no `type` to
-   * run through enabledTypes - gated on the POLICE toggle instead, matching
-   * checkSpeedCameraWarning's own gating in tripRuntime.ts (a driver who's
-   * turned POLICE off has said "don't tell me about police", and a SAPOL
-   * camera is police-adjacent enforcement infrastructure). Bounded to
-   * announceDistanceMeters of the driver, the same "nearby and current"
-   * radius the manual/nearby report layers above already use, rather than
-   * every camera in the whole (statewide) dataset at once.
+   * run through enabledTypes - gated on the fixed_camera filter pill
+   * instead, matching checkSpeedCameraWarning's own gating in
+   * tripRuntime.ts (a driver who's hidden fixed cameras has said "don't
+   * show me cameras"). Bounded to announceDistanceMeters of the driver,
+   * the same "nearby and current" radius the manual/nearby report layers
+   * above already use, rather than every camera in the whole (statewide)
+   * dataset at once.
    */
   const mapVisibleCameras = useMemo(() => {
-    if (!driverPosition || !categoriesEnabled.POLICE || !alertTypeFilters.police) return [];
+    if (!driverPosition || !alertTypeFilters.fixed_camera) return [];
     return fixedCameras.filter(
       (camera) => haversineDistance(driverPosition, camera.position) <= announceDistanceMeters
     );
-  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, alertTypeFilters.police, announceDistanceMeters]);
+  }, [fixedCameras, driverPosition, alertTypeFilters.fixed_camera, announceDistanceMeters]);
 
   const nearbyReportsById = useMemo(() => new Map(nearbyReports.map((report) => [report.id, report])), [nearbyReports]);
 
@@ -866,23 +862,42 @@ function AlertMarker({
       : `${baseLabel}, reported by another driver`
     : baseLabel;
 
-  const marker = isPolice ? (
-    <View style={styles.alertMarker}>
+  // Shape is the at-a-glance differentiator inside the police family -
+  // all three share coolBlue, so colour alone can't tell them apart at
+  // driving distance: a live sighting keeps the square + light bar it
+  // already had, a scheduled mobile-camera window is a rotated tag
+  // (temporary, fixed location), and permanent infrastructure is a ring.
+  let shape: ReactNode;
+  if (isPolice) {
+    shape = (
       <View style={[styles.policeSquare, isSelected && styles.selectedMarker]}>
         <PoliceLightBar orientation="horizontal" width={POLICE_MARKER_SIZE} height={POLICE_LIGHT_BAR_HEIGHT} />
         <Text style={styles.policeLetter}>P</Text>
       </View>
-      {distanceMeters !== null ? (
-        <View style={styles.alertDistanceChip}>
-          <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters).replace(/km$/, ' KM')}</Text>
-        </View>
-      ) : null}
-    </View>
-  ) : (
-    <View style={styles.alertMarker}>
+    );
+  } else if (alert.type === 'MOBILE_CAMERA') {
+    shape = (
+      <View style={[styles.cameraDiamond, isSelected && styles.selectedMarker]}>
+        <Text style={styles.cameraGlyph}>{meta.letter}</Text>
+      </View>
+    );
+  } else if (alert.type === 'FIXED_CAMERA') {
+    shape = (
+      <View style={[styles.cameraRing, isSelected && styles.selectedMarker]}>
+        <Text style={styles.cameraRingGlyph}>{meta.letter}</Text>
+      </View>
+    );
+  } else {
+    shape = (
       <View style={[styles.alertPin, { backgroundColor: meta.color }, isSelected && styles.selectedMarker]}>
         <Text style={styles.alertPinLetter}>{meta.letter}</Text>
       </View>
+    );
+  }
+
+  const marker = (
+    <View style={styles.alertMarker}>
+      {shape}
       {distanceMeters !== null ? (
         <View style={styles.alertDistanceChip}>
           <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters).replace(/km$/, ' KM')}</Text>
@@ -974,6 +989,9 @@ function Unsupported({ message }: { message: string }) {
 const POLICE_MARKER_SIZE = 34;
 const FIXED_CAMERA_MARKER_SIZE = 34;
 const POLICE_LIGHT_BAR_HEIGHT = 9;
+const CAMERA_TAG_SIZE = 26;
+const CAMERA_RING_SIZE = 30;
+const CAMERA_RING_BORDER = 4;
 const ALERT_PIN_SIZE = 28;
 const ALERT_PIN_BORDER_WIDTH = 2;
 
@@ -1121,6 +1139,38 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.display,
     fontSize: typography.fontSize.body,
     lineHeight: 15,
+    color: colors.white,
+  },
+  cameraDiamond: {
+    width: CAMERA_TAG_SIZE,
+    height: CAMERA_TAG_SIZE,
+    borderRadius: radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.coolBlue,
+    transform: [{ rotate: '45deg' }],
+  },
+  cameraGlyph: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.body,
+    lineHeight: 15,
+    color: colors.white,
+    transform: [{ rotate: '-45deg' }],
+  },
+  cameraRing: {
+    width: CAMERA_RING_SIZE,
+    height: CAMERA_RING_SIZE,
+    borderRadius: CAMERA_RING_SIZE / 2,
+    borderWidth: CAMERA_RING_BORDER,
+    borderColor: colors.coolBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: alpha(colors.coolBlue, 0.25),
+  },
+  cameraRingGlyph: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
+    lineHeight: 11,
     color: colors.white,
   },
   alertPin: {

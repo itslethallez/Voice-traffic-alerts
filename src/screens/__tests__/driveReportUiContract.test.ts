@@ -46,14 +46,23 @@ describe('Drive report UI contract', () => {
     expect(drive).not.toContain('announcementCard');
   });
 
-  it('drives the category filter row from the persisted six-pill filter set', () => {
+  it('drives the category filter row from the persisted filter-pill set', () => {
     const drive = source('src/screens/DriveScreen.tsx');
     const defaults = source('src/store/settingsDefaults.ts');
 
     expect(drive).toContain('ALERT_FILTER_CATEGORIES');
     expect(drive).toContain('toggleAlertTypeFilter');
     expect(drive).toContain('alertTypeFilters');
-    for (const category of ['police', 'traffic', 'accident', 'closure', 'roadkill', 'hazard']) {
+    for (const category of [
+      'police',
+      'mobile_camera',
+      'fixed_camera',
+      'traffic',
+      'accident',
+      'closure',
+      'roadkill',
+      'hazard',
+    ]) {
       expect(defaults).toContain(`'${category}'`);
     }
   });

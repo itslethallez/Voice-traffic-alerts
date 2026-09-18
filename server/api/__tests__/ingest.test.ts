@@ -18,6 +18,14 @@ const VALID_ALERT = {
   corroboration_count: 3,
 };
 
+const SECRET_ENV_KEYS = [
+  'INGEST_SECRET_CROWD_API',
+  'INGEST_SECRET_POLICE_NOTICE',
+  'INGEST_SECRET_FIXED_DB',
+  'INGEST_SECRET_FB_AGENT',
+  'INGEST_SECRET_USER_REPORT',
+];
+
 function mockReq(overrides: Partial<VercelRequest> = {}): VercelRequest {
   return {
     method: 'POST',
@@ -35,9 +43,10 @@ function mockRes(): VercelResponse & { status: jest.Mock; json: jest.Mock } {
 
 describe('api/ingest', () => {
   beforeEach(() => {
-    process.env.INGEST_SECRET = 'test-secret';
+    for (const key of SECRET_ENV_KEYS) delete process.env[key];
+    process.env.INGEST_SECRET_CROWD_API = 'test-secret';
     jest.clearAllMocks();
-    (sql as unknown as jest.Mock).mockResolvedValue([{ id: 'uuid-1', ...VALID_ALERT }]);
+    (sql as unknown as jest.Mock).mockResolvedValue([{ id: 'uuid-1', ...VALID_ALERT, inserted: true }]);
   });
 
   it('rejects non-POST methods', async () => {
@@ -54,11 +63,20 @@ describe('api/ingest', () => {
     expect(sql).not.toHaveBeenCalled();
   });
 
-  it('rejects everything when INGEST_SECRET is unset', async () => {
-    delete process.env.INGEST_SECRET;
+  it('rejects everything when no per-source secret is configured', async () => {
+    delete process.env.INGEST_SECRET_CROWD_API;
     const res = mockRes();
     await handler(mockReq(), res);
     expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('forbids a valid secret used to write a different source', async () => {
+    // test-secret resolves to crowd_api; a police_notice payload must
+    // 403 even though authentication succeeded.
+    const res = mockRes();
+    await handler(mockReq({ body: { ...VALID_ALERT, source: 'police_notice' } }), res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(sql).not.toHaveBeenCalled();
   });
 
   it('rejects a payload that fails schema validation', async () => {
@@ -81,5 +99,48 @@ describe('api/ingest', () => {
     expect(sql).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(201);
     expect(notifyNewAlert).toHaveBeenCalledWith({ id: 'uuid-1', ...VALID_ALERT });
+  });
+
+  it('upserts a caller-supplied deterministic id without re-fanning out', async () => {
+    const id = '123e4567-e89b-42d3-a456-426614174000';
+    (sql as unknown as jest.Mock).mockResolvedValue([{ ...VALID_ALERT, id, inserted: false }]);
+    const res = mockRes();
+    await handler(mockReq({ body: { ...VALID_ALERT, id } }), res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(notifyNewAlert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-uuid caller id', async () => {
+    const res = mockRes();
+    await handler(mockReq({ body: { ...VALID_ALERT, id: 'not-a-uuid' } }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(sql).not.toHaveBeenCalled();
+  });
+
+  it('rejects a caller-supplied id on insert-only sources', async () => {
+    process.env.INGEST_SECRET_USER_REPORT = 'ur-secret';
+    const id = '123e4567-e89b-42d3-a456-426614174000';
+    const res = mockRes();
+    await handler(
+      mockReq({
+        headers: { 'x-ingest-secret': 'ur-secret' },
+        body: { ...VALID_ALERT, id, source: 'user_report' },
+      }),
+      res
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(sql).not.toHaveBeenCalled();
+  });
+
+  it('409s when the id conflicts with a row owned by a different source', async () => {
+    // The ON CONFLICT ... WHERE source guard produces zero RETURNING rows.
+    (sql as unknown as jest.Mock).mockResolvedValue([]);
+    const res = mockRes();
+    await handler(
+      mockReq({ body: { ...VALID_ALERT, id: '123e4567-e89b-42d3-a456-426614174000' } }),
+      res
+    );
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(notifyNewAlert).not.toHaveBeenCalled();
   });
 });

@@ -60,6 +60,15 @@ side-streets-only routing).
 ## Code conventions
 - TypeScript strict mode, no `any` without a comment explaining why
 - One file per source integration under /server/sources/
+- Exception to the above: scheduled source scrapers (police notices,
+  fixed cameras, dataset loads) live in /scripts/ as plain CommonJS JS,
+  with shared machinery in /scripts/scrapers/lib/ and one file per
+  state under /scripts/scrapers/states/. They are NOT TypeScript and
+  NOT under server/ because GitHub Actions runs them as
+  `node scripts/x.js` with only the root pnpm install available -
+  server/ is a separate npm project (own package-lock, not in the pnpm
+  workspace) and the workflow pattern has no TS build/run step. Keep
+  new scrapers dependency-free (Node built-ins + root devDeps only).
 - All spatial queries go through /server/lib/postgis-helpers.ts,
   never raw inline SQL scattered across services
 - Tests live next to the file they test (*.test.ts, colocated

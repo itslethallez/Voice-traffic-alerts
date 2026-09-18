@@ -3,19 +3,23 @@ import {
   ALERT_FILTER_CATEGORIES,
   clamp,
   defaultSettingsValues,
-  enabledTypesFromFilters,
   enabledTypesFromSettings,
   MAX_ANNOUNCE_DISTANCE_METERS,
   MAX_BRIEFING_RADIUS_METERS,
   MIN_ANNOUNCE_DISTANCE_METERS,
   MIN_BRIEFING_RADIUS_METERS,
+  speakableTypesFromFilters,
+  visibleTypesFromFilters,
   wazeTypeToAlertFilter,
 } from '../settingsDefaults';
 
 describe('defaultSettingsValues', () => {
-  it('has all five categories enabled by default', () => {
+  it('has six voice categories on and fixed cameras voice-off by default', () => {
+    // FIXED_CAMERA is the deliberate exception: permanent infrastructure is
+    // map-marker-only unless the driver opts into voice - announcing it on
+    // every pass is the noise that gets an app muted.
     for (const category of ALERT_CATEGORIES) {
-      expect(defaultSettingsValues.categoriesEnabled[category]).toBe(true);
+      expect(defaultSettingsValues.categoriesEnabled[category]).toBe(category !== 'FIXED_CAMERA');
     }
   });
 
@@ -61,10 +65,10 @@ describe('clamp', () => {
 });
 
 describe('enabledTypesFromSettings', () => {
-  it('includes every category when all are enabled', () => {
+  it('includes every category whose voice default is on', () => {
     const enabled = enabledTypesFromSettings(defaultSettingsValues.categoriesEnabled);
     for (const category of ALERT_CATEGORIES) {
-      expect(enabled.has(category)).toBe(true);
+      expect(enabled.has(category)).toBe(category !== 'FIXED_CAMERA');
     }
   });
 
@@ -79,7 +83,7 @@ describe('enabledTypesFromSettings', () => {
 });
 
 describe('alertTypeFilters', () => {
-  it('has all six filter categories enabled by default', () => {
+  it('has all eight filter categories enabled by default', () => {
     for (const category of ALERT_FILTER_CATEGORIES) {
       expect(defaultSettingsValues.alertTypeFilters[category]).toBe(true);
     }
@@ -89,6 +93,8 @@ describe('alertTypeFilters', () => {
 describe('wazeTypeToAlertFilter', () => {
   it('maps each known feed type onto its filter-pill category', () => {
     expect(wazeTypeToAlertFilter('POLICE')).toBe('police');
+    expect(wazeTypeToAlertFilter('MOBILE_CAMERA')).toBe('mobile_camera');
+    expect(wazeTypeToAlertFilter('FIXED_CAMERA')).toBe('fixed_camera');
     expect(wazeTypeToAlertFilter('JAM')).toBe('traffic');
     expect(wazeTypeToAlertFilter('ACCIDENT')).toBe('accident');
     expect(wazeTypeToAlertFilter('ROAD_CLOSED')).toBe('closure');
@@ -100,19 +106,46 @@ describe('wazeTypeToAlertFilter', () => {
   });
 });
 
-describe('enabledTypesFromFilters', () => {
+describe('visibleTypesFromFilters', () => {
+  it('shows every pill-enabled category regardless of the SPEAK THESE toggles', () => {
+    const visible = visibleTypesFromFilters(defaultSettingsValues.alertTypeFilters);
+    for (const category of ALERT_CATEGORIES) {
+      expect(visible.has(category)).toBe(true);
+    }
+    // ROADKILL has no voice toggle but still displays.
+    expect(visible.has('ROADKILL')).toBe(true);
+  });
+
+  it('keeps a category visible when its voice is muted (decoupled gates)', () => {
+    // Voice-off is a speakableTypes concern - muting FIXED_CAMERA in
+    // Settings must not blind its map markers.
+    const visible = visibleTypesFromFilters(defaultSettingsValues.alertTypeFilters);
+    expect(visible.has('FIXED_CAMERA')).toBe(true);
+  });
+
+  it('hides a category whose pill is off', () => {
+    const visible = visibleTypesFromFilters({
+      ...defaultSettingsValues.alertTypeFilters,
+      fixed_camera: false,
+    });
+    expect(visible.has('FIXED_CAMERA')).toBe(false);
+    expect(visible.has('MOBILE_CAMERA')).toBe(true);
+  });
+});
+
+describe('speakableTypesFromFilters', () => {
   it('matches enabledTypesFromSettings when every pill is on', () => {
-    const combined = enabledTypesFromFilters(
+    const combined = speakableTypesFromFilters(
       defaultSettingsValues.categoriesEnabled,
       defaultSettingsValues.alertTypeFilters
     );
     for (const category of ALERT_CATEGORIES) {
-      expect(combined.has(category)).toBe(true);
+      expect(combined.has(category)).toBe(category !== 'FIXED_CAMERA');
     }
   });
 
   it('drops a Waze type when its filter pill is off even if SPEAK THESE has it on', () => {
-    const combined = enabledTypesFromFilters(
+    const combined = speakableTypesFromFilters(
       defaultSettingsValues.categoriesEnabled,
       { ...defaultSettingsValues.alertTypeFilters, traffic: false }
     );
@@ -121,20 +154,30 @@ describe('enabledTypesFromFilters', () => {
   });
 
   it('stays off when SPEAK THESE is off even if the pill is on', () => {
-    const combined = enabledTypesFromFilters(
+    const combined = speakableTypesFromFilters(
       { ...defaultSettingsValues.categoriesEnabled, POLICE: false },
       defaultSettingsValues.alertTypeFilters
     );
     expect(combined.has('POLICE')).toBe(false);
   });
 
+  it('gates each camera type on its own voice toggle independently', () => {
+    const combined = speakableTypesFromFilters(
+      { ...defaultSettingsValues.categoriesEnabled, FIXED_CAMERA: false },
+      defaultSettingsValues.alertTypeFilters
+    );
+    expect(combined.has('FIXED_CAMERA')).toBe(false);
+    expect(combined.has('MOBILE_CAMERA')).toBe(true);
+    expect(combined.has('POLICE')).toBe(true);
+  });
+
   it('gates ROADKILL on its pill alone (it has no SPEAK THESE entry)', () => {
-    const on = enabledTypesFromFilters(
+    const on = speakableTypesFromFilters(
       defaultSettingsValues.categoriesEnabled,
       defaultSettingsValues.alertTypeFilters
     );
     expect(on.has('ROADKILL')).toBe(true);
-    const off = enabledTypesFromFilters(
+    const off = speakableTypesFromFilters(
       defaultSettingsValues.categoriesEnabled,
       { ...defaultSettingsValues.alertTypeFilters, roadkill: false }
     );

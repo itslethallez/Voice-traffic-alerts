@@ -5,8 +5,9 @@
  *
  *   npx jest --runTestsByPath server/e2e/ingest-live.test.ts
  *
- * Needs DATABASE_URL (a Neon BRANCH string) + INGEST_SECRET in
- * server/.env. Deliberately reads ONLY server/.env: the repo-root .env
+ * Needs DATABASE_URL (a Neon BRANCH string) + INGEST_SECRET_POLICE_NOTICE
+ * in server/.env (per-source ingest credentials - see api/ingest.ts).
+ * Deliberately reads ONLY server/.env: the repo-root .env
  * holds the production DATABASE_URL and this test must never touch it
  * (see .windsurfrules "Dev environment"). It also refuses to run if
  * server/.env's DATABASE_URL is literally the prod string copied across.
@@ -27,7 +28,7 @@ function readEnvValue(envPath: string, key: string): string | undefined {
 const serverEnvPath = path.join(__dirname, '..', '.env');
 for (const key of [
   'DATABASE_URL',
-  'INGEST_SECRET',
+  'INGEST_SECRET_POLICE_NOTICE',
   'UPSTASH_REDIS_REST_URL',
   'UPSTASH_REDIS_REST_TOKEN',
   'SENTRY_DSN',
@@ -35,7 +36,7 @@ for (const key of [
   const value = readEnvValue(serverEnvPath, key);
   if (value && !process.env[key]) process.env[key] = value;
 }
-process.env.INGEST_SECRET = process.env.INGEST_SECRET || 'dev-secret';
+process.env.INGEST_SECRET_POLICE_NOTICE = process.env.INGEST_SECRET_POLICE_NOTICE || 'dev-secret';
 
 const rootProdUrl = readEnvValue(path.join(__dirname, '..', '..', '.env'), 'DATABASE_URL');
 const dbUrl = process.env.DATABASE_URL;
@@ -58,13 +59,18 @@ const { sql } = (
   hasDb ? require('../lib/db') : { sql: null }
 ) as typeof import('../lib/db');
 
+// Source and secret must line up: the endpoint resolves the presented
+// secret to a source and 403s on a mismatch. police_notice is the
+// endpoint's first real caller (the scheduled notice scraper).
 const TEST_ALERT = {
-  type: 'police',
+  // A police_notice row is a published camera window - 'mobile_camera',
+  // not 'police' (that's live sightings only since the type split).
+  type: 'mobile_camera',
   lat: -34.9285,
   lng: 138.6007,
   radius_m: 250,
   confidence: 80,
-  source: 'user_report',
+  source: 'police_notice',
   first_seen: '2026-09-17T04:00:00Z',
   expires_at: '2026-09-17T05:00:00Z',
   corroboration_count: 0,
@@ -110,7 +116,7 @@ const TEST_ALERT = {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-ingest-secret': process.env.INGEST_SECRET!,
+        'x-ingest-secret': process.env.INGEST_SECRET_POLICE_NOTICE!,
       },
       body: JSON.stringify(TEST_ALERT),
     });

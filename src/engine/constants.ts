@@ -30,12 +30,16 @@ export const STATIONARY_BOX_RADIUS_M = 2000;
 export const MIN_SUSTAINED_SPEED_KMH = 15;
 export const SUSTAINED_LOW_SPEED_WINDOW_MS = 2 * 60_000;
 
-/** accident, then road closure, then hazard, then police, then jam. */
+/** accident, then road closure, then hazard, then the enforcement family
+ * (a live sighting outranks a scheduled camera window, which outranks
+ * permanent infrastructure), then jam. */
 export const SEVERITY_ORDER: WazeAlertType[] = [
   'ACCIDENT',
   'ROAD_CLOSED',
   'HAZARD',
   'POLICE',
+  'MOBILE_CAMERA',
+  'FIXED_CAMERA',
   'JAM',
 ];
 

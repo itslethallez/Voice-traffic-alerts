@@ -399,6 +399,7 @@ describe('speed camera warning', () => {
     settingsState = {
       ...defaultSettingsValues,
       categoriesEnabled: { ...defaultSettingsValues.categoriesEnabled },
+      alertTypeFilters: { ...defaultSettingsValues.alertTypeFilters },
     };
   });
 
@@ -440,10 +441,10 @@ describe('speed camera warning', () => {
     expect(speakAsync).not.toHaveBeenCalled();
   });
 
-  it('does not warn when the POLICE category is disabled in Settings', async () => {
+  it('does not warn when the fixed_camera pill is hidden', async () => {
     mockCameras = [TEST_CAMERA];
     mockSpeedLimitKmh = 60;
-    settingsState.categoriesEnabled.POLICE = false;
+    settingsState.alertTypeFilters.fixed_camera = false;
 
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 

@@ -18,6 +18,29 @@ import {
   type SettingsValues,
 } from './settingsDefaults';
 
+/** zustand's default persist merge is shallow: a persisted record field
+ * would REPLACE defaults wholesale, so an install saved before a new
+ * category shipped would have no key for it (read as falsy - silently
+ * off). Deep-merge just the two category records so new keys pick up
+ * their defaults while saved values still win. Exported for tests. */
+export function mergePersistedSettings<T extends SettingsValues>(
+  persisted: Partial<SettingsValues> | undefined,
+  current: T
+): T {
+  return {
+    ...current,
+    ...persisted,
+    categoriesEnabled: {
+      ...defaultSettingsValues.categoriesEnabled,
+      ...persisted?.categoriesEnabled,
+    },
+    alertTypeFilters: {
+      ...defaultSettingsValues.alertTypeFilters,
+      ...persisted?.alertTypeFilters,
+    },
+  };
+}
+
 interface SettingsStore extends SettingsValues {
   toggleCategory: (category: AlertCategory) => void;
   toggleAlertTypeFilter: (category: AlertFilterCategory) => void;
@@ -68,6 +91,8 @@ export const useSettingsStore = create<SettingsStore>()(
     {
       name: 'voice-traffic-alerts/settings',
       storage: createJSONStorage(() => AsyncStorage),
+      merge: (persisted, current) =>
+        mergePersistedSettings(persisted as Partial<SettingsValues> | undefined, current),
     }
   )
 );

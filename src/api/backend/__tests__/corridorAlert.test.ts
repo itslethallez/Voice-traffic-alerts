@@ -24,9 +24,11 @@ describe('corridorAlertToWazeAlert', () => {
     expect(alert!.type).toBe('POLICE');
   });
 
-  it('maps every normalized type, including the roadkill-only category', () => {
+  it('maps every normalized type, keeping the camera types distinct from POLICE', () => {
     const expected: Record<string, string> = {
       police: 'POLICE',
+      mobile_camera: 'MOBILE_CAMERA',
+      fixed_camera: 'FIXED_CAMERA',
       traffic: 'JAM',
       accident: 'ACCIDENT',
       closure: 'ROAD_CLOSED',

@@ -11,6 +11,12 @@ import type { RemoteCorridorAlert } from './types';
  */
 const CORRIDOR_TYPE_TO_WAZE: Record<AlertType, WazeAlertType> = {
   police: 'POLICE',
+  // Camera types have no Waze feed equivalent (Waze reports them under
+  // POLICE, which would lose the live-sighting vs scheduled-camera
+  // distinction the split exists for) - they keep their own synthetic
+  // types through the pipeline, the same trick 'ROADKILL' already uses.
+  mobile_camera: 'MOBILE_CAMERA',
+  fixed_camera: 'FIXED_CAMERA',
   traffic: 'JAM',
   accident: 'ACCIDENT',
   closure: 'ROAD_CLOSED',

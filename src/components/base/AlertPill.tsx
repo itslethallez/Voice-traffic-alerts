@@ -1,18 +1,28 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Camera, Cctv, Shield, type LucideIcon } from 'lucide-react-native';
+import type { AlertType } from '../../../shared/alert-schema';
 import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
 
-/** The six alert categories from the brand board's "Key categories". One
+/** The normalized alert categories from shared/alert-schema.ts. One
  * component drives all of them — never fork this into per-type components. */
-export type AlertPillType = 'police' | 'traffic' | 'accident' | 'closure' | 'roadkill' | 'hazard';
+export type AlertPillType = AlertType;
 
 /**
- * Category → colour, matched to the mockups' alert-icon coding: police are
- * informational (coolBlue), traffic and accidents are the critical tier
- * (red, reserved for the highest-severity types), closures and hazards are
- * caution (amber), roadkill rides the brand teal.
+ * Category → colour + optional glyph, matched to the mockups' alert-icon
+ * coding: the police/camera family is informational coolBlue (a live
+ * sighting gets the badge Shield, a published mobile-camera window the
+ * handheld Camera, permanent infrastructure the mounted Cctv - distinct
+ * glyphs, one colour family per the brand board), traffic and accidents
+ * are the critical tier (red, reserved for the highest-severity types),
+ * closures and hazards are caution (amber), roadkill rides the brand
+ * teal. Only the police family carries an icon today - it's the family
+ * that splits one colour three ways, so the glyph does the telling the
+ * colour can't; the dot stays for everyone else.
  */
-const PILL_META: Record<AlertPillType, { label: string; color: string }> = {
-  police: { label: 'Police', color: colors.coolBlue },
+const PILL_META: Record<AlertPillType, { label: string; color: string; icon?: LucideIcon }> = {
+  police: { label: 'Police', color: colors.coolBlue, icon: Shield },
+  mobile_camera: { label: 'Mobile camera', color: colors.coolBlue, icon: Camera },
+  fixed_camera: { label: 'Fixed camera', color: colors.coolBlue, icon: Cctv },
   traffic: { label: 'Traffic', color: colors.red },
   accident: { label: 'Accident', color: colors.red },
   closure: { label: 'Closure', color: colors.amber },
@@ -46,6 +56,8 @@ export interface AlertPillProps {
 export function AlertPill({ type, label, size = 'md', showDot = true, enabled = true, style }: AlertPillProps) {
   const meta = PILL_META[type];
   const small = size === 'sm';
+  const glyphColor = enabled ? meta.color : colors.textMuted;
+  const Icon = meta.icon;
   return (
     <View
       style={[
@@ -60,7 +72,13 @@ export function AlertPill({ type, label, size = 'md', showDot = true, enabled = 
         style,
       ]}
     >
-      {showDot ? <View style={[styles.dot, { backgroundColor: enabled ? meta.color : colors.textMuted }]} /> : null}
+      {showDot ? (
+        Icon ? (
+          <Icon size={small ? 11 : 13} strokeWidth={2.2} color={glyphColor} />
+        ) : (
+          <View style={[styles.dot, { backgroundColor: glyphColor }]} />
+        )
+      ) : null}
       <Text
         style={[
           styles.label,

@@ -228,6 +228,38 @@ describe('formatAnnouncement', () => {
     const candidate = makeCandidate({ street: 'Main Rd/Cross Rd', city: 'Adelaide' });
     expect(formatAnnouncement(candidate)).toContain('on Main Road/Cross Road, Adelaide');
   });
+
+  it('speaks a scheduled camera window as a fact, not a report', () => {
+    const candidate = makeCandidate({
+      type: 'MOBILE_CAMERA',
+      street: 'Main South Rd',
+      city: 'Normanville',
+      distanceMeters: 1400,
+      ageMinutes: 3,
+      driverHeadingDeg: 0,
+    });
+    expect(formatAnnouncement(candidate)).toBe(
+      'Mobile camera on Main South Road, Normanville, northbound, 1.4 kilometres ahead.'
+    );
+  });
+
+  it('speaks a fixed camera the same way, with its own label', () => {
+    const candidate = makeCandidate({
+      type: 'FIXED_CAMERA',
+      street: null,
+      city: 'Adelaide',
+      distanceMeters: 800,
+      driverHeadingDeg: 90,
+    });
+    expect(formatAnnouncement(candidate)).toBe('Fixed camera in Adelaide, eastbound, 800 metres ahead.');
+  });
+
+  it('never appends a "Reported n minutes ago" note to a camera window', () => {
+    // first_seen is the notice's start date - age describes the
+    // publication schedule, not the camera's currency.
+    const candidate = makeCandidate({ type: 'MOBILE_CAMERA', street: null, city: null, ageMinutes: 4320 });
+    expect(formatAnnouncement(candidate)).toBe('Mobile camera, 800 metres ahead.');
+  });
 });
 
 describe('formatBriefingAlert', () => {
@@ -310,6 +342,16 @@ describe('formatBriefingAlert', () => {
       formatBriefingAlert(makeCandidate({ type: 'JAM', street: 'A St', city: 'Town' }))
     ).toContain('Traffic jam reported on');
   });
+
+  it('briefs a camera window without a report age - it has none', () => {
+    const candidate = makeCandidate({
+      type: 'FIXED_CAMERA',
+      street: 'Anzac Highway',
+      city: 'Adelaide',
+      ageMinutes: 5,
+    });
+    expect(formatBriefingAlert(candidate)).toBe('Fixed camera on Anzac Highway, Adelaide.');
+  });
 });
 
 describe('NO_BRIEFING_ALERTS_MESSAGE', () => {
@@ -321,6 +363,8 @@ describe('NO_BRIEFING_ALERTS_MESSAGE', () => {
 describe('labelForType', () => {
   it('labels each known type, and falls back to "Alert" for an unknown one', () => {
     expect(labelForType('POLICE')).toBe('Police');
+    expect(labelForType('MOBILE_CAMERA')).toBe('Mobile camera');
+    expect(labelForType('FIXED_CAMERA')).toBe('Fixed camera');
     expect(labelForType('ACCIDENT')).toBe('Crash');
     expect(labelForType('HAZARD')).toBe('Hazard');
     expect(labelForType('ROAD_CLOSED')).toBe('Road closed');

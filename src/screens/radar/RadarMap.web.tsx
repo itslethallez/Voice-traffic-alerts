@@ -8,7 +8,7 @@ import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
 import { env } from '../../config/env';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
-import { enabledTypesFromFilters } from '../../store/settingsDefaults';
+import { visibleTypesFromFilters } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
@@ -44,7 +44,6 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
   const manualReports = useTripStore((state) => state.manualReports);
   const nearbyReports = useTripStore((state) => state.nearbyReports);
   const fixedCameras = useTripStore((state) => state.fixedCameras);
-  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
 
@@ -72,20 +71,20 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
   }, [rangeToggleToken]);
 
   const mapVisibleCameras = useMemo(() => {
-    if (!driverPosition || !categoriesEnabled.POLICE || !alertTypeFilters.police) return [];
+    if (!driverPosition || !alertTypeFilters.fixed_camera) return [];
     return fixedCameras.filter(
       (camera) => haversineDistance(driverPosition, camera.position) <= announceDistanceMeters
     );
-  }, [fixedCameras, driverPosition, categoriesEnabled.POLICE, alertTypeFilters.police, announceDistanceMeters]);
+  }, [fixedCameras, driverPosition, alertTypeFilters.fixed_camera, announceDistanceMeters]);
 
   const mapVisibleAlerts = useMemo(() => {
-    const enabledTypes = enabledTypesFromFilters(categoriesEnabled, alertTypeFilters);
+    const enabledTypes = visibleTypesFromFilters(alertTypeFilters);
     return [
       ...visibleAlerts,
       ...visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters),
       ...visibleNearbyReportAlerts(nearbyReports, driverPosition, now, announceDistanceMeters),
     ].filter((alert) => enabledTypes.has(alert.type));
-  }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, categoriesEnabled, alertTypeFilters]);
+  }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, alertTypeFilters]);
 
   const mapRenderableAlerts = useMemo(() => {
     if (!focusedAlert || mapVisibleAlerts.some((alert) => alert.alert_id === focusedAlert.alert_id)) {
@@ -199,6 +198,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
 
     for (const alert of mapRenderableAlerts) {
       const meta = alertTypeMeta(alert.type, alert.subtype);
+      // Shape is the at-a-glance differentiator inside the police family
+      // (all coolBlue): square + light bar = live sighting, rotated tag =
+      // mobile-camera window, ring = permanent fixed camera.
+      const isMobileCamera = alert.type === 'MOBILE_CAMERA';
+      const isFixedCamera = alert.type === 'FIXED_CAMERA';
       const marker = document.createElement('button');
       marker.type = 'button';
       marker.setAttribute('aria-label', `${meta.label} report${alert.street ? ` on ${alert.street}` : ''}`);
@@ -206,14 +210,26 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
       Object.assign(marker.style, {
         width: '36px',
         height: '36px',
-        borderRadius: alert.type === 'POLICE' ? '4px' : '50%',
-        border: focusedAlert?.alert_id === alert.alert_id ? `4px solid ${colors.accent}` : `3px solid ${colors.white}`,
-        background: meta.color,
+        borderRadius: alert.type === 'POLICE' ? '4px' : isMobileCamera ? '7px' : '50%',
+        border: focusedAlert?.alert_id === alert.alert_id
+          ? `4px solid ${colors.accent}`
+          : isFixedCamera
+            ? `5px solid ${colors.coolBlue}`
+            : `3px solid ${colors.white}`,
+        background: isFixedCamera ? alpha(colors.coolBlue, 0.25) : meta.color,
         color: colors.white,
         font: `700 14px ${typography.fontFamily.display}, Arial, sans-serif`,
         boxShadow: `0 5px 12px ${alpha(colors.charcoal, 0.5)}`,
         cursor: 'pointer',
       });
+      if (isMobileCamera) {
+        marker.style.transform = 'rotate(45deg)';
+        marker.textContent = '';
+        const letter = document.createElement('span');
+        letter.textContent = meta.letter;
+        Object.assign(letter.style, { display: 'inline-block', transform: 'rotate(-45deg)' });
+        marker.append(letter);
+      }
       if (alert.type === 'POLICE') {
         marker.textContent = '';
         const lights = document.createElement('span');

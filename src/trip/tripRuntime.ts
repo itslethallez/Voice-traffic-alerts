@@ -49,7 +49,7 @@ import { formatSpeedCameraWarning } from '../speech/formatSpeedCameraWarning';
 import { speakAsync } from '../speech/ttsAdapter';
 import {
   ALERT_FILTER_CATEGORIES,
-  enabledTypesFromFilters,
+  speakableTypesFromFilters,
 } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
@@ -410,14 +410,17 @@ export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<
  * (selectSpeedCameraWarning.ts's confirmedSpeeding) - a driver still hears
  * "camera ahead" rather than nothing just because this app doesn't know
  * the posted limit. Only for a target within the live announce distance.
- * Gated on the POLICE category
- * toggle, since a SAPOL camera is police-adjacent enforcement
- * infrastructure and a driver who's turned POLICE off has said "don't tell
- * me about police." The (comparatively expensive, rate-limited) OSM speed
- * limit lookup is only ever prefetched once hasNearbyWarningTarget already
- * confirms there's something worth warning about - most of a trip has no
- * nearby camera or corroborated report, so this keeps Overpass usage rare.
- * Speaks directly via speakAsync, bypassing the announcer's priority queue
+ * Gated on the fixed_camera filter pill, not its voice toggle: this is a
+ * speed-triggered warning (fires only when confirmed speeding), not the
+ * ambient "camera ahead" announcement the SPEAK THESE toggle mutes - a
+ * driver who silenced fixed-camera voice still wants the warning that
+ * only fires when it matters, while one who hid the category entirely
+ * has opted out of cameras altogether. The (comparatively expensive,
+ * rate-limited) OSM speed limit lookup is only ever prefetched once
+ * hasNearbyWarningTarget already confirms there's something worth
+ * warning about - most of a trip has no nearby camera or corroborated
+ * report, so this keeps Overpass usage rare. Speaks directly via
+ * speakAsync, bypassing the announcer's priority queue
  * (submitCandidates/tick) entirely - that queue's 20s MIN_ANNOUNCEMENT_GAP_MS
  * and distance-based dedupe don't fit this feature's own fixed 500m/200m
  * checkpoints (see engine/selectSpeedCameraWarning.ts).
@@ -427,7 +430,7 @@ async function checkSpeedCameraWarning(
   nowMs: number,
   settings: ReturnType<typeof useSettingsStore.getState>
 ): Promise<void> {
-  if (!settings.categoriesEnabled.POLICE) return;
+  if (!settings.alertTypeFilters.fixed_camera) return;
   const cameras = getActiveFixedCameras();
   if (!hasNearbyWarningTarget(driver, cameras, alertsCache.alerts, nowMs)) return;
 
@@ -508,7 +511,7 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     announcerState.announcedDistances,
     nowMs,
     {
-      enabledTypes: enabledTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
+      enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
       maxDistanceMeters: settings.announceDistanceMeters,
       routeCorridor,
     }
@@ -621,7 +624,7 @@ export async function runBriefing(
 
   const candidates = hasUsableAlerts
     ? selectBriefingAlerts([...alertsCache.alerts, ...corridorAlerts], driver.position, Date.now(), {
-        enabledTypes: enabledTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
+        enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
         radiusMeters: settings.briefingRadiusMeters,
       })
     : [];

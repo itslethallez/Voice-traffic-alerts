@@ -23,6 +23,10 @@ export interface AlertTypeMeta {
  * amber, roadkill brand teal) so a pin's colour matches its filter pill. */
 const ALERT_TYPE_META: Partial<Record<string, AlertTypeMeta>> = {
   POLICE: { label: 'Police', color: colors.coolBlue, emoji: '🚓', letter: 'P' },
+  // Synthetic corridor types (api/backend/corridorAlert.ts) - the camera
+  // family, same coolBlue family as POLICE per the brand board.
+  MOBILE_CAMERA: { label: 'Mobile camera', color: colors.coolBlue, emoji: '📷', letter: 'M' },
+  FIXED_CAMERA: { label: 'Fixed camera', color: colors.coolBlue, emoji: '📸', letter: 'F' },
   ACCIDENT: { label: 'Crash', color: colors.critical, emoji: '💥', letter: 'X' },
   HAZARD: { label: 'Hazard', color: colors.caution, emoji: '⚠️', letter: 'H' },
   ROAD_CLOSED: { label: 'Closed', color: colors.caution, emoji: '🚧', letter: 'C' },

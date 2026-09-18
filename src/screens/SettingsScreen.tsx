@@ -22,15 +22,37 @@ import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
 import { BuildInfoCard } from './BuildInfoCard';
 import type { FacebookNotificationSourceControls } from '../notifications/useFacebookNotificationSource';
 
-/** The legacy Waze categories still own the voice-announcer toggles — each
- * maps to its normalized pill category for display (JAM reads as Traffic). */
+/** The Waze-shaped categories still own the voice-announcer toggles — each
+ * maps to its normalized pill category for display (JAM reads as Traffic).
+ * The police family is one colour with three glyphs, exactly as the Drive
+ * screen's pill row shows them. */
 const CATEGORY_PILL: Record<AlertCategory, AlertPillType> = {
   POLICE: 'police',
+  MOBILE_CAMERA: 'mobile_camera',
+  FIXED_CAMERA: 'fixed_camera',
   ACCIDENT: 'accident',
   HAZARD: 'hazard',
   ROAD_CLOSED: 'closure',
   JAM: 'traffic',
 };
+
+/** Screen-reader + copy names per category - the pill's own labels
+ * already carry the same words, duplicated here so the a11y label reads
+ * "Mobile camera announcements", not "mobile_camera announcements". */
+const CATEGORY_LABEL: Record<AlertCategory, string> = {
+  POLICE: 'Police',
+  MOBILE_CAMERA: 'Mobile camera',
+  FIXED_CAMERA: 'Fixed camera',
+  ACCIDENT: 'Accident',
+  HAZARD: 'Hazard',
+  ROAD_CLOSED: 'Closure',
+  JAM: 'Traffic',
+};
+
+/** The three police-family toggles sit at the head of ALERT_CATEGORIES
+ * (POLICE, MOBILE_CAMERA, FIXED_CAMERA) and share this group header -
+ * related but independent, per the type split. */
+const POLICE_FAMILY_GROUP_LABEL = 'POLICE & CAMERAS';
 
 const ROUTE_TYPE_LABELS: Record<RouteType, string> = {
   quickest: 'Quickest',
@@ -108,6 +130,7 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
           <Column gap="xs">
             <SectionLabel>SPEAK THESE</SectionLabel>
             <Card variant="outlined" padding="sm">
+              <Text style={styles.groupLabel}>{POLICE_FAMILY_GROUP_LABEL}</Text>
               {ALERT_CATEGORIES.map((category, index) => {
                 const enabled = categoriesEnabled[category];
                 return (
@@ -117,7 +140,7 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
                     style={[styles.categoryRow, index > 0 && styles.rowDivider]}
                     accessibilityRole="switch"
                     accessibilityState={{ checked: enabled }}
-                    accessibilityLabel={`${CATEGORY_PILL[category]} announcements`}
+                    accessibilityLabel={`${CATEGORY_LABEL[category]} announcements`}
                   >
                     <AlertPill
                       type={CATEGORY_PILL[category]}
@@ -356,6 +379,14 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.eyebrow,
     letterSpacing: typography.letterSpacing.eyebrow,
     color: colors.textMuted,
+  },
+  groupLabel: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.xxs,
+    paddingBottom: spacing.xxs,
   },
   categoryRow: {
     flexDirection: 'row',

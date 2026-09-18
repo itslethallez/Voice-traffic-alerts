@@ -1,0 +1,51 @@
+name: Refresh police mobile-camera notices
+
+# Nightly at 20:00 UTC = 05:30 ACST / 06:30 ACDT - early enough that the
+# day's notices are in the alerts table before the Adelaide morning
+# commute, late enough that SAPOL's overnight page refresh has happened.
+# GHA cron, not Vercel Cron - same reasoning as refresh-waze-alerts.yml.
+#
+# The scrape goes through ScraperAPI (SAPOL's WAF blocks GitHub Actions
+# runner IPs - see scripts/buildFixedCameraDataset.js's header comment)
+# and each notice address is forward-geocoded via Mapbox. Results POST to
+# /api/ingest with deterministic ids, so re-scraped notices upsert rather
+# than duplicate.
+#
+# Secrets needed: SCRAPERAPI_KEY, EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
+# BACKEND_API_URL (base of the deployed server/ project, e.g.
+# https://shotgun-api.vercel.app/api), INGEST_SECRET_POLICE_NOTICE (the
+# police_notice source's credential - the ingest endpoint maps each
+# source to its own secret, see server/api/ingest.ts). SENTRY_DSN is
+# optional but recommended - the "fail loudly" rule routes through it,
+# with the non-zero exit as backup.
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Write .env for the scraper
+        run: |
+          echo "SCRAPERAPI_KEY=${{ secrets.SCRAPERAPI_KEY }}" >> .env
+          echo "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=${{ secrets.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN }}" >> .env
+          echo "BACKEND_API_URL=${{ secrets.BACKEND_API_URL }}" >> .env
+          echo "INGEST_SECRET_POLICE_NOTICE=${{ secrets.INGEST_SECRET_POLICE_NOTICE }}" >> .env
+          echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" >> .env
+
+      - name: Scrape police notices and post to /api/ingest
+        run: node scripts/scrapePoliceNotices.js

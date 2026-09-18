@@ -51,15 +51,25 @@ export function DesignSystemPreviewScreen() {
 
             <Section title="AlertPill — all categories">
               <Row gap="sm" wrap>
-                {(['police', 'traffic', 'accident', 'closure', 'roadkill', 'hazard'] as AlertPillType[]).map(
-                  (t) => (
-                    <AlertPill key={t} type={t} />
-                  ),
-                )}
+                {(
+                  [
+                    'police',
+                    'mobile_camera',
+                    'fixed_camera',
+                    'traffic',
+                    'accident',
+                    'closure',
+                    'roadkill',
+                    'hazard',
+                  ] as AlertPillType[]
+                ).map((t) => (
+                  <AlertPill key={t} type={t} />
+                ))}
               </Row>
               <Row gap="sm" wrap>
                 <AlertPill type="police" size="sm" />
-                <AlertPill type="police" size="sm" label="Mobile camera" />
+                <AlertPill type="mobile_camera" size="sm" />
+                <AlertPill type="fixed_camera" size="sm" />
                 <AlertPill type="accident" size="sm" showDot={false} />
               </Row>
             </Section>

@@ -16,10 +16,19 @@ const ANNOUNCEMENT_LABELS: Partial<Record<string, string>> = {
   HAZARD: 'Hazard',
   ROAD_CLOSED: 'Road closed',
   JAM: 'Traffic jam',
-  // Normalized-schema type (api/backend/corridorAlert.ts) - no Waze feed
-  // equivalent, so it gets its own spoken label rather than riding HAZARD.
+  // Normalized-schema types (api/backend/corridorAlert.ts) - no Waze feed
+  // equivalents, so each gets its own spoken label rather than riding an
+  // existing one.
+  MOBILE_CAMERA: 'Mobile camera',
+  FIXED_CAMERA: 'Fixed camera',
   ROADKILL: 'Roadkill',
 };
+
+/** Scheduled infrastructure, not a live report: no "reported" verb (a
+ * published camera window isn't a sighting) and no staleness suffix -
+ * first_seen is the notice's start date, so "Reported 5 days ago" would
+ * describe the publication, not the camera's currency. */
+const STATIC_NOTICE_TYPES: ReadonlySet<WazeAlertType> = new Set(['MOBILE_CAMERA', 'FIXED_CAMERA']);
 
 /** Exported for direct testing and reuse - used internally by spokenLabel
  * below for the non-POLICE case. */
@@ -207,16 +216,22 @@ export function formatAnnouncement(candidate: AnnounceableAlert): string {
   const label = spokenLabel(candidate.alert);
   const distance = formatDistance(candidate.distanceMeters);
   const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
+  const staticNotice = STATIC_NOTICE_TYPES.has(candidate.alert.type);
 
   let text: string;
   if (location) {
     const direction = compassDirection(candidate.driverHeadingDeg);
-    text = `${label} reported ${location}, ${direction}bound, ${distance} ahead.`;
+    // A camera window is spoken as a fact ("Mobile camera on Main Rd,
+    // northbound, 1.4 kilometres ahead"), a live alert as a report
+    // ("Police reported on Main Rd, ...") - STATIC_NOTICE_TYPES above.
+    text = staticNotice
+      ? `${label} ${location}, ${direction}bound, ${distance} ahead.`
+      : `${label} reported ${location}, ${direction}bound, ${distance} ahead.`;
   } else {
-    text = `${label} reported, ${distance} ahead.`;
+    text = staticNotice ? `${label}, ${distance} ahead.` : `${label} reported, ${distance} ahead.`;
   }
 
-  if (candidate.ageMinutes > STALE_ANNOUNCEMENT_AGE_MINUTES) {
+  if (!staticNotice && candidate.ageMinutes > STALE_ANNOUNCEMENT_AGE_MINUTES) {
     text += ` Reported ${formatAge(candidate.ageMinutes)} ago.`;
   }
 
@@ -263,6 +278,12 @@ export function formatBriefingAlert(candidate: AnnounceableAlert): string {
   const label = spokenLabel(candidate.alert);
   const age = formatAge(candidate.ageMinutes);
   const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
+
+  if (STATIC_NOTICE_TYPES.has(candidate.alert.type)) {
+    // A scheduled camera window has no report age to brief - state where
+    // it is and leave it there ("Mobile camera on Main Rd, Smithfield.").
+    return location ? `${label} ${location}.` : `${label}, ${formatDistance(candidate.distanceMeters)} away.`;
+  }
 
   if (location) {
     return `${label} reported ${location}, ${age} ago.`;

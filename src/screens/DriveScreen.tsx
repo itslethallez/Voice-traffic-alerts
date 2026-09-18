@@ -16,7 +16,7 @@ import { visibleManualReportAlerts } from '../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../store/nearbyReportAlert';
 import {
   ALERT_FILTER_CATEGORIES,
-  enabledTypesFromFilters,
+  visibleTypesFromFilters,
   wazeTypeToAlertFilter,
   type AlertFilterCategory,
 } from '../store/settingsDefaults';
@@ -55,6 +55,10 @@ const SEARCH_BUTTON_SIZE = 48;
  */
 const ROW_TITLES: Record<AlertFilterCategory, string> = {
   police: 'Police reported',
+  // Scheduled camera windows aren't "reported" - stated as fact, same
+  // phrasing the voice announcements use.
+  mobile_camera: 'Mobile camera',
+  fixed_camera: 'Fixed camera',
   traffic: 'Heavy traffic',
   accident: 'Accident',
   closure: 'Road closure',
@@ -107,7 +111,6 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
   const bannerMessage = useTripStore((state) => state.bannerMessage);
   const alertsFetchedAtMs = useTripStore((state) => state.alertsFetchedAtMs);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
-  const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const toggleAlertTypeFilter = useSettingsStore((state) => state.toggleAlertTypeFilter);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
@@ -148,11 +151,12 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
    * Everything the sheet lists, in one shape: all three sources are already
    * normalized to WazeAlert (manual/nearby reports via the store helpers,
    * which also apply the same live-window + distance bounds the map uses),
-   * filtered by the same combined enabled-type set the map markers and the
-   * announcer share, then sorted nearest-first.
+   * filtered by the same visible-type set the map markers use (pills
+   * only - the SPEAK THESE toggles gate voice, not display), then sorted
+   * nearest-first.
    */
   const nearbyItems = useMemo(() => {
-    const enabledTypes = enabledTypesFromFilters(categoriesEnabled, alertTypeFilters);
+    const enabledTypes = visibleTypesFromFilters(alertTypeFilters);
     const all = [
       ...visibleAlerts,
       ...visibleManualReportAlerts(manualReports, driverPosition, now, announceDistanceMeters),
@@ -176,7 +180,7 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
       (a, b) => (a.distanceMeters ?? Number.MAX_SAFE_INTEGER) - (b.distanceMeters ?? Number.MAX_SAFE_INTEGER)
     );
     return items;
-  }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, categoriesEnabled, alertTypeFilters]);
+  }, [visibleAlerts, manualReports, nearbyReports, driverPosition, now, announceDistanceMeters, alertTypeFilters]);
 
   const liveLabel = isOffline
     ? 'Offline'
