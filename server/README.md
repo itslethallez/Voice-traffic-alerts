@@ -10,6 +10,16 @@ DB credentials — it only calls this.
 - `migrations/` — node-pg-migrate migrations for the `alerts` table and onward
 - `../shared/alert-schema.ts` — the Zod schema every alert is validated against at `/api/ingest`
 
+  Constraint: `../shared/` sits OUTSIDE the Vercel project root
+  (`server/`). Node resolves imports upward from the importing file, so
+  `shared/alert-schema.ts` can never see `server/node_modules` — its
+  `zod` import resolves from `shared/node_modules` or the repo-root
+  install instead. `server/package.json`'s `postinstall` runs
+  `npm install --prefix ../shared` so `shared/node_modules/zod` exists
+  in the Vercel build sandbox (only `server/` gets an install there).
+  Anything `../shared/` imports must be declared in
+  `shared/package.json`, not assumed present from root.
+
 `schema.sql` is the legacy one-shot setup for the pre-existing tables
 (`fixed_cameras`, `user_reports`, …) — still run once on a fresh database.
 New tables go through `migrations/` instead.
