@@ -99,7 +99,6 @@ export default function App() {
           <View style={styles.screen}>
             <NavigationSearchScreen
               onClose={() => setShowNavigationSearch(false)}
-              onNavigationStarted={() => setShowNavigationSearch(false)}
             />
           </View>
         ) : null}

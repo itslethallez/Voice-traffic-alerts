@@ -81,3 +81,41 @@ export interface MapboxGeocodeResponse {
   type: 'FeatureCollection';
   features: MapboxGeocodeFeature[];
 }
+
+/**
+ * One row of a Search Box /suggest response - the autocomplete half of the
+ * suggest+retrieve pair. A suggestion deliberately carries no geometry:
+ * coordinates only come back from /retrieve once the driver picks a row.
+ */
+export interface MapboxSearchSuggestion {
+  /** Display name - what the driver typed toward ("Rundle Mall",
+   * "Adelaide Railway Station", "12 King William St"). */
+  name: string;
+  name_preferred?: string;
+  /** Opaque id passed to /retrieve to get the full feature. */
+  mapbox_id: string;
+  /** 'poi' for businesses/named places, 'category' for generic categories,
+   * otherwise an address-hierarchy type ('address', 'street', 'place',
+   * 'locality', 'neighborhood', 'district', 'postcode', 'city', ...). */
+  feature_type: string;
+  /** Street-line portion only, e.g. "12 King William Street". */
+  address?: string;
+  full_address?: string;
+  /** Context line after the address - "Adelaide, South Australia 5000,
+   * Australia". */
+  place_formatted?: string;
+  maki?: string;
+  /** Display strings like "Park", "Train station" - only on POIs. */
+  poi_category?: string[];
+  /** Canonical ids like "train_station" - only on POIs. */
+  poi_category_ids?: string[];
+  /** Approximate metres from the request's proximity point (or `origin`
+   * when that was supplied instead). Absent when no proximity was sent. */
+  distance?: number;
+  [key: string]: unknown;
+}
+
+export interface MapboxSuggestResponse {
+  suggestions: MapboxSearchSuggestion[];
+  attribution?: string;
+}

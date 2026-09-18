@@ -2,8 +2,8 @@ jest.mock('../../../config/env', () => ({
   env: { mapboxAccessToken: 'test-token' },
 }));
 
-import { fetchDirections, fetchGeocode, MapboxApiError } from '../client';
-import type { MapboxDirectionsResponse, MapboxGeocodeResponse } from '../types';
+import { fetchDirections, fetchGeocode, fetchSearchSuggestions, MapboxApiError, retrieveSuggestion } from '../client';
+import type { MapboxDirectionsResponse, MapboxGeocodeResponse, MapboxSuggestResponse } from '../types';
 
 function makeFetchResponse(ok: boolean, status: number, body: unknown): Response {
   return { ok, status, json: async () => body } as unknown as Response;
@@ -139,5 +139,99 @@ describe('fetchGeocode', () => {
       makeFetchResponse(true, 200, { type: 'FeatureCollection', features: [] })
     );
     await expect(fetchGeocode('nonsense query')).resolves.toEqual([]);
+  });
+});
+
+describe('fetchSearchSuggestions', () => {
+  beforeEach(() => {
+    globalThis.fetch = jest.fn();
+  });
+
+  it('sends the query, session token, proximity and routable types, and returns suggestions', async () => {
+    const body: MapboxSuggestResponse = {
+      suggestions: [
+        {
+          name: 'Adelaide Railway Station',
+          mapbox_id: 'dXJuOm1ieHBvaQ',
+          feature_type: 'poi',
+          place_formatted: 'Adelaide, South Australia 5000, Australia',
+          poi_category: ['Train station'],
+          poi_category_ids: ['train_station'],
+          distance: 850,
+        },
+      ],
+    };
+    (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true, 200, body));
+
+    const suggestions = await fetchSearchSuggestions('railway', { sessionToken: 'session-1', proximity: ORIGIN });
+
+    expect(suggestions).toEqual(body.suggestions);
+    const [url] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe('/search/searchbox/v1/suggest');
+    expect(parsed.searchParams.get('q')).toBe('railway');
+    expect(parsed.searchParams.get('session_token')).toBe('session-1');
+    expect(parsed.searchParams.get('proximity')).toBe('138.6007,-34.9285');
+    expect(parsed.searchParams.get('country')).toBe('AU');
+    expect(parsed.searchParams.get('types')).toContain('poi');
+    expect(parsed.searchParams.get('types')).not.toContain('category');
+    expect(parsed.searchParams.get('access_token')).toBe('test-token');
+  });
+
+  it('omits proximity when no driver position is known', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue(
+      makeFetchResponse(true, 200, { suggestions: [] })
+    );
+
+    await fetchSearchSuggestions('adelaide', { sessionToken: 'session-1' });
+
+    const [url] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    expect(new URL(url).searchParams.has('proximity')).toBe(false);
+  });
+
+  it('throws a status-less MapboxApiError on a network failure', async () => {
+    (globalThis.fetch as jest.Mock).mockRejectedValue(new Error('network down'));
+
+    await expect(fetchSearchSuggestions('adelaide', { sessionToken: 'session-1' })).rejects.toMatchObject({
+      name: 'MapboxApiError',
+      status: null,
+    });
+  });
+});
+
+describe('retrieveSuggestion', () => {
+  beforeEach(() => {
+    globalThis.fetch = jest.fn();
+  });
+
+  it('requests retrieve/{mapbox_id} with the session token and returns the first feature', async () => {
+    const body: MapboxGeocodeResponse = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [138.5961, -34.9231] },
+          properties: { name: 'Adelaide Railway Station', feature_type: 'poi' },
+        },
+      ],
+    };
+    (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true, 200, body));
+
+    const feature = await retrieveSuggestion('dXJuOm1ieHBvaQ', { sessionToken: 'session-1' });
+
+    expect(feature).toEqual(body.features[0]);
+    const [url] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe('/search/searchbox/v1/retrieve/dXJuOm1ieHBvaQ');
+    expect(parsed.searchParams.get('session_token')).toBe('session-1');
+    expect(parsed.searchParams.get('access_token')).toBe('test-token');
+  });
+
+  it('returns null rather than throwing when the retrieve has no features', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue(
+      makeFetchResponse(true, 200, { type: 'FeatureCollection', features: [] })
+    );
+
+    await expect(retrieveSuggestion('dXJuOm1ieHBvaQ', { sessionToken: 'session-1' })).resolves.toBeNull();
   });
 });

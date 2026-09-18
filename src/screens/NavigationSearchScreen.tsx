@@ -1,59 +1,148 @@
+import * as Crypto from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, X } from 'lucide-react-native';
-import { fetchGeocode } from '../api/mapbox/client';
-import type { MapboxGeocodeFeature } from '../api/mapbox/types';
-import type { DriverState } from '../engine/types';
-import { startNavigation } from '../navigation/navigationRuntime';
-import { ROUTE_TYPES, type RouteType } from '../store/settingsDefaults';
-import { useNavigationStore } from '../store/useNavigationStore';
-import { useSettingsStore } from '../store/useSettingsStore';
+import {
+  BedDouble,
+  Building2,
+  BusFront,
+  Church,
+  Coffee,
+  Dumbbell,
+  Fuel,
+  GraduationCap,
+  Hospital,
+  Landmark,
+  MapPin,
+  Plane,
+  Sailboat,
+  Search,
+  ShoppingCart,
+  SquareParking,
+  TrainFront,
+  TramFront,
+  TreePine,
+  UtensilsCrossed,
+  X,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { fetchSearchSuggestions, retrieveSuggestion } from '../api/mapbox/client';
+import type { MapboxSearchSuggestion } from '../api/mapbox/types';
+import { GlassView } from '../components/base/GlassView';
+import { Column, Row, Stack } from '../components/base/Layout';
+import { ScreenContainer } from '../components/base/ScreenContainer';
 import { useTripStore } from '../store/useTripStore';
-import { hud, instrument } from '../theme/colors';
-import { fontFamily } from '../theme/typography';
+import { colors, radii, spacing, typography } from '../theme/tokens';
 
 const SEARCH_DEBOUNCE_MS = 350;
 const MIN_QUERY_LENGTH = 3;
-
-const ROUTE_TYPE_LABELS: Record<RouteType, string> = {
-  quickest: 'Quickest',
-  safest: 'Safest',
-  sidestreets: 'Sidestreets',
-};
+const RESULT_LIMIT = 8;
 
 interface NavigationSearchScreenProps {
   onClose: () => void;
-  /** Called once a destination has actually started navigating (not just
-   * selected) so the caller can switch back to the map to show it - a
-   * failed route fetch keeps this screen open with an inline error
-   * instead. */
-  onNavigationStarted: () => void;
 }
 
-function featureLabel(feature: MapboxGeocodeFeature): string {
-  return feature.properties.full_address ?? feature.properties.name ?? feature.properties.place_formatted ?? 'Unnamed location';
+/** What a picked suggestion resolves to after /retrieve - the handoff
+ * payload Stage B (route options) consumes. Surfaced on-screen for now so
+ * the search itself can be verified end to end before routing exists. */
+interface SelectedDestination {
+  name: string;
+  typeLabel: string;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+const FEATURE_TYPE_LABELS: Record<string, string> = {
+  poi: 'Place',
+  address: 'Address',
+  street: 'Street',
+  place: 'Suburb / town',
+  city: 'Town',
+  locality: 'Locality',
+  neighborhood: 'Neighbourhood',
+  district: 'District',
+  postcode: 'Postcode',
+};
+
+/** Canonical poi_category_id substring -> icon. Matched in order, so more
+ * specific ids should come before the generic ones that contain them
+ * (e.g. 'train_station' before 'station' would matter if both listed). */
+const CATEGORY_ICONS: [RegExp, LucideIcon][] = [
+  [/train|railway/, TrainFront],
+  [/tram|light_rail/, TramFront],
+  [/bus|transit|shuttle/, BusFront],
+  [/parking/, SquareParking],
+  // \b keeps 'park' from matching inside 'parking' (checked above anyway).
+  [/\bpark|garden|playground|national|reserve/, TreePine],
+  [/beach|bay|surf|marina/, Sailboat],
+  [/restaurant|food|pizza|burger|fast_food|bar|pub|wine|beer|bakery|deli/, UtensilsCrossed],
+  [/cafe|coffee/, Coffee],
+  [/fuel|gas|petrol|charging/, Fuel],
+  [/supermarket|grocery|shopping|mall|store|market|shop/, ShoppingCart],
+  [/hospital|doctor|pharmacy|medical|clinic|dentist|vet/, Hospital],
+  [/school|university|college|education|library/, GraduationCap],
+  [/hotel|lodging|motel|accommodation|hostel/, BedDouble],
+  [/museum|gallery|theatre|theater|cinema|arts|landmark|monument|tourist|attraction|zoo/, Landmark],
+  [/church|worship|temple|mosque|synagogue/, Church],
+  [/airport|airfield/, Plane],
+  [/sport|gym|fitness|stadium|swimming|pool|golf/, Dumbbell],
+  [/office|building|government/, Building2],
+];
+
+function titleCase(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** "Park", "Train station", "Address" - the type line under each result's
+ * name. POIs prefer Mapbox's own display category over the coarse
+ * feature_type. */
+function suggestionTypeLabel(suggestion: MapboxSearchSuggestion): string {
+  const category = suggestion.poi_category?.[0] ?? suggestion.poi_category_ids?.[0]?.replace(/_/g, ' ');
+  if (category) return titleCase(category);
+  return FEATURE_TYPE_LABELS[suggestion.feature_type] ?? 'Place';
+}
+
+function suggestionIcon(suggestion: MapboxSearchSuggestion): LucideIcon {
+  const categories = suggestion.poi_category_ids ?? [];
+  for (const id of categories) {
+    for (const [pattern, icon] of CATEGORY_ICONS) {
+      if (pattern.test(id)) return icon;
+    }
+  }
+  return MapPin;
+}
+
+/** /suggest's `distance` is already approximate (metres from the proximity
+ * point) - rounded further for display since precision here is false. */
+function formatDistance(meters: number | undefined): string | null {
+  if (meters === undefined) return null;
+  if (meters < 1000) return `${Math.round(meters / 10) * 10} m`;
+  if (meters < 10000) return `${(meters / 1000).toFixed(1)} km`;
+  return `${Math.round(meters / 1000)} km`;
 }
 
 /**
- * Destination entry for turn-by-turn navigation - forward-geocodes via
- * Mapbox (fetchGeocode, biased toward the driver's current position),
- * then hands the chosen result straight to navigationRuntime.startNavigation.
- * Reached from DriveScreen's top bar search button.
+ * Navigate mode's Stage A: destination search. Autocomplete-as-you-type
+ * via Mapbox Search Box /suggest (addresses + businesses + named places in
+ * one query, proximity-biased to the driver), then /retrieve resolves the
+ * pick into coordinates. Route options/turn-by-turn (Stage B) aren't built
+ * yet - a selection is captured and displayed, not navigated to.
  */
-export function NavigationSearchScreen({ onClose, onNavigationStarted }: NavigationSearchScreenProps) {
+export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<MapboxGeocodeFeature[]>([]);
+  const [results, setResults] = useState<MapboxSearchSuggestion[]>([]);
   const [searchState, setSearchState] = useState<'idle' | 'searching' | 'error'>('idle');
-  const [startingId, setStartingId] = useState<string | null>(null);
+  const [retrievingId, setRetrievingId] = useState<string | null>(null);
+  const [retrieveError, setRetrieveError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<SelectedDestination | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
+  /** Lazily minted (Crypto.randomUUID) so mounting this screen costs no
+   * session; reset to null after every retrieve so the next search bills
+   * as its own session. */
+  const sessionTokenRef = useRef<string | null>(null);
 
   const driverPosition = useTripStore((state) => state.driverPosition);
-  const driverHeadingDeg = useTripStore((state) => state.driverHeadingDeg);
-  const driverSpeedKmh = useTripStore((state) => state.driverSpeedKmh);
-  const defaultRouteType = useSettingsStore((state) => state.defaultRouteType);
-  const [routeType, setRouteType] = useState<RouteType>(defaultRouteType);
 
   useEffect(
     () => () => {
@@ -61,6 +150,8 @@ export function NavigationSearchScreen({ onClose, onNavigationStarted }: Navigat
     },
     []
   );
+
+  const sessionToken = () => (sessionTokenRef.current ??= Crypto.randomUUID());
 
   const runSearch = useCallback(
     (text: string) => {
@@ -71,15 +162,19 @@ export function NavigationSearchScreen({ onClose, onNavigationStarted }: Navigat
         return;
       }
       setSearchState('searching');
-      fetchGeocode(text, { proximity: driverPosition ?? undefined })
-        .then((features) => {
+      fetchSearchSuggestions(text, {
+        sessionToken: sessionToken(),
+        proximity: driverPosition ?? undefined,
+        limit: RESULT_LIMIT,
+      })
+        .then((suggestions) => {
           if (requestId !== requestIdRef.current) return; // superseded by a newer keystroke
-          setResults(features);
+          setResults(suggestions);
           setSearchState('idle');
         })
         .catch((error) => {
           if (requestId !== requestIdRef.current) return;
-          console.warn('[navigation] destination search failed', error);
+          console.warn('[navigate] destination search failed', error);
           setResults([]);
           setSearchState('error');
         });
@@ -89,207 +184,316 @@ export function NavigationSearchScreen({ onClose, onNavigationStarted }: Navigat
 
   const handleChangeText = (text: string) => {
     setQuery(text);
+    // Editing after a pick means the destination is being changed - drop
+    // the confirmed card and resume searching.
+    setSelected(null);
+    setRetrieveError(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (text.trim().length < MIN_QUERY_LENGTH) {
+      requestIdRef.current += 1; // cancel any in-flight suggest
+      setResults([]);
+      setSearchState('idle');
+      return;
+    }
+    // Show the spinner from the first keystroke rather than only once the
+    // debounce fires - the request is coming, this is just its latency.
+    setSearchState('searching');
     debounceRef.current = setTimeout(() => runSearch(text), SEARCH_DEBOUNCE_MS);
   };
 
-  const handleSelect = async (feature: MapboxGeocodeFeature) => {
-    if (!driverPosition || startingId) return;
-    const id = feature.properties.mapbox_id ?? featureLabel(feature);
-    setStartingId(id);
+  const handleSelect = async (suggestion: MapboxSearchSuggestion) => {
+    if (retrievingId) return;
+    const requestId = ++requestIdRef.current; // invalidate any suggest still in flight
+    setRetrievingId(suggestion.mapbox_id);
+    setRetrieveError(null);
 
-    const driver: DriverState = { position: driverPosition, headingDeg: driverHeadingDeg, speedKmh: driverSpeedKmh };
-    const [longitude, latitude] = feature.geometry.coordinates;
-    await startNavigation({ latitude, longitude }, featureLabel(feature), driver, { routeType });
-
-    setStartingId(null);
-    if (useNavigationStore.getState().status === 'navigating') {
-      onNavigationStarted();
+    try {
+      const feature = await retrieveSuggestion(suggestion.mapbox_id, { sessionToken: sessionToken() });
+      if (requestId !== requestIdRef.current) return;
+      const coordinates = feature?.geometry.coordinates;
+      if (!coordinates) {
+        setRetrieveError(`Couldn't pin down "${suggestion.name}" - try another result.`);
+        return;
+      }
+      const [longitude, latitude] = coordinates;
+      const destination: SelectedDestination = {
+        name: suggestion.name_preferred ?? suggestion.name,
+        typeLabel: suggestionTypeLabel(suggestion),
+        address: suggestion.full_address ?? suggestion.place_formatted ?? null,
+        latitude,
+        longitude,
+      };
+      // Stage B (route options) consumes this once built - logged for now
+      // so selection can be verified end to end on its own.
+      console.log('[navigate] destination selected', destination);
+      setSelected(destination);
+      setResults([]);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+      console.warn('[navigate] failed to resolve selected suggestion', error);
+      setRetrieveError('Couldn\'t load that result - try again.');
+    } finally {
+      // Always cleared - even when this retrieve was superseded (the guard
+      // at the top keeps retrieves serial, so nothing else can own it).
+      setRetrievingId(null);
+      // The suggest+retrieve session is over either way - the next search
+      // starts a fresh billing session.
+      sessionTokenRef.current = null;
     }
-    // On failure, navigationRuntime already set status 'error' with a
-    // message - stay on this screen; DriveScreen's NavigationStatusBar
-    // isn't visible behind this modal, so the error needs to be readable
-    // here too rather than only surfacing once the driver closes search.
   };
 
-  const routingError = useNavigationStore((state) => (state.status === 'error' ? state.errorMessage : null));
+  const clearQuery = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    requestIdRef.current += 1;
+    setQuery('');
+    setResults([]);
+    setSearchState('idle');
+  };
+
+  const showEmpty = searchState === 'idle' && results.length === 0 && query.trim().length >= MIN_QUERY_LENGTH && !selected;
 
   return (
-    <View style={styles.root}>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
+    <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
+      <Stack gap="md" flex={1}>
+        <Row justify="space-between" align="center">
           <Text style={styles.title}>NAVIGATE</Text>
-          <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button" accessibilityLabel="Close destination search">
-            <X size={22} strokeWidth={2.2} color={instrument.paper} />
+          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close destination search">
+            <GlassView intensity={40} dim={0.4} style={styles.closeButton}>
+              <X size={20} strokeWidth={2.2} color={colors.textPrimary} />
+            </GlassView>
           </Pressable>
-        </View>
+        </Row>
 
-        <View style={styles.searchRow}>
-          <TextInput
-            value={query}
-            onChangeText={handleChangeText}
-            placeholder="Search for a destination"
-            placeholderTextColor={hud.muted}
-            style={styles.input}
-            autoFocus
-            autoCorrect={false}
-            returnKeyType="search"
-            accessibilityLabel="Destination search"
-          />
-        </View>
-
-        <View style={styles.routeTypeRow} accessibilityRole="tablist">
-          {ROUTE_TYPES.map((type) => {
-            const isSelected = type === routeType;
-            return (
-              <Pressable
-                key={type}
-                onPress={() => setRouteType(type)}
-                style={[styles.routeTypeButton, isSelected && styles.routeTypeButtonSelected]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={`${ROUTE_TYPE_LABELS[type]} route`}
-              >
-                <Text style={[styles.routeTypeButtonText, isSelected && styles.routeTypeButtonTextSelected]}>
-                  {ROUTE_TYPE_LABELS[type].toUpperCase()}
-                </Text>
+        <GlassView intensity={40} dim={0.45} style={styles.searchCard}>
+          <Row gap="sm" align="center">
+            <Search size={18} strokeWidth={2.2} color={colors.accent} />
+            <TextInput
+              value={query}
+              onChangeText={handleChangeText}
+              onSubmitEditing={() => {
+                const first = results[0];
+                if (first) void handleSelect(first);
+              }}
+              placeholder="Address, business, or place"
+              placeholderTextColor={colors.textMuted}
+              style={styles.input}
+              autoFocus
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="Destination search"
+            />
+            {searchState === 'searching' ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : query.length > 0 ? (
+              <Pressable onPress={clearQuery} hitSlop={12} accessibilityRole="button" accessibilityLabel="Clear search">
+                <X size={16} strokeWidth={2.2} color={colors.textSecondary} />
               </Pressable>
-            );
-          })}
-        </View>
+            ) : null}
+          </Row>
+        </GlassView>
 
         {!driverPosition ? (
-          <Text style={styles.notice}>Waiting for your location before searching nearby destinations.</Text>
+          <Text style={styles.notice}>Waiting for your location - results will be biased to where you are.</Text>
         ) : null}
-        {routingError ? <Text style={styles.errorText}>{routingError}</Text> : null}
         {searchState === 'error' ? <Text style={styles.errorText}>Search failed. Try again.</Text> : null}
-        {searchState === 'searching' ? <ActivityIndicator style={styles.spinner} color={hud.accent} /> : null}
+        {retrieveError ? <Text style={styles.errorText}>{retrieveError}</Text> : null}
 
-        <FlatList
-          data={results}
-          keyExtractor={(item, index) => item.properties.mapbox_id ?? `${index}`}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => {
-            const id = item.properties.mapbox_id ?? featureLabel(item);
-            const isStarting = startingId === id;
-            return (
-              <Pressable
-                style={styles.resultRow}
-                onPress={() => handleSelect(item)}
-                disabled={startingId !== null}
-                accessibilityRole="button"
-                accessibilityLabel={`Navigate to ${featureLabel(item)}`}
-              >
-                <MapPin size={18} strokeWidth={2} color={hud.accent} />
-                <Text style={styles.resultText} numberOfLines={2}>
-                  {featureLabel(item)}
+        {selected ? (
+          <GlassView intensity={40} dim={0.5} style={styles.selectedCard}>
+            <Stack gap="sm">
+              <Row justify="space-between" align="center">
+                <Text style={styles.selectedEyebrow}>DESTINATION</Text>
+                <Pressable
+                  onPress={() => setSelected(null)}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change destination"
+                >
+                  <Text style={styles.changeText}>CHANGE</Text>
+                </Pressable>
+              </Row>
+              <Column gap="xxs">
+                <Text style={styles.selectedName}>{selected.name}</Text>
+                <Text style={styles.selectedMeta} numberOfLines={2}>
+                  {selected.typeLabel}
+                  {selected.address ? ` · ${selected.address}` : ''}
                 </Text>
-                {isStarting ? <ActivityIndicator color={hud.accent} /> : null}
-              </Pressable>
-            );
-          }}
-        />
-      </SafeAreaView>
-    </View>
+                <Text style={styles.selectedCoords}>
+                  {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
+                </Text>
+              </Column>
+              <Text style={styles.selectedHint}>Route options appear here once Stage B lands.</Text>
+            </Stack>
+          </GlassView>
+        ) : null}
+
+        {results.length > 0 ? (
+          <GlassView intensity={40} dim={0.4} style={styles.resultsCard}>
+            <FlatList
+              data={results}
+              keyExtractor={(item) => item.mapbox_id}
+              keyboardShouldPersistTaps="handled"
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
+              renderItem={({ item }) => {
+                const Icon = suggestionIcon(item);
+                const isRetrieving = retrievingId === item.mapbox_id;
+                const distance = formatDistance(item.distance);
+                const context = item.place_formatted ?? item.address ?? item.full_address ?? '';
+                return (
+                  <Pressable
+                    style={({ pressed }) => [styles.resultRow, pressed && styles.resultRowPressed]}
+                    onPress={() => void handleSelect(item)}
+                    disabled={retrievingId !== null}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Set destination to ${item.name}`}
+                  >
+                    <Icon size={20} strokeWidth={2} color={colors.accent} />
+                    <Column gap="xxs" flex={1}>
+                      <Text style={styles.resultName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.resultMeta} numberOfLines={1}>
+                        {suggestionTypeLabel(item)}
+                        {context ? ` · ${context}` : ''}
+                      </Text>
+                    </Column>
+                    {isRetrieving ? (
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    ) : distance ? (
+                      <Text style={styles.resultDistance}>{distance}</Text>
+                    ) : null}
+                  </Pressable>
+                );
+              }}
+            />
+          </GlassView>
+        ) : showEmpty ? (
+          <Text style={styles.notice}>No matches for "{query.trim()}".</Text>
+        ) : null}
+      </Stack>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: hud.ground,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
   title: {
-    fontFamily: fontFamily.black,
-    fontSize: 18,
-    letterSpacing: 1.5,
-    color: instrument.paper,
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.title,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textPrimary,
   },
-  searchRow: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-  },
-  input: {
-    height: 48,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: hud.rule,
-    color: instrument.paper,
-    fontFamily: fontFamily.medium,
-    fontSize: 15,
-  },
-  routeTypeRow: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 14,
-    gap: 8,
-  },
-  routeTypeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  searchCard: {
+    borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: hud.rule,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  routeTypeButtonSelected: {
-    backgroundColor: hud.accent,
-    borderColor: hud.accent,
-  },
-  routeTypeButtonText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    color: hud.muted,
-  },
-  routeTypeButtonTextSelected: {
-    color: '#062128',
+  input: {
+    flex: 1,
+    minHeight: 32,
+    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.fontSize.body,
+    paddingVertical: 0, // RN TextInput adds its own vertical padding on Android
+    // RNW leaves the platform's own input chrome (white fill + border +
+    // focus ring) on the element - strip it so the glass card reads as
+    // the field.
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    outlineWidth: 0,
   },
   notice: {
-    marginHorizontal: 20,
-    marginBottom: 8,
-    fontFamily: fontFamily.medium,
-    fontSize: 12,
-    color: hud.muted,
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
+    color: colors.textMuted,
   },
   errorText: {
-    marginHorizontal: 20,
-    marginBottom: 8,
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
-    color: hud.sevHighText,
+    fontFamily: typography.fontFamily.bodySemibold,
+    fontSize: typography.fontSize.caption,
+    color: colors.caution,
   },
-  spinner: {
-    marginBottom: 8,
+  resultsCard: {
+    flex: 1,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   resultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: hud.rowRule,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  resultText: {
-    flex: 1,
-    fontFamily: fontFamily.medium,
-    fontSize: 14,
-    color: instrument.paper,
+  resultRowPressed: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.md,
+  },
+  resultName: {
+    fontFamily: typography.fontFamily.bodySemibold,
+    fontSize: typography.fontSize.body,
+    color: colors.textPrimary,
+  },
+  resultMeta: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
+    color: colors.textSecondary,
+  },
+  resultDistance: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.bodyLarge,
+    color: colors.textSecondary,
+  },
+  selectedCard: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  selectedEyebrow: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
+  },
+  changeText: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.textSecondary,
+  },
+  selectedName: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.title,
+    color: colors.textPrimary,
+  },
+  selectedMeta: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
+    color: colors.textSecondary,
+  },
+  selectedCoords: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
+    color: colors.textMuted,
+  },
+  selectedHint: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.caption,
+    color: colors.textMuted,
   },
 });
