@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@neondatabase/serverless": "^1.1.0",
+    "@sentry/node": "^10.74.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^26.4.1",
     "@types/react": "~19.2.2",
