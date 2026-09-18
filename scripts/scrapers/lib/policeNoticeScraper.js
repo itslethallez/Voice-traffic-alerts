@@ -140,7 +140,14 @@ class PoliceNoticeScraper {
       // Every live notice failed to geocode - a Mapbox outage or a
       // systematic address-format change, not a quiet night. Posting an
       // empty batch would look like success while delivering nothing.
-      throw new Error(`${this.displayName}: all ${toProcess.length} live notice(s) failed to geocode.`);
+      // Include a sample of the real per-notice reasons here: the
+      // caller (scripts/scrapePoliceNotices.js) only logs `failures`
+      // after scrape() returns, which never happens on this path.
+      const sample = failures
+        .slice(0, 3)
+        .map((f) => `"${f.notice.street}, ${f.notice.suburb}": ${f.reason}`)
+        .join('; ');
+      throw new Error(`${this.displayName}: all ${toProcess.length} live notice(s) failed to geocode. Sample: ${sample}`);
     }
     return { notices, deduplicatedCount: notices.length - unique.length, expiredCount, alerts, failures };
   }
