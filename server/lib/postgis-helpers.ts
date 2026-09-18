@@ -139,8 +139,8 @@ export async function selectCorridorAlerts(params: CorridorQueryParams): Promise
     )
     SELECT nearby.*
     FROM nearby
-    WHERE ${headingDeg}::float8 IS NULL
-       OR abs(mod(nearby.bearing_deg::numeric - ${headingDeg}::float8 + 540, 360) - 180) <= ${CORRIDOR_HALF_ANGLE_DEG}
+    WHERE ${headingDeg}::numeric IS NULL
+       OR abs(mod(nearby.bearing_deg::numeric - ${headingDeg}::numeric + 540, 360) - 180) <= ${CORRIDOR_HALF_ANGLE_DEG}
        OR (nearby.distance_m - nearby.radius_m) <= ${CORRIDOR_ALWAYS_NEARBY_M}
     ORDER BY (nearby.distance_m - nearby.radius_m)
     LIMIT ${limit}
