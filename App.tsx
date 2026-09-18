@@ -12,7 +12,6 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-goog
 import { Rajdhani_600SemiBold, Rajdhani_700Bold } from '@expo-google-fonts/rajdhani';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { WazeAlert } from './src/api/waze/types';
-import { BottomNav, type NavTab } from './src/navigation/BottomNav';
 import { DriveScreen } from './src/screens/DriveScreen';
 import { NavigationSearchScreen } from './src/screens/NavigationSearchScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -39,7 +38,10 @@ export default function App() {
     Rajdhani_600SemiBold,
     Rajdhani_700Bold,
   });
-  const [tab, setTab] = useState<NavTab>('map');
+  // Map-first chrome: no bottom tab bar - the map owns the screen and
+  // settings is reached through the map header's gear, matching the §8
+  // hierarchy (secondary surfaces stay hidden until requested).
+  const [tab, setTab] = useState<'map' | 'settings'>('map');
   const [focusedAlert, setFocusedAlert] = useState<WazeAlert | null>(null);
   const [showNavigationSearch, setShowNavigationSearch] = useState(false);
 
@@ -82,6 +84,7 @@ export default function App() {
               focusedAlert={focusedAlert}
               onFocusAlert={focusAlertOnMap}
               onOpenSearch={() => setShowNavigationSearch(true)}
+              onOpenSettings={() => setTab('settings')}
             />
           </View>
           <View style={[styles.screen, tab !== 'settings' && styles.hiddenScreen]}>
@@ -91,7 +94,6 @@ export default function App() {
             />
           </View>
         </View>
-        <BottomNav active={tab} onChange={setTab} />
         <StatusBar style="light" />
         {showNavigationSearch ? (
           <View style={styles.screen}>

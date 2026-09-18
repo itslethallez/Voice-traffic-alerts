@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTripStore } from '../../store/useTripStore';
-import { colors, spacing, typography } from '../../theme/tokens';
+import { alpha, colors, spacing, typography } from '../../theme/tokens';
 
 /** Matches ReportBar's REPORT_DIAL_SIZE (design reference: the two
  * circular controls are the same size, mirrored left/right in the bottom
@@ -20,7 +20,7 @@ export function Speedometer() {
 
   return (
     <LinearGradient
-      colors={[colors.surfaceRaised, colors.surface]}
+      colors={[alpha(colors.asphalt, 0.85), alpha(colors.charcoal, 0.9)]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
@@ -41,8 +41,8 @@ const styles = StyleSheet.create({
     borderRadius: SPEED_DIAL_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.accent,
+    borderWidth: 1,
+    borderColor: alpha(colors.accent, 0.5),
   },
   caption: {
     fontFamily: typography.fontFamily.displayMedium,

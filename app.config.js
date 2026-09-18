@@ -63,6 +63,17 @@ module.exports = {
         },
       ],
       'expo-font',
+      // The full SHOTGUN brand mark (dial + wordmark + motto) centred on
+      // charcoal - same ground the app shell paints behind the map.
+      [
+        'expo-splash-screen',
+        {
+          image: './assets/splash-logo.png',
+          imageWidth: 300,
+          resizeMode: 'contain',
+          backgroundColor: '#0B0F12',
+        },
+      ],
       // Android Notification Access is a special system setting. The app can
       // only deep-link there; the user must explicitly enable the listener.
       './plugins/withFacebookNotificationListener',

@@ -12,7 +12,7 @@ import { visibleTypesFromFilters } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
+import { alpha, colors, map3d, radii, spacing, typography } from '../../theme/tokens';
 import { formatCompactDistance } from './formatCompactDistance';
 
 // Keep Mapbox GL's very deep style-expression generics outside the Expo/RN
@@ -29,6 +29,23 @@ interface RadarMapProps {
 }
 
 const ADELAIDE: [number, number] = [138.6007, -34.9285];
+
+/** 3D design guide §2: fraction of the map height used as top camera
+ * padding so the driver anchor sits in the lower third and the road ahead
+ * keeps most of the frame - the same treatment RadarMap.tsx applies
+ * natively through Camera padding. */
+const CRUISING_LOOK_AHEAD_PADDING = 0.32;
+/** Zoom at which building extrusions start fading in - matches the native
+ * adapter's minZoomLevel so both platforms show the same world. */
+const BUILDING_EXTRUSION_MIN_ZOOM = 13;
+const DEM_SOURCE_ID = 'shotgun-terrain-dem';
+
+/** mapbox-gl keeps transform.padding across camera ops, so this is applied
+ * once via setPadding and re-applied after any fitBounds that replaced it
+ * with symmetric padding. */
+const lookAheadPadding = (map: { getContainer(): { clientHeight: number } }) => ({
+  top: Math.round(map.getContainer().clientHeight * CRUISING_LOOK_AHEAD_PADDING),
+});
 
 /** Browser implementation of the map surface. Native builds continue using
  * RadarMap.tsx/@rnmapbox; Expo web resolves this file and uses Mapbox GL JS. */
@@ -60,6 +77,9 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
         { padding: 56, pitch: 50, bearing: 0, duration: 650 }
       );
     } else if (!next && driverPosition && mapRef.current) {
+      // fitBounds above replaces transform.padding with its own symmetric
+      // value - restore the lower-third driver anchor before easing back.
+      mapRef.current.setPadding(lookAheadPadding(mapRef.current));
       mapRef.current.easeTo({
         center: [driverPosition.longitude, driverPosition.latitude],
         zoom: 15.5,
@@ -106,10 +126,87 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
       zoom: 15.5,
       pitch: 50,
       bearing: useTripStore.getState().driverHeadingDeg,
+      padding: lookAheadPadding({ getContainer: () => hostRef.current! }),
       attributionControl: true,
     });
     mapRef.current = map;
+    // Debug handle so local tooling (screenshots, manual camera checks) can
+    // drive the map without synthesising gestures.
+    Object.assign(window, { __shotgunMap: map });
+    // Keep the lower-third anchor proportional when the viewport resizes.
+    map.on('resize', () => map.setPadding(lookAheadPadding(map)));
+    map.on('load', () => {
+      // 3D design guide §3 - the world treatment, matching the native
+      // adapter's RasterDemSource/Terrain/HillshadeLayer/Atmosphere stack:
+      // shaped DEM terrain with restrained hillshade for regional relief,
+      // charcoal extrusions on the style's own composite source, and a
+      // subtle horizon atmosphere rather than a bright game-like sky.
+      map.addSource(DEM_SOURCE_ID, {
+        type: 'raster-dem',
+        url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+        tileSize: 512,
+        maxzoom: 14,
+      });
+      map.setTerrain({
+        source: DEM_SOURCE_ID,
+        exaggeration: ['interpolate', ['linear'], ['zoom'], 10, 1.6, 14, 1.0],
+      });
+      map.addLayer(
+        {
+          id: 'shotgun-hillshade',
+          type: 'hillshade',
+          source: DEM_SOURCE_ID,
+          paint: {
+            'hillshade-exaggeration': 0.25,
+            'hillshade-shadow-color': map3d.hillshadeShadow,
+            'hillshade-highlight-color': map3d.hillshadeHighlight,
+          },
+        },
+        // Under buildings, roads and labels so carriageways stay the
+        // lightest thing in view.
+        map.getLayer('building-outline') ? 'building-outline' : undefined
+      );
+      const firstSymbolLayer = map
+        .getStyle()
+        .layers.find((layer: { type: string }) => layer.type === 'symbol');
+      map.addLayer(
+        {
+          id: 'shotgun-3d-buildings',
+          type: 'fill-extrusion',
+          source: 'composite',
+          'source-layer': 'building',
+          filter: ['==', 'extrude', 'true'],
+          minzoom: BUILDING_EXTRUSION_MIN_ZOOM,
+          paint: {
+            'fill-extrusion-color': map3d.building,
+            'fill-extrusion-height': [
+              'interpolate', ['linear'], ['zoom'],
+              BUILDING_EXTRUSION_MIN_ZOOM, 0,
+              BUILDING_EXTRUSION_MIN_ZOOM + 0.5, ['get', 'height'],
+            ],
+            'fill-extrusion-base': ['get', 'min_height'],
+            'fill-extrusion-opacity': 0.55,
+            'fill-extrusion-vertical-gradient': true,
+            'fill-extrusion-ambient-occlusion-intensity': 0.35,
+            // Sit on the DEM terrain instead of the flat plane so
+            // extrusions on slopes don't float or bury.
+            'fill-extrusion-height-alignment': 'terrain',
+            'fill-extrusion-base-alignment': 'terrain',
+          },
+        },
+        firstSymbolLayer ? firstSymbolLayer.id : undefined
+      );
+      map.setFog({
+        range: [1.5, 20],
+        color: map3d.atmosphereHorizon,
+        'high-color': map3d.atmosphereHigh,
+        'space-color': map3d.atmosphereSpace,
+        'horizon-blend': 0.12,
+        'star-intensity': 0,
+      });
+    });
     return () => {
+      Object.assign(window, { __shotgunMap: null });
       if (focusTransitionTimeoutRef.current !== null) {
         clearTimeout(focusTransitionTimeoutRef.current);
         focusTransitionTimeoutRef.current = null;
@@ -313,6 +410,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
           onPress={() => {
             if (!driverPosition || !mapRef.current) return;
             setShowRange(false);
+            mapRef.current.setPadding(lookAheadPadding(mapRef.current));
             mapRef.current.easeTo({
               center: [driverPosition.longitude, driverPosition.latitude],
               zoom: 15.5,
@@ -388,7 +486,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: alpha(colors.charcoal, 0.94),
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: alpha(colors.accent, 0.55),
   },
   rangeLabelText: {
     fontFamily: typography.fontFamily.display,
@@ -411,7 +509,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: alpha(colors.charcoal, 0.94),
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: alpha(colors.accent, 0.45),
   },
   recenterButtonDisabled: {
     opacity: 1,
@@ -424,7 +522,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: alpha(colors.charcoal, 0.94),
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: alpha(colors.accent, 0.45),
   },
   zoomButtonGlyph: {
     fontFamily: typography.fontFamily.display,

@@ -18,7 +18,13 @@ import { useNavigationStore } from '../../store/useNavigationStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
-import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
+import { alpha, colors, map3d, radii, spacing, typography } from '../../theme/tokens';
+import type {
+  AtmosphereLayerStyle,
+  FillExtrusionLayerStyle,
+  HillshadeLayerStyle,
+  TerrainLayerStyle,
+} from '@rnmapbox/maps';
 import { ClosestReportPanel } from './ClosestReportPanel';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
@@ -66,6 +72,57 @@ const AWARENESS_CIRCLE_SEGMENTS = 48;
  * awareness/nearest views, matching a normal turn-by-turn app's driving
  * view rather than this app's usual wide situational-awareness framing. */
 const NAVIGATING_ZOOM = 17;
+
+/**
+ * 3D design guide §2: in Cruising's driver-following view the vehicle mark
+ * anchors in the lower third of the screen so the road ahead owns the
+ * frame. Top camera padding of this fraction of the map height pushes the
+ * camera's anchor point down without changing the pitch.
+ */
+const CRUISING_LOOK_AHEAD_PADDING_FRACTION = 0.32;
+/**
+ * Building extrusions start fading in at this zoom - below it the style's
+ * flat building fill is enough and extrusions would only clutter the
+ * wider view the driver needs.
+ */
+const BUILDING_EXTRUSION_MIN_ZOOM = 13;
+
+/**
+ * 3D guide §3 paint values - module constants rather than inline literals
+ * so each layer's `style` prop keeps a stable reference across renders
+ * (same reason cameraPadding is memoized: @rnmapbox forwards changed
+ * props straight to the native style engine).
+ */
+const TERRAIN_3D_STYLE: TerrainLayerStyle = {
+  // Stronger relief zoomed out on open/regional roads where terrain is the
+  // visual character; easing off in the city where buildings take over.
+  exaggeration: ['interpolate', ['linear'], ['zoom'], 10, 1.6, 14, 1.0],
+};
+const HILLSHADE_3D_STYLE: HillshadeLayerStyle = {
+  hillshadeExaggeration: 0.25,
+  hillshadeShadowColor: map3d.hillshadeShadow,
+  hillshadeHighlightColor: map3d.hillshadeHighlight,
+};
+const BUILDINGS_3D_STYLE: FillExtrusionLayerStyle = {
+  fillExtrusionColor: map3d.building,
+  fillExtrusionHeight: ['interpolate', ['linear'], ['zoom'], BUILDING_EXTRUSION_MIN_ZOOM, 0, BUILDING_EXTRUSION_MIN_ZOOM + 0.5, ['get', 'height']],
+  fillExtrusionBase: ['get', 'min_height'],
+  fillExtrusionOpacity: 0.55,
+  fillExtrusionVerticalGradient: true,
+  fillExtrusionAmbientOcclusionIntensity: 0.35,
+  // Sit on the DEM terrain instead of the flat plane so extrusions on
+  // slopes don't float or bury.
+  fillExtrusionHeightAlignment: 'terrain',
+  fillExtrusionBaseAlignment: 'terrain',
+};
+const ATMOSPHERE_3D_STYLE: AtmosphereLayerStyle = {
+  range: [1.5, 20],
+  color: map3d.atmosphereHorizon,
+  highColor: map3d.atmosphereHigh,
+  spaceColor: map3d.atmosphereSpace,
+  horizonBlend: 0.12,
+  starIntensity: 0,
+};
 
 /**
  * How long the camera lingers on a genuinely-new alert's exact location
@@ -418,14 +475,24 @@ export function RadarMap({
    * since it's downstream of that same `now` tick) so the reference only
    * changes when the padding should actually change.
    */
+  /** Cruising gets the lower-third vehicle anchor from the 3D guide - in
+   * 'nearest' (driver-following) and kept in 'free' so the padding doesn't
+   * ease away under the driver right after their own pan gesture. Suspended
+   * in 'range' (the awareness circle keeps its centred framing), while an
+   * alert is focused, and while navigating - Navigate's own framing is
+   * untouched this pass. */
+  const cruisingLookAhead =
+    mapPresentation !== 'range' && !isNavigating && displayFocus === null;
   const cameraPadding = useMemo(
     () => ({
-      paddingTop: 0,
+      paddingTop: cruisingLookAhead
+        ? Math.round(mapViewport.height * CRUISING_LOOK_AHEAD_PADDING_FRACTION)
+        : 0,
       paddingLeft: 0,
       paddingRight: 0,
       paddingBottom: showsFocusPanel ? focusPanelHeight : 0,
     }),
-    [showsFocusPanel, focusPanelHeight]
+    [cruisingLookAhead, mapViewport.height, showsFocusPanel, focusPanelHeight]
   );
 
   /** Camera targets are declarative only while Shotgun is presenting one of
@@ -629,6 +696,42 @@ export function RadarMap({
           padding={cameraPadding}
           animationMode="easeTo"
           animationDuration={600}
+        />
+
+        {/* 3D guide §3 - the world treatment. The DEM source feeds Terrain
+            (shaped relief on open/regional roads), a restrained hillshade so
+            hills and valleys read against the near-black base, and a subtle
+            horizon atmosphere (never a bright game-like sky). */}
+        <Mapbox.RasterDemSource
+          id="shotgun-terrain-dem"
+          url="mapbox://mapbox.mapbox-terrain-dem-v1"
+          tileSize={514}
+          maxZoomLevel={14}
+        >
+          <Mapbox.Terrain style={TERRAIN_3D_STYLE} />
+          {/* belowLayerID puts the hillshade under buildings, roads and
+              labels so carriageways stay the lightest thing in view. */}
+          <Mapbox.HillshadeLayer
+            id="shotgun-hillshade"
+            belowLayerID="building-outline"
+            style={HILLSHADE_3D_STYLE}
+          />
+          <Mapbox.Atmosphere style={ATMOSPHERE_3D_STYLE} />
+        </Mapbox.RasterDemSource>
+
+        {/* Charcoal/graphite extrusions reusing the style's own composite
+            source (mapbox-streets v8) - no extra tileset is fetched.
+            Inserted below the style's first symbol layer so labels and road
+            names still render on top. */}
+        <Mapbox.FillExtrusionLayer
+          id="shotgun-3d-buildings"
+          sourceID="composite"
+          sourceLayerID="building"
+          filter={['==', 'extrude', 'true']}
+          minZoomLevel={BUILDING_EXTRUSION_MIN_ZOOM}
+          maxZoomLevel={24}
+          belowLayerID="turning-feature-outline-navigation"
+          style={BUILDINGS_3D_STYLE}
         />
 
         {mapPresentation === 'range' && awarenessCircle && !displayFocus ? (
@@ -1016,7 +1119,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 78,
     left: 20,
-    backgroundColor: colors.surface,
+    // §8 floating chrome: dark translucent surface.
+    backgroundColor: alpha(colors.charcoal, 0.85),
     paddingVertical: spacing.xxs,
     paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
@@ -1041,9 +1145,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: radii.lg,
-    backgroundColor: colors.surface,
+    backgroundColor: alpha(colors.charcoal, 0.88),
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: alpha(colors.accent, 0.55),
   },
   rangeLabelText: {
     fontFamily: typography.fontFamily.display,
@@ -1054,7 +1158,7 @@ const styles = StyleSheet.create({
   alertDetailCard: {
     position: 'absolute', left: 16, right: 16, bottom: 112,
     minHeight: 92, padding: spacing.md, paddingRight: spacing.xxl, borderRadius: radii.lg,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: alpha(colors.charcoal, 0.9),
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -1091,9 +1195,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: alpha(colors.charcoal, 0.85),
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: alpha(colors.accent, 0.45),
   },
   recenterButtonDisabled: {
     opacity: 1,
@@ -1104,9 +1208,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: alpha(colors.charcoal, 0.85),
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: alpha(colors.accent, 0.45),
   },
   zoomButtonGlyph: {
     fontFamily: typography.fontFamily.display,

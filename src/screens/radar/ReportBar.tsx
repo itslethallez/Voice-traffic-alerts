@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CarFront, Plus, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import { useTripStore, type ManualReportCategory } from '../../store/useTripStore';
-import { colors, radii, spacing, typography } from '../../theme/tokens';
+import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
 
 const ICON_SIZE = 22;
 const ICON_STROKE_WIDTH = 2;
@@ -166,9 +166,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xxs,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderColor: colors.accent,
+    // §8 floating chrome: dark translucent surface + soft border.
+    backgroundColor: alpha(colors.charcoal, 0.85),
+    borderWidth: 1,
+    borderColor: alpha(colors.accent, 0.55),
   },
   dialExpanded: {
     borderColor: colors.coolBlue,
@@ -201,9 +202,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xxs,
-    backgroundColor: colors.surface,
+    backgroundColor: alpha(colors.charcoal, 0.85),
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: alpha(colors.accent, 0.4),
   },
   categoryLabel: {
     fontFamily: typography.fontFamily.displayMedium,

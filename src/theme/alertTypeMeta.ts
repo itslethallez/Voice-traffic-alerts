@@ -20,7 +20,7 @@ export interface AlertTypeMeta {
 
 /** Marker colours follow AlertPill's PILL_META severity tiers (police
  * informational blue, traffic/accident critical red, closure/hazard caution
- * amber, roadkill brand teal) so a pin's colour matches its filter pill. */
+ * amber, roadkill its own green) so a pin's colour matches its filter pill. */
 const ALERT_TYPE_META: Partial<Record<string, AlertTypeMeta>> = {
   POLICE: { label: 'Police', color: colors.coolBlue, emoji: '🚓', letter: 'P' },
   // Synthetic corridor types (api/backend/corridorAlert.ts) - the camera
@@ -33,7 +33,7 @@ const ALERT_TYPE_META: Partial<Record<string, AlertTypeMeta>> = {
   JAM: { label: 'Jam', color: colors.critical, emoji: '🚗', letter: 'J' },
   // Normalized-schema type arriving via the corridor feed (mapped in
   // api/backend/corridorAlert.ts) - no Waze equivalent.
-  ROADKILL: { label: 'Roadkill', color: colors.accent, emoji: '🦘', letter: 'R' },
+  ROADKILL: { label: 'Roadkill', color: colors.roadkill, emoji: '🦘', letter: 'R' },
 };
 
 const DEFAULT_ALERT_TYPE_META: AlertTypeMeta = {

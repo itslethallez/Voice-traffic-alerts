@@ -14,8 +14,8 @@ export type AlertPillType = AlertType;
  * handheld Camera, permanent infrastructure the mounted Cctv - distinct
  * glyphs, one colour family per the brand board), traffic and accidents
  * are the critical tier (red, reserved for the highest-severity types),
- * closures and hazards are caution (amber), roadkill rides the brand
- * teal. Only the police family carries an icon today - it's the family
+ * closures and hazards are caution (amber), roadkill/animal hazards get
+ * their own green. Only the police family carries an icon today - it's the family
  * that splits one colour three ways, so the glyph does the telling the
  * colour can't; the dot stays for everyone else.
  */
@@ -26,7 +26,7 @@ const PILL_META: Record<AlertPillType, { label: string; color: string; icon?: Lu
   traffic: { label: 'Traffic', color: colors.red },
   accident: { label: 'Accident', color: colors.red },
   closure: { label: 'Closure', color: colors.amber },
-  roadkill: { label: 'Roadkill', color: colors.teal },
+  roadkill: { label: 'Roadkill', color: colors.roadkill },
   hazard: { label: 'Hazard', color: colors.amber },
 };
 

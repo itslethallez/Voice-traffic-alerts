@@ -15,6 +15,10 @@ const palette = {
   coolBlue: '#3BA3FF', // Navigation / tech
   amber: '#FFB020', // Caution / warnings
   red: '#FF3B30', // Critical alerts only
+  /** Animal / roadkill hazards — their own green per the 3D design guide
+   * (was sharing the brand teal, which made the category indistinguishable
+   * from Shotgun's primary accent). */
+  roadkill: '#26D99A',
   white: '#FFFFFF', // Text / icons
 } as const;
 
@@ -36,6 +40,28 @@ export const colors = {
   caution: palette.amber,
   critical: palette.red,
   textPrimary: palette.white,
+} as const;
+
+/**
+ * Mapbox style-paint values for the 3D world treatment (3D design guide
+ * §3): charcoal/graphite buildings, terrain shading and a restrained
+ * horizon atmosphere. Kept separate from `colors` — these style the map
+ * canvas itself, not app UI surfaces, and are consumed by RadarMap on
+ * both native (@rnmapbox) and web (mapbox-gl).
+ */
+export const map3d = {
+  /** Charcoal/graphite building extrusion — low saturation, sits under
+   * road labels. */
+  building: '#161B21',
+  /** Hillshade relief colours — shadow deepens slopes, highlight lifts
+   * ridges just enough to read hills on a near-black base. */
+  hillshadeShadow: '#04070A',
+  hillshadeHighlight: '#1B2A33',
+  /** Horizon atmosphere — a very subtle lift toward the horizon, never a
+   * bright game-like sky. */
+  atmosphereHorizon: '#10161C',
+  atmosphereHigh: '#0A0F14',
+  atmosphereSpace: '#04070A',
 } as const;
 
 /** Multiplies a palette hex (#RRGGBB) by `opacity` into an rgba() string. */

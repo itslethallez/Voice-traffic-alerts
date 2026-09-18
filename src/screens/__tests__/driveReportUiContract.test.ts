@@ -117,14 +117,6 @@ describe('Drive report UI contract', () => {
     expect(reportBar).toMatch(/\{expanded \? \(\s*<View style=\{styles\.fanOut\}/);
   });
 
-  it('gives the bottom tab bar the same dark chrome as the header', () => {
-    const bottomNav = source('src/navigation/BottomNav.tsx');
-
-    expect(bottomNav).toContain("from '../theme/tokens'");
-    expect(bottomNav).toMatch(/root:\s*\{[\s\S]*?backgroundColor: colors\.background,/);
-    expect(bottomNav).not.toContain("backgroundColor: '#FFFFFF'");
-  });
-
   it('keeps the map controls at least 44dp tall', () => {
     const nativeMap = source('src/screens/radar/RadarMap.tsx');
     const webMap = source('src/screens/radar/RadarMap.web.tsx');

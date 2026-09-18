@@ -5,14 +5,18 @@ const root = path.resolve(__dirname, '../../..');
 const source = (relative: string) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 describe('simplified map-first UI contract', () => {
-  it('exposes Map and Settings as accessible primary tabs', () => {
-    const nav = source('src/navigation/BottomNav.tsx');
+  it('keeps the map as the only primary surface, with settings behind the header gear', () => {
+    // §8 hierarchy: the map owns the screen - no bottom tab bar, and
+    // secondary surfaces (settings) stay hidden until requested via the
+    // top-right gear on the map header.
+    const app = source('App.tsx');
 
-    expect(nav).toContain("{ key: 'map', label: 'MAP' }");
-    expect(nav).toContain("{ key: 'settings', label: 'SETTINGS' }");
-    expect(nav).not.toContain("'reports'");
-    expect(nav).toContain('accessibilityRole="tab"');
-    expect(nav).toContain('accessibilityState={{ selected: isActive }}');
+    expect(app).not.toContain('BottomNav');
+
+    const drive = source('src/screens/DriveScreen.tsx');
+
+    expect(drive).toContain('accessibilityLabel="Open settings"');
+    expect(drive).toContain('onOpenSettings');
   });
 
   it('makes the live map the Drive screen and keeps direct reporting available', () => {

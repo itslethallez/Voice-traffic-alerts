@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { ScanLine, Search, Volume2, VolumeX } from 'lucide-react-native';
+import { ScanLine, Settings as SettingsIcon, Volume2, VolumeX } from 'lucide-react-native';
 import type { WazeAlert } from '../api/waze/types';
 import type { SortedFacebookNotification } from '../notifications/sortFacebookNotification';
 import { policeSubtypeLabel } from '../api/waze/policeSubtype';
@@ -26,6 +26,7 @@ import { useCommunityReportStore } from '../store/useCommunityReportStore';
 import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
 import { formatRelativeTime } from './formatRelativeTime';
 import { formatCompactDistance } from './radar/formatCompactDistance';
+import { ModeSwitch } from './radar/ModeSwitch';
 import { NavigationStatusBar } from './radar/NavigationStatusBar';
 import { RadarMap } from './radar/RadarMap';
 import { ReportBar } from './radar/ReportBar';
@@ -34,11 +35,10 @@ import { Speedometer } from './radar/Speedometer';
 const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;
 
 /** Collapsed sheet height — deliberately just the grabber + "N alerts
- * nearby" header, no list rows. The sheet's bottom edge sits flush against
- * the app's bottom nav, so any row content in the peek would be hard-cut by
- * the nav bar (a row sliced mid-height reads as the nav sitting *inside*
- * the list). Rows exist only in the expanded state. The bottom control
- * strip's overlay offset derives from this, so the two never drift apart. */
+ * nearby" header, no list rows. Rows exist only in the expanded state,
+ * so the peek never shows a row sliced mid-height at the screen edge.
+ * The bottom control strip's overlay offset derives from this, so the
+ * two never drift apart. */
 const SHEET_PEEK_HEIGHT = 64;
 
 /** Diameter of the floating RANGE/MUTE utility buttons — big enough for a
@@ -96,12 +96,16 @@ interface DriveScreenProps {
    * caller that genuinely can't offer navigation yet doesn't show a dead
    * button. */
   onOpenSearch?: () => void;
+  /** Opens the settings surface (App.tsx's settings tab) - powers the
+   * gear affordance the mockups put at the top-right of the map screen.
+   * Omitted rather than a dead button when there's no settings surface. */
+  onOpenSettings?: () => void;
 }
 
 /** The driving view is deliberately map-first: live reports appear directly
  * on the map, reporting stays one tap away in the bottom control strip, and
  * the draggable sheet lists everything nearby, filtered by the pill row. */
-export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }: DriveScreenProps) {
+export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, onOpenSettings }: DriveScreenProps) {
   const [rangeToggleToken, setRangeToggleToken] = useState(0);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
@@ -201,24 +205,34 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
       <MapOverlayPanel edge="top">
         <Stack gap="sm">
           <Row justify="space-between" align="center">
+            {/* Mockup header is [menu][centred logo][gear] - we have no
+                hamburger (the bottom tab bar covers navigation), so a
+                same-width invisible spacer takes its slot to keep the
+                logo optically centred. */}
+            <View style={styles.cornerSpacer} />
             <Image
               source={require('../../assets/shotgun-header.png')}
               style={styles.brandLogo}
               resizeMode="contain"
               accessibilityLabel="Shotgun"
             />
-            {onOpenSearch ? (
+            {onOpenSettings ? (
               <Pressable
-                onPress={onOpenSearch}
-                style={styles.searchButton}
+                onPress={onOpenSettings}
+                style={styles.cornerButton}
                 accessibilityRole="button"
-                accessibilityLabel="Search for a destination"
-                accessibilityHint="Opens destination search to start turn-by-turn navigation"
+                accessibilityLabel="Open settings"
+                accessibilityHint="Opens app settings"
               >
-                <Search size={20} strokeWidth={2.2} color={colors.accent} />
+                <SettingsIcon size={20} strokeWidth={2.2} color={colors.accent} />
               </Pressable>
             ) : null}
           </Row>
+
+          {/* §8's compact mode switch: Cruising is the active segment on
+              this screen; Navigate is the plan-a-trip entry (the old
+              top-right search button's job, now where the mockups put it). */}
+          <ModeSwitch onNavigatePress={onOpenSearch} />
 
           <Row gap="xs" wrap>
             {ALERT_FILTER_CATEGORIES.map((category) => {
@@ -243,7 +257,7 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch }:
           </Row>
 
           {bannerMessage ? (
-            <Card variant="outlined" padding="sm">
+            <Card variant="outlined" padding="sm" style={styles.floatingCard}>
               <Text style={styles.bannerText}>{bannerMessage}</Text>
             </Card>
           ) : null}
@@ -413,7 +427,7 @@ function ReportTicker({
       accessibilityLiveRegion="polite"
       accessibilityLabel={`New report: ${announcement.text}. Tap to show on map`}
     >
-      <Card variant="raised" padding="sm" style={styles.tickerCard}>
+      <Card variant="raised" padding="sm" style={[styles.floatingCard, styles.tickerCard]}>
         <Row align="center" gap="sm">
           <View
             style={styles.tickerViewport}
@@ -488,18 +502,25 @@ function CommunityIntakeSection({
 
 const styles = StyleSheet.create({
   brandLogo: {
-    // 1222x312 crop of the brand-board lockup - aspectRatio alone collapses
-    // on web (img falls back to natural width), so both axes are explicit.
-    width: 172,
-    height: 44,
+    // 973x158 crop of the SHOTGUN wordmark lettering - aspectRatio alone
+    // collapses on web (img falls back to natural width), so both axes are
+    // explicit.
+    width: 208,
+    height: 34,
   },
-  searchButton: {
+  cornerSpacer: {
+    width: SEARCH_BUTTON_SIZE,
+    height: SEARCH_BUTTON_SIZE,
+  },
+  cornerButton: {
     width: SEARCH_BUTTON_SIZE,
     height: SEARCH_BUTTON_SIZE,
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    // §8 floating chrome: dark translucent surface + soft border, not a
+    // solid opaque button on top of the map.
+    backgroundColor: alpha(colors.charcoal, 0.82),
     borderWidth: 1,
     borderColor: alpha(colors.teal, 0.4),
   },
@@ -507,6 +528,11 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.bodyMedium,
     fontSize: typography.fontSize.caption,
     color: colors.caution,
+  },
+  /** Cards that float over the map (ticker, banner) get the §8 translucent
+   * treatment via this override on Card's opaque surfaces. */
+  floatingCard: {
+    backgroundColor: alpha(colors.charcoal, 0.85),
   },
   tickerCard: {
     borderWidth: 1,
@@ -550,9 +576,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xxs,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderColor: colors.accent,
+    // §8 floating chrome: dark translucent surface + soft border, not a
+    // solid opaque button on top of the map.
+    backgroundColor: alpha(colors.charcoal, 0.82),
+    borderWidth: 1,
+    borderColor: alpha(colors.accent, 0.5),
   },
   utilityButtonActive: {
     backgroundColor: colors.accent,
