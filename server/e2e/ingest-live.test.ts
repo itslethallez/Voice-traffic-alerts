@@ -17,7 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/vercel-types';
 
 function readEnvValue(envPath: string, key: string): string | undefined {
   if (!fs.existsSync(envPath)) return undefined;

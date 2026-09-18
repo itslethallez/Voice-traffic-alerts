@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/node';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from './vercel-types';
 
 type Handler = (req: VercelRequest, res: VercelResponse) => Promise<void> | void;
 

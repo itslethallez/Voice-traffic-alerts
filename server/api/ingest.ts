@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/vercel-types';
 import { sql } from '../lib/db';
 import { withSentry, captureException } from '../lib/sentry';
 import { notifyNewAlert } from '../lib/notify';

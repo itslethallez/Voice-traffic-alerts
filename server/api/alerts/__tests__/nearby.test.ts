@@ -5,7 +5,7 @@ jest.mock('../../../lib/redis', () => ({
   getRedis: jest.fn(),
 }));
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../../../lib/vercel-types';
 import handler from '../nearby';
 import { selectCorridorAlerts } from '../../../lib/postgis-helpers';
 import { getRedis } from '../../../lib/redis';

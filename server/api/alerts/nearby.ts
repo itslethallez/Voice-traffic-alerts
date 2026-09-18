@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../../lib/vercel-types';
 import { AlertTypeSchema, type AlertType } from '../../../shared/alert-schema';
 import {
   selectCorridorAlerts,

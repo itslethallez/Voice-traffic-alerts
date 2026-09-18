@@ -1,7 +1,7 @@
 jest.mock('../../lib/db', () => ({ sql: jest.fn() }));
 jest.mock('../../lib/notify', () => ({ notifyNewAlert: jest.fn().mockResolvedValue(undefined) }));
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../../lib/vercel-types';
 import handler from '../ingest';
 import { sql } from '../../lib/db';
 import { notifyNewAlert } from '../../lib/notify';
