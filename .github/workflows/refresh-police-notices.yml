@@ -39,6 +39,31 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Presence + length only, never values - an unset GH secret
+      # resolves to an empty string, which readEnvValue then reports
+      # only as a mid-scrape failure. Fail here instead, before the
+      # scrape burns ScraperAPI + Mapbox calls on a doomed run.
+      - name: Verify required secrets are non-empty
+        env:
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN }}
+          BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
+          INGEST_SECRET_POLICE_NOTICE: ${{ secrets.INGEST_SECRET_POLICE_NOTICE }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          missing=0
+          for var in SCRAPERAPI_KEY EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN BACKEND_API_URL INGEST_SECRET_POLICE_NOTICE; do
+            val="${!var}"
+            if [ -n "$val" ]; then
+              echo "$var: set (${#val} chars)"
+            else
+              echo "::error::$var is not set in repository secrets"
+              missing=1
+            fi
+          done
+          if [ -n "$SENTRY_DSN" ]; then echo "SENTRY_DSN: set"; else echo "SENTRY_DSN: not set (optional)"; fi
+          exit $missing
+
       - name: Write .env for the scraper
         run: |
           echo "SCRAPERAPI_KEY=${{ secrets.SCRAPERAPI_KEY }}" >> .env

@@ -21,6 +21,27 @@ function stripTags(html) {
 }
 
 /**
+ * Collapses failure reasons into "reason (xN)" counts for the
+ * all-failed error. The per-notice query string is stripped so an
+ * identical failure mode repeated for every notice (e.g. a rejected
+ * token 401ing all 171 calls) groups into one line instead of 171
+ * near-duplicates. Capped - suburb-mismatch reasons stay distinct.
+ */
+function summarizeFailureReasons(failures) {
+  const counts = new Map();
+  for (const { reason } of failures) {
+    const key = reason.replace(/ for ".*"$/, '');
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const entries = [...counts.entries()];
+  const shown = entries
+    .slice(0, 3)
+    .map(([reason, n]) => `${reason}${n > 1 ? ` (x${n})` : ''}`)
+    .join('; ');
+  return entries.length > 3 ? `${shown}; +${entries.length - 3} more` : shown;
+}
+
+/**
  * Base class for state police mobile-camera notice scrapers. Each state
  * implements the small surface below; everything else - fetching through
  * the WAF proxy, forward-geocoding notice addresses, converting local
@@ -132,22 +153,27 @@ class PoliceNoticeScraper {
         alerts.push(this.buildAlert(notice, outcome.position));
       } catch (error) {
         failures.push({ notice, reason: error.message });
+        // Auth/rate-limit rejections won't recover mid-run - every
+        // remaining call fails identically, so abort rather than burn
+        // the rest of the batch printing the same status code.
+        if (/\((401|403|429)\)/.test(error.message)) {
+          throw new Error(`${this.displayName}: geocoding aborted - ${error.message}`);
+        }
       }
       // Stay well under Mapbox's rate limits - nightly batch, not a hot path.
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
     if (toProcess.length > 0 && alerts.length === 0) {
-      // Every live notice failed to geocode - a Mapbox outage or a
-      // systematic address-format change, not a quiet night. Posting an
-      // empty batch would look like success while delivering nothing.
-      // Include a sample of the real per-notice reasons here: the
-      // caller (scripts/scrapePoliceNotices.js) only logs `failures`
-      // after scrape() returns, which never happens on this path.
-      const sample = failures
-        .slice(0, 3)
-        .map((f) => `"${f.notice.street}, ${f.notice.suburb}": ${f.reason}`)
-        .join('; ');
-      throw new Error(`${this.displayName}: all ${toProcess.length} live notice(s) failed to geocode. Sample: ${sample}`);
+      // Every live notice failed to geocode - a Mapbox outage, a bad
+      // token, or a systematic address-format change, not a quiet
+      // night. Posting an empty batch would look like success while
+      // delivering nothing. The causes are inlined because the runner
+      // only prints this message on total failure - without them the
+      // status code that identifies the root cause never reaches the log.
+      throw new Error(
+        `${this.displayName}: all ${toProcess.length} live notice(s) failed to geocode. ` +
+          `Causes: ${summarizeFailureReasons(failures)}`
+      );
     }
     return { notices, deduplicatedCount: notices.length - unique.length, expiredCount, alerts, failures };
   }
