@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { ScanLine, Settings as SettingsIcon, Volume2, VolumeX } from 'lucide-react-native';
+import { Settings as SettingsIcon, SlidersHorizontal } from 'lucide-react-native';
 import type { WazeAlert } from '../api/waze/types';
 import type { SortedFacebookNotification } from '../notifications/sortFacebookNotification';
 import { policeSubtypeLabel } from '../api/waze/policeSubtype';
@@ -8,6 +8,7 @@ import { AlertPill } from '../components/base/AlertPill';
 import { BottomSheet, type SheetSnap } from '../components/base/BottomSheet';
 import { Card } from '../components/base/Card';
 import { Column, Row, Stack } from '../components/base/Layout';
+import { GlassView } from '../components/base/GlassView';
 import { MapOverlayPanel } from '../components/base/MapOverlayPanel';
 import { ScreenContainer } from '../components/base/ScreenContainer';
 import { haversineDistance } from '../geo/distance';
@@ -30,7 +31,6 @@ import { ModeSwitch } from './radar/ModeSwitch';
 import { NavigationStatusBar } from './radar/NavigationStatusBar';
 import { RadarMap } from './radar/RadarMap';
 import { ReportBar } from './radar/ReportBar';
-import { Speedometer } from './radar/Speedometer';
 
 const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;
 
@@ -40,10 +40,6 @@ const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;
  * The bottom control strip's overlay offset derives from this, so the
  * two never drift apart. */
 const SHEET_PEEK_HEIGHT = 64;
-
-/** Diameter of the floating RANGE/MUTE utility buttons — big enough for a
- * glance-free tap target, small enough to sit between the two 112 dials. */
-const UTILITY_BUTTON_SIZE = 64;
 
 const SEARCH_BUTTON_SIZE = 48;
 
@@ -106,7 +102,6 @@ interface DriveScreenProps {
  * on the map, reporting stays one tap away in the bottom control strip, and
  * the draggable sheet lists everything nearby, filtered by the pill row. */
 export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, onOpenSettings }: DriveScreenProps) {
-  const [rangeToggleToken, setRangeToggleToken] = useState(0);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
   const nearbyReports = useTripStore((state) => state.nearbyReports);
@@ -118,8 +113,6 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const toggleAlertTypeFilter = useSettingsStore((state) => state.toggleAlertTypeFilter);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
-  const masterMute = useSettingsStore((state) => state.masterMute);
-  const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
   const communityCandidates = useCommunityReportStore((state) => state.candidates);
   const dismissCommunityCandidate = useCommunityReportStore((state) => state.dismissCandidate);
   const [now, setNow] = useState(() => Date.now());
@@ -136,6 +129,10 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
    * enabled only once expanded, so rows can never slide under the bottom
    * nav bar that abuts the sheet's bottom edge. */
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('collapsed');
+  /** The category filter pills sit behind a toggle (§8: the map owns the
+   * screen, secondary controls stay hidden until requested) - the mockups
+   * show no filter row at all. */
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -198,11 +195,10 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
         focusedAlert={focusedAlert}
         now={now}
         minimal
-        rangeToggleToken={rangeToggleToken}
         navStatusBarHeight={navStatusBarHeight}
       />
 
-      <MapOverlayPanel edge="top">
+      <MapOverlayPanel edge="top" scrim>
         <Stack gap="sm">
           <Row justify="space-between" align="center">
             {/* Mockup header is [menu][centred logo][gear] - we have no
@@ -224,7 +220,9 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
                 accessibilityLabel="Open settings"
                 accessibilityHint="Opens app settings"
               >
-                <SettingsIcon size={20} strokeWidth={2.2} color={colors.accent} />
+                <GlassView intensity={40} dim={0.4} style={styles.cornerButtonGlass}>
+                  <SettingsIcon size={20} strokeWidth={2.2} color={colors.accent} />
+                </GlassView>
               </Pressable>
             ) : null}
           </Row>
@@ -234,32 +232,55 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
               top-right search button's job, now where the mockups put it). */}
           <ModeSwitch onNavigatePress={onOpenSearch} />
 
-          <Row gap="xs" wrap>
-            {ALERT_FILTER_CATEGORIES.map((category) => {
-              const enabled = alertTypeFilters[category];
-              return (
-                <Pressable
-                  key={category}
-                  onPress={() => toggleAlertTypeFilter(category)}
-                  accessibilityRole="button"
-                  accessibilityState={{ checked: enabled }}
-                  accessibilityLabel={`${category} alerts`}
-                  accessibilityHint={
-                    enabled
-                      ? 'Hide this category from the map, the nearby list and announcements'
-                      : 'Show this category on the map, the nearby list and announcements'
-                  }
-                >
-                  <AlertPill type={category} size="sm" enabled={enabled} />
-                </Pressable>
-              );
-            })}
+          <Row justify="flex-end">
+            <Pressable
+              onPress={() => setFiltersExpanded((current) => !current)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: filtersExpanded }}
+              accessibilityLabel={filtersExpanded ? 'Hide alert filters' : 'Show alert filters'}
+              accessibilityHint="Toggles the alert category filter row"
+            >
+              <GlassView
+                intensity={35}
+                dim={0.4}
+                style={[styles.filterChip, filtersExpanded && styles.filterChipActive]}
+              >
+                <SlidersHorizontal size={14} strokeWidth={2.2} color={colors.accent} />
+                <Text style={styles.filterChipLabel}>FILTERS</Text>
+              </GlassView>
+            </Pressable>
           </Row>
 
+          {filtersExpanded ? (
+            <GlassView intensity={40} dim={0.45} style={styles.filterCard}>
+              <Row gap="xs" wrap>
+                {ALERT_FILTER_CATEGORIES.map((category) => {
+                  const enabled = alertTypeFilters[category];
+                  return (
+                    <Pressable
+                      key={category}
+                      onPress={() => toggleAlertTypeFilter(category)}
+                      accessibilityRole="button"
+                      accessibilityState={{ checked: enabled }}
+                      accessibilityLabel={`${category} alerts`}
+                      accessibilityHint={
+                        enabled
+                          ? 'Hide this category from the map, the nearby list and announcements'
+                          : 'Show this category on the map, the nearby list and announcements'
+                      }
+                    >
+                      <AlertPill type={category} size="sm" enabled={enabled} />
+                    </Pressable>
+                  );
+                })}
+              </Row>
+            </GlassView>
+          ) : null}
+
           {bannerMessage ? (
-            <Card variant="outlined" padding="sm" style={styles.floatingCard}>
+            <GlassView intensity={40} dim={0.5} style={styles.glassCard}>
               <Text style={styles.bannerText}>{bannerMessage}</Text>
-            </Card>
+            </GlassView>
           ) : null}
 
           {latestAnnouncement && dismissedAnnouncementKey !== latestAnnouncementKey ? (
@@ -271,42 +292,18 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
         </Stack>
       </MapOverlayPanel>
 
-      <MapOverlayPanel edge="bottom" offset={SHEET_PEEK_HEIGHT + spacing.xs}>
+      <MapOverlayPanel edge="bottom" offset={SHEET_PEEK_HEIGHT + spacing.xs} scrim>
         <Stack gap="sm">
           <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
             <NavigationStatusBar nowMs={now} />
           </View>
-          <Row justify="space-between" align="flex-end">
+          {/* §8 persistent buttons: Report only - the cruising mockup's
+              single bottom-right FAB (Im140.png). Range ring lives behind
+              Settings > RANGE > SHOW RANGE ON MAP, mute behind SPEAK THESE
+              > MUTE EVERYTHING, and speed sits at the map's left edge as
+              the paired sign inside RadarMap. */}
+          <Row justify="flex-end" align="flex-end">
             <ReportBar />
-            <Row gap="sm" align="flex-end">
-              <Pressable
-                onPress={() => setRangeToggleToken((token) => token + 1)}
-                style={styles.utilityButton}
-                accessibilityRole="button"
-                accessibilityLabel="Toggle notification range"
-                accessibilityHint="Shows or hides the configured notification range on the map"
-              >
-                <ScanLine size={20} strokeWidth={2.1} color={colors.accent} />
-                <Text style={styles.utilityButtonLabel}>RANGE</Text>
-              </Pressable>
-              <Pressable
-                onPress={toggleMasterMute}
-                style={[styles.utilityButton, masterMute && styles.utilityButtonActive]}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: masterMute }}
-                accessibilityLabel={masterMute ? 'Unmute audio' : 'Mute audio'}
-              >
-                {masterMute ? (
-                  <VolumeX size={20} strokeWidth={2.1} color={colors.charcoal} />
-                ) : (
-                  <Volume2 size={20} strokeWidth={2.1} color={colors.accent} />
-                )}
-                <Text style={[styles.utilityButtonLabel, masterMute && styles.utilityButtonLabelActive]}>
-                  {masterMute ? 'MUTED' : 'MUTE'}
-                </Text>
-              </Pressable>
-            </Row>
-            <Speedometer />
           </Row>
         </Stack>
       </MapOverlayPanel>
@@ -324,7 +321,7 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
         }
       >
         <FlatList
-          data={nearbyItems}
+          data={sheetSnap === 'expanded' ? nearbyItems : []}
           keyExtractor={(item) => item.alert.alert_id}
           scrollEnabled={sheetSnap === 'expanded'}
           showsVerticalScrollIndicator={false}
@@ -333,10 +330,14 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
             <NearbyAlertRow item={item} nowMs={now} onPress={() => onFocusAlert?.(item.alert)} />
           )}
           ListEmptyComponent={
-            <Text style={styles.sheetEmpty}>No enabled alerts within your range right now.</Text>
+            // The collapsed peek is header-only - suppress the empty state
+            // too, or it renders sliced mid-line at the sheet's clip edge.
+            sheetSnap === 'expanded' ? (
+              <Text style={styles.sheetEmpty}>No enabled alerts within your range right now.</Text>
+            ) : null
           }
           ListHeaderComponent={
-            communityCandidates.length > 0 ? (
+            sheetSnap === 'expanded' && communityCandidates.length > 0 ? (
               <CommunityIntakeSection
                 candidates={communityCandidates}
                 onDismiss={dismissCommunityCandidate}
@@ -427,7 +428,7 @@ function ReportTicker({
       accessibilityLiveRegion="polite"
       accessibilityLabel={`New report: ${announcement.text}. Tap to show on map`}
     >
-      <Card variant="raised" padding="sm" style={[styles.floatingCard, styles.tickerCard]}>
+      <GlassView intensity={40} dim={0.5} style={[styles.glassCard, styles.tickerCard]}>
         <Row align="center" gap="sm">
           <View
             style={styles.tickerViewport}
@@ -449,7 +450,7 @@ function ReportTicker({
             <Text style={styles.tickerTagText}>MAP</Text>
           </View>
         </Row>
-      </Card>
+      </GlassView>
     </Pressable>
   );
 }
@@ -515,24 +516,54 @@ const styles = StyleSheet.create({
   cornerButton: {
     width: SEARCH_BUTTON_SIZE,
     height: SEARCH_BUTTON_SIZE,
+  },
+  cornerButtonGlass: {
+    flex: 1,
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    // §8 floating chrome: dark translucent surface + soft border, not a
-    // solid opaque button on top of the map.
-    backgroundColor: alpha(colors.charcoal, 0.82),
+    // §8 floating chrome: backdrop blur + soft border (see GlassView).
     borderWidth: 1,
     borderColor: alpha(colors.teal, 0.4),
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: alpha(colors.accent, 0.4),
+  },
+  filterChipActive: {
+    backgroundColor: alpha(colors.teal, 0.18),
+    borderColor: alpha(colors.teal, 0.55),
+  },
+  filterChipLabel: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.eyebrow,
+    color: colors.accent,
+  },
+  filterCard: {
+    borderRadius: radii.lg,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   bannerText: {
     fontFamily: typography.fontFamily.bodyMedium,
     fontSize: typography.fontSize.caption,
     color: colors.caution,
   },
-  /** Cards that float over the map (ticker, banner) get the §8 translucent
-   * treatment via this override on Card's opaque surfaces. */
-  floatingCard: {
-    backgroundColor: alpha(colors.charcoal, 0.85),
+  /** Cards that float over the map (ticker, banner) are §8 glass surfaces
+   * (GlassView) with a soft border - this supplies shape + padding. */
+  glassCard: {
+    borderRadius: radii.lg,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   tickerCard: {
     borderWidth: 1,
@@ -567,31 +598,6 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.display,
     fontSize: typography.fontSize.eyebrow,
     letterSpacing: typography.letterSpacing.eyebrow,
-    color: colors.charcoal,
-  },
-  utilityButton: {
-    width: UTILITY_BUTTON_SIZE,
-    height: UTILITY_BUTTON_SIZE,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xxs,
-    // §8 floating chrome: dark translucent surface + soft border, not a
-    // solid opaque button on top of the map.
-    backgroundColor: alpha(colors.charcoal, 0.82),
-    borderWidth: 1,
-    borderColor: alpha(colors.accent, 0.5),
-  },
-  utilityButtonActive: {
-    backgroundColor: colors.accent,
-  },
-  utilityButtonLabel: {
-    fontFamily: typography.fontFamily.display,
-    fontSize: typography.fontSize.eyebrow,
-    letterSpacing: typography.letterSpacing.tight,
-    color: colors.accent,
-  },
-  utilityButtonLabelActive: {
     color: colors.charcoal,
   },
   sheetTitle: {

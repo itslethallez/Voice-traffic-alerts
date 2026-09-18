@@ -13,6 +13,7 @@ import { nearestAlertToDriver } from '../../geo/nearestAlert';
 import { announcementLocation, resolveAreaName } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
+import { MAP_STYLE_JSON, MAP_STYLE_URL } from '../../config/mapStyle';
 import { visibleTypesFromFilters } from '../../store/settingsDefaults';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -25,11 +26,13 @@ import type {
   HillshadeLayerStyle,
   TerrainLayerStyle,
 } from '@rnmapbox/maps';
+import { GlassView } from '../../components/base/GlassView';
 import { ClosestReportPanel } from './ClosestReportPanel';
 import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
 import { ManeuverBanner } from './ManeuverBanner';
 import { PoliceLightBar } from './PoliceLightBar';
+import { Speedometer } from './Speedometer';
 
 /**
  * @rnmapbox/maps throws at *import time* if its native module isn't
@@ -177,8 +180,6 @@ interface RadarMapProps {
    * own focus panel, since the spotlight is internal state here that
    * DriveScreen has no other way to know about. */
   onSpotlightChange?: (active: boolean) => void;
-  /** Incremented by DriveScreen's lower RANGE button. */
-  rangeToggleToken?: number;
   /** DriveScreen's own measured height for NavigationStatusBar (0 when it
    * isn't rendering, i.e. status is 'idle') - used to keep alertDetailCard
    * clear of it instead of a fixed offset tuned only for the pre-nav
@@ -193,7 +194,6 @@ export function RadarMap({
   now = Date.now(),
   onSpotlightChange,
   minimal = false,
-  rangeToggleToken = 0,
   navStatusBarHeight = 0,
 }: RadarMapProps) {
   // Start in overview mode: show the driver's travel arrow and the closest
@@ -201,7 +201,6 @@ export function RadarMap({
   // a pan or pinch leaves the camera entirely in the driver's control.
   const [mapPresentation, setMapPresentation] = useState<MapPresentation>('nearest');
   const [zoomAdjustment, setZoomAdjustment] = useState(0);
-  const rangeToggleSeenRef = useRef(0);
   const [selectedAlert, setSelectedAlert] = useState<WazeAlert | null>(null);
   const [settledFocusKey, setSettledFocusKey] = useState<string | null>(null);
   const driverPosition = useTripStore((state) => state.driverPosition);
@@ -215,18 +214,30 @@ export function RadarMap({
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const showRangeOnMap = useSettingsStore((state) => state.showRangeOnMap);
+  const toggleRangeOnMap = useSettingsStore((state) => state.toggleRangeOnMap);
   const navigationStatus = useNavigationStore((state) => state.status);
   const activeRoute = useNavigationStore((state) => state.activeRoute);
   const navCurrentStepIndex = useNavigationStore((state) => state.currentStepIndex);
   const navDistanceToNextManeuverM = useNavigationStore((state) => state.distanceToNextManeuverM);
   const isNavigating = navigationStatus === 'navigating' || navigationStatus === 'rerouting';
 
+  /**
+   * The Settings screen's SHOW RANGE ON MAP switch drives the 'range'
+   * presentation now (it replaced DriveScreen's old RANGE button). Flipping
+   * it on jumps to the north-up awareness-circle view; flipping it off
+   * returns to driver-follow only if the camera is still in that view -
+   * a 'free' pan the driver made while the ring was up is left alone
+   * rather than yanked back to follow mode.
+   */
   useEffect(() => {
-    if (rangeToggleToken === 0 || rangeToggleToken === rangeToggleSeenRef.current) return;
-    rangeToggleSeenRef.current = rangeToggleToken;
-    setZoomAdjustment(0);
-    setMapPresentation((current) => (current === 'range' ? 'nearest' : 'range'));
-  }, [rangeToggleToken]);
+    if (showRangeOnMap) {
+      setZoomAdjustment(0);
+      setMapPresentation('range');
+    } else {
+      setMapPresentation((current) => (current === 'range' ? 'nearest' : current));
+    }
+  }, [showRangeOnMap]);
 
   /** What the map shows: every category whose Drive-screen filter pill is
    * on. Speech is gated separately (speakableTypesFromFilters in
@@ -658,7 +669,12 @@ export function RadarMap({
       <Mapbox.MapView
         style={styles.root}
         onLayout={handleMapLayout}
-        styleURL="mapbox://styles/mapbox/navigation-night-v1"
+        // "Shotgun Night" - bundled decluttered/repaletted copy of
+        // navigation-night-v1 (see src/config/mapStyle.ts); a Studio-hosted
+        // style URL via EXPO_PUBLIC_MAPBOX_STYLE_URL takes over if set.
+        {...(MAP_STYLE_URL
+          ? { styleURL: MAP_STYLE_URL }
+          : { styleJSON: MAP_STYLE_JSON })}
         compassEnabled={false}
         scaleBarEnabled={false}
         // Mapbox's ToS require the logo + attribution control on any map
@@ -671,12 +687,11 @@ export function RadarMap({
         zoomEnabled
         pitchEnabled
         rotateEnabled
-        onPress={() =>
-          setMapPresentation((current) => {
-            setZoomAdjustment(0);
-            return current === 'range' ? 'nearest' : 'range';
-          })
-        }
+        onPress={() => {
+          // A map tap flips the same SHOW RANGE ON MAP setting the
+          // Settings screen toggles - one mechanism, no divergent state.
+          toggleRangeOnMap();
+        }}
         onRegionWillChange={(event) => {
           if (event.properties.isUserInteraction) {
             setSelectedAlert(null);
@@ -734,7 +749,7 @@ export function RadarMap({
           style={BUILDINGS_3D_STYLE}
         />
 
-        {mapPresentation === 'range' && awarenessCircle && !displayFocus ? (
+        {showRangeOnMap && awarenessCircle && !displayFocus ? (
           <Mapbox.ShapeSource id="awareness-circle-source" shape={awarenessCircle}>
             <Mapbox.FillLayer
               id="awareness-circle-fill"
@@ -795,23 +810,30 @@ export function RadarMap({
       </Mapbox.MapView>
 
       {selectedAlert ? (
-        <View style={[styles.alertDetailCard, navStatusBarHeight > 0 && { bottom: 112 + navStatusBarHeight + 10 }]}>
+        <GlassView intensity={45} dim={0.5} style={[styles.alertDetailCard, navStatusBarHeight > 0 && { bottom: 112 + navStatusBarHeight + 10 }]}>
           <Text style={styles.alertDetailEyebrow}>REPORTED {Math.max(0, Math.round(ageMinutesOf(selectedAlert, now)))} MIN AGO</Text>
           <Text style={styles.alertDetailTitle}>{alertTypeMeta(selectedAlert.type, selectedAlert.subtype).label.toUpperCase()}</Text>
           <Text style={styles.alertDetailMeta}>{resolveAreaName(selectedAlert) ?? ([selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED')}</Text>
           <Pressable style={styles.alertDetailClose} onPress={() => setSelectedAlert(null)} accessibilityRole="button" accessibilityLabel="Close report details">
             <Text style={styles.alertDetailCloseText}>×</Text>
           </Pressable>
-        </View>
+        </GlassView>
       ) : null}
 
-      {mapPresentation === 'range' ? (
-        <View style={styles.rangeLabelBadge} pointerEvents="none">
+      {showRangeOnMap && !displayFocus ? (
+        <GlassView intensity={35} dim={0.45} style={styles.rangeLabelBadge} pointerEvents="none">
           <Text style={styles.rangeLabelText}>
             {formatCompactDistance(announceDistanceMeters).replace(/km$/, ' KM').replace(/m$/, ' M')} NOTIFICATION AREA
           </Text>
-        </View>
+        </GlassView>
       ) : null}
+
+      {/* The paired speed sign (design reference Im52.png): a left-edge
+          capsule, vertically centred near the driver rather than parked
+          in a bottom corner. Read-only - never eats a map gesture. */}
+      <View style={styles.speedSignWrap} pointerEvents="none">
+        <Speedometer />
+      </View>
 
       <View
         style={[
@@ -825,9 +847,9 @@ export function RadarMap({
             if (!driverPosition) return;
             setSelectedAlert(null);
             setZoomAdjustment(0);
-            // 'nearest', not 'range' - recentering should return to the
-            // app's default driver-centered view, not silently switch on
-            // the RANGE button's own notification-range display.
+            // 'nearest', not 'range' - recentering returns to the app's
+            // default driver-centered view; the SHOW RANGE ON MAP setting
+            // (and its ring) stays untouched either way.
             setMapPresentation('nearest');
             cameraRef.current?.setCamera({
               centerCoordinate: [driverPosition.longitude, driverPosition.latitude],
@@ -843,7 +865,9 @@ export function RadarMap({
           accessibilityLabel="RECENTER ON MY LOCATION"
           accessibilityHint="Centers the map on your current location"
         >
-          <LocateFixed size={20} strokeWidth={2.2} color={colors.accent} />
+          <GlassView intensity={35} dim={0.45} style={styles.controlGlass}>
+            <LocateFixed size={20} strokeWidth={2.2} color={colors.accent} />
+          </GlassView>
         </Pressable>
         <Pressable
           style={styles.zoomButton}
@@ -864,8 +888,10 @@ export function RadarMap({
           accessibilityLabel="ZOOM IN"
           accessibilityHint="Increases the map zoom by one level"
         >
-          <Text style={styles.zoomButtonGlyph}>+</Text>
-          <Text style={styles.zoomButtonLabel}>IN</Text>
+          <GlassView intensity={35} dim={0.45} style={styles.controlGlass}>
+            <Text style={styles.zoomButtonGlyph}>+</Text>
+            <Text style={styles.zoomButtonLabel}>IN</Text>
+          </GlassView>
         </Pressable>
         <Pressable
           style={styles.zoomButton}
@@ -883,20 +909,22 @@ export function RadarMap({
           accessibilityLabel="ZOOM OUT"
           accessibilityHint="Decreases the map zoom by one level"
         >
-          <Text style={styles.zoomButtonGlyph}>−</Text>
-          <Text style={styles.zoomButtonLabel}>OUT</Text>
+          <GlassView intensity={35} dim={0.45} style={styles.controlGlass}>
+            <Text style={styles.zoomButtonGlyph}>−</Text>
+            <Text style={styles.zoomButtonLabel}>OUT</Text>
+          </GlassView>
         </Pressable>
       </View>
 
       {displayFocus ? (
-        <View style={styles.headingChip} pointerEvents="none">
+        <GlassView intensity={35} dim={0.45} style={styles.headingChip} pointerEvents="none">
           <Text style={styles.headingChipText}>
             {focusLabel ??
               `${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
                 headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''
               }`}
           </Text>
-        </View>
+        </GlassView>
       ) : isNavigating && activeRoute ? (
         <ManeuverBanner
           instruction={activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.instruction ?? 'Arriving at destination'}
@@ -914,13 +942,13 @@ export function RadarMap({
           onLayout={(event) => setFocusPanelHeight(event.nativeEvent.layout.height)}
         />
       ) : (
-        <View style={styles.headingChip} pointerEvents="none">
+        <GlassView intensity={35} dim={0.45} style={styles.headingChip} pointerEvents="none">
           <Text style={styles.headingChipText}>
             {`${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
               headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''
             }`}
           </Text>
-        </View>
+        </GlassView>
       )}
     </View>
   );
@@ -1119,8 +1147,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 78,
     left: 20,
-    // §8 floating chrome: dark translucent surface.
-    backgroundColor: alpha(colors.charcoal, 0.85),
+    // §8 floating chrome: backdrop blur via GlassView.
     paddingVertical: spacing.xxs,
     paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
@@ -1134,9 +1161,19 @@ const styles = StyleSheet.create({
   mapControls: {
     position: 'absolute',
     right: 12,
-    top: 128,
+    // Below the collapsed top chrome (logo + mode switch + filter chip ≈
+    // 160) so the buttons never sit under DriveScreen's overlay panel.
+    top: 196,
     flexDirection: 'column',
     gap: spacing.xs,
+  },
+  /** The paired speed sign anchors to the map's left edge at driver
+   * level (the cruising look-ahead padding parks the puck in the lower
+   * third, so the capsule's top edge sits just above centre). */
+  speedSignWrap: {
+    position: 'absolute',
+    left: spacing.sm,
+    top: '55%',
   },
   rangeLabelBadge: {
     position: 'absolute',
@@ -1145,7 +1182,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: radii.lg,
-    backgroundColor: alpha(colors.charcoal, 0.88),
     borderWidth: 1,
     borderColor: alpha(colors.accent, 0.55),
   },
@@ -1158,7 +1194,6 @@ const styles = StyleSheet.create({
   alertDetailCard: {
     position: 'absolute', left: 16, right: 16, bottom: 112,
     minHeight: 92, padding: spacing.md, paddingRight: spacing.xxl, borderRadius: radii.lg,
-    backgroundColor: alpha(colors.charcoal, 0.9),
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -1192,12 +1227,6 @@ const styles = StyleSheet.create({
   recenterButton: {
     width: 44,
     height: 44,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: alpha(colors.charcoal, 0.85),
-    borderWidth: 1,
-    borderColor: alpha(colors.accent, 0.45),
   },
   recenterButtonDisabled: {
     opacity: 1,
@@ -1205,10 +1234,13 @@ const styles = StyleSheet.create({
   zoomButton: {
     width: 44,
     height: 44,
+  },
+  controlGlass: {
+    flex: 1,
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: alpha(colors.charcoal, 0.85),
+    // §8 floating chrome: backdrop blur + soft border (see GlassView).
     borderWidth: 1,
     borderColor: alpha(colors.accent, 0.45),
   },

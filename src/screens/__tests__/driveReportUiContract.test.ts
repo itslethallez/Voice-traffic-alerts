@@ -90,18 +90,27 @@ describe('Drive report UI contract', () => {
     expect(webMap).not.toContain('new mapboxgl.NavigationControl');
   });
 
-  it('mirrors the REPORT dial and speedometer as same-size circular controls on opposite sides', () => {
+  it('matches the mockups: Report is a small bottom-right FAB, speed a left-edge paired sign', () => {
+    // Cruising mockup (Im140.png): Report is a small circular FAB at the
+    // map's bottom-right with a filled send-cursor icon, not a big dial;
+    // the bottom row holds nothing else. Navigate's camera-icon pill is a
+    // different treatment and deliberately not used here.
     const drive = source('src/screens/DriveScreen.tsx');
     const reportBar = source('src/screens/radar/ReportBar.tsx');
     const speedometer = source('src/screens/radar/Speedometer.tsx');
 
-    expect(drive).toContain("import { Speedometer } from './radar/Speedometer';");
-    expect(drive).toMatch(/<ReportBar \/>[\s\S]*?Toggle notification range[\s\S]*?Mute audio[\s\S]*?<Speedometer \/>/);
-    expect(drive).toContain('ScanLine');
-    expect(drive).toContain('toggleMasterMute');
+    expect(drive).not.toContain('<Speedometer');
+    expect(drive).not.toContain('utilityButton');
+    expect(reportBar).toContain('const REPORT_DIAL_SIZE = 64;');
+    expect(reportBar).toContain('Navigation2');
+    expect(reportBar).not.toContain('REPORT</Text>');
 
-    expect(reportBar).toContain('const REPORT_DIAL_SIZE = 112;');
-    expect(speedometer).toContain('const SPEED_DIAL_SIZE = 112;');
+    // Paired-sign contract (Im52.png): AU limit roundel (red ring, white
+    // face) over the current-speed reading - and the roundel renders only
+    // when a limit is actually resolved (no fabricated limit).
+    expect(speedometer).toContain('limitRoundel');
+    expect(speedometer).toContain('speedLimitKmh !== null');
+    expect(speedometer).toContain('getCachedSpeedLimit');
   });
 
   it('hides the four report categories behind a single expandable REPORT dial', () => {

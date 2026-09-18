@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { CarFront, Plus, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
+import { CarFront, Navigation2, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import { useTripStore, type ManualReportCategory } from '../../store/useTripStore';
-import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
+import { GlassView } from '../../components/base/GlassView';
+import { alpha, colors, spacing, typography } from '../../theme/tokens';
 
 const ICON_SIZE = 22;
 const ICON_STROKE_WIDTH = 2;
-/** Matches Speedometer's circular footprint (design reference: the
- * REPORT dial and speedometer are the same size, mirrored left/right in
- * the bottom bar) - see REPORT_DIAL_SIZE's doc comment on why this is a
- * fixed diameter rather than flex-sized like the old always-on bar. */
-const REPORT_DIAL_SIZE = 112;
+/** The cruising mockup's report FAB (Im140.png): a small circle at the
+ * map's bottom-right, just above the sheet - ~14% of the mockup screen's
+ * width, well under the old 112px dial. Fixed size so it can't grow on
+ * tablets. */
+const REPORT_DIAL_SIZE = 64;
 const CATEGORY_BUTTON_SIZE = 56;
 
 /** How long a just-filed cell offers UNDO before reverting to its resting
@@ -44,14 +45,15 @@ const CELLS: ReportCellDef[] = [
 ];
 
 /**
- * The Drive screen's report control (2026-09 redesign: a single circular
- * REPORT dial, the same footprint as Speedometer and mirrored to its
- * opposite side, replacing the old always-visible 4-cell bar). Tapping the
- * dial fans the four category buttons out above it in normal flow (the
- * column grows upward inside the bottom-anchored overlay panel, so the
- * dial itself never moves); tapping a category files the report via
- * useTripStore's pushManualReport and collapses back to the resting dial.
- * Tapping the dial again while expanded collapses it with no report filed.
+ * The Drive screen's report control: a small circular FAB at the map's
+ * bottom-right just above the sheet, matching the cruising mockup's
+ * floating button (Im140.png - dark translucent circle, soft border,
+ * filled send-cursor arrow, no label). Tapping it fans the four category
+ * buttons out above it in normal flow (the column grows upward inside
+ * the bottom-anchored overlay panel, so the FAB itself never moves);
+ * tapping a category files the report via useTripStore's pushManualReport
+ * and collapses back to the resting FAB. Tapping the FAB again while
+ * expanded collapses it with no report filed.
  */
 export function ReportBar() {
   const [expanded, setExpanded] = useState(false);
@@ -108,7 +110,7 @@ export function ReportBar() {
 
       <Pressable
         onPress={isPending ? handleUndo : () => setExpanded((current) => !current)}
-        style={[styles.dial, expanded && styles.dialExpanded, isPending && styles.dialPending]}
+        style={styles.dial}
         accessibilityRole="button"
         accessibilityLabel={
           isPending
@@ -119,19 +121,22 @@ export function ReportBar() {
         }
         accessibilityState={{ expanded }}
       >
-        {isPending ? (
-          <Text style={[styles.dialLabel, styles.dialLabelOnAccent]}>UNDO</Text>
-        ) : (
-          <>
-            <Plus
-              size={28}
-              strokeWidth={2.4}
-              color={colors.accent}
-              style={expanded ? styles.plusRotated : undefined}
+        <GlassView
+          intensity={40}
+          dim={isPending ? 0 : 0.45}
+          style={[styles.dialGlass, expanded && styles.dialExpanded, isPending && styles.dialPending]}
+        >
+          {isPending ? (
+            <Text style={[styles.dialLabel, styles.dialLabelOnAccent]}>UNDO</Text>
+          ) : (
+            <Navigation2
+              size={24}
+              strokeWidth={2.2}
+              color={colors.textPrimary}
+              fill={colors.textPrimary}
             />
-            <Text style={styles.dialLabel}>REPORT</Text>
-          </>
-        )}
+          )}
+        </GlassView>
       </Pressable>
     </View>
   );
@@ -146,10 +151,12 @@ function CategoryButton({ def, onPress }: { def: ReportCellDef; onPress: () => v
       accessibilityRole="button"
       accessibilityLabel={`Report ${def.label.toLowerCase()}`}
     >
-      <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} color={def.stroke} />
-      <Text style={styles.categoryLabel} numberOfLines={1}>
-        {def.label}
-      </Text>
+      <GlassView intensity={40} dim={0.45} style={styles.categoryButtonGlass}>
+        <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} color={def.stroke} />
+        <Text style={styles.categoryLabel} numberOfLines={1}>
+          {def.label}
+        </Text>
+      </GlassView>
     </Pressable>
   );
 }
@@ -162,14 +169,19 @@ const styles = StyleSheet.create({
   dial: {
     width: REPORT_DIAL_SIZE,
     height: REPORT_DIAL_SIZE,
+  },
+  dialGlass: {
+    flex: 1,
     borderRadius: REPORT_DIAL_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xxs,
-    // §8 floating chrome: dark translucent surface + soft border.
-    backgroundColor: alpha(colors.charcoal, 0.85),
+    // §8 floating chrome: backdrop blur + soft border (see GlassView).
+    // The mockup's FAB ring is a neutral cool-grey ring (sampled
+    // ~#616E7A off Im140.png), not a teal accent - this is painted
+    // chrome, not a selected/focused control.
     borderWidth: 1,
-    borderColor: alpha(colors.accent, 0.55),
+    borderColor: alpha(colors.textPrimary, 0.35),
   },
   dialExpanded: {
     borderColor: colors.coolBlue,
@@ -177,9 +189,6 @@ const styles = StyleSheet.create({
   dialPending: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
-  },
-  plusRotated: {
-    transform: [{ rotate: '45deg' }],
   },
   dialLabel: {
     fontFamily: typography.fontFamily.display,
@@ -198,11 +207,13 @@ const styles = StyleSheet.create({
   categoryButton: {
     width: CATEGORY_BUTTON_SIZE,
     height: CATEGORY_BUTTON_SIZE,
+  },
+  categoryButtonGlass: {
+    flex: 1,
     borderRadius: CATEGORY_BUTTON_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xxs,
-    backgroundColor: alpha(colors.charcoal, 0.85),
     borderWidth: 1,
     borderColor: alpha(colors.accent, 0.4),
   },

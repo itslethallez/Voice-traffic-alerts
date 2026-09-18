@@ -1,7 +1,8 @@
 import type { PropsWithChildren } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { spacing } from '../../theme/tokens';
+import { alpha, colors, spacing } from '../../theme/tokens';
 
 export interface MapOverlayPanelProps {
   /** Which map edge the panel hugs. */
@@ -10,6 +11,11 @@ export interface MapOverlayPanelProps {
    * collapsed BottomSheet's peek height, for a control strip that must
    * clear it. */
   offset?: number;
+  /** Fade the map out beneath the panel's chrome — the mockups' HUD zone
+   * where street/POI labels die before reaching the floating controls.
+   * Without it, map labels render right up under translucent cards and
+   * bleed through the gaps. */
+  scrim?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -26,7 +32,7 @@ export interface MapOverlayPanelProps {
  * `pointerEvents="box-none"` keeps the map pannable through the gaps
  * between children.
  */
-export function MapOverlayPanel({ edge, offset = 0, style, children }: PropsWithChildren<MapOverlayPanelProps>) {
+export function MapOverlayPanel({ edge, offset = 0, scrim = false, style, children }: PropsWithChildren<MapOverlayPanelProps>) {
   const insets = useSafeAreaInsets();
   const inset = edge === 'top' ? insets.top : insets.bottom;
 
@@ -35,6 +41,23 @@ export function MapOverlayPanel({ edge, offset = 0, style, children }: PropsWith
       pointerEvents="box-none"
       style={[styles.panel, edge === 'top' ? { top: inset + offset } : { bottom: inset + offset }, style]}
     >
+      {scrim ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={
+            edge === 'top'
+              ? [alpha(colors.charcoal, 0.88), alpha(colors.charcoal, 0.45), alpha(colors.charcoal, 0)]
+              : [alpha(colors.charcoal, 0), alpha(colors.charcoal, 0.45), alpha(colors.charcoal, 0.88)]
+          }
+          locations={[0, 0.62, 1]}
+          style={[
+            styles.scrim,
+            // Bleed past the panel's free edge and the screen padding so the
+            // fade covers the whole chrome zone, not just the card bounds.
+            edge === 'top' ? { top: -(inset + offset), height: '170%' } : { bottom: 0, height: '170%' },
+          ]}
+        />
+      ) : null}
       {children}
     </View>
   );
@@ -46,5 +69,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: spacing.screenPadding,
+  },
+  scrim: {
+    position: 'absolute',
+    left: -spacing.screenPadding,
+    right: -spacing.screenPadding,
   },
 });

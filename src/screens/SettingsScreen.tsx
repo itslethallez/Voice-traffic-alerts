@@ -93,6 +93,7 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
   const voiceVolume = useSettingsStore((state) => state.voiceVolume);
   const voiceRate = useSettingsStore((state) => state.voiceRate);
   const masterMute = useSettingsStore((state) => state.masterMute);
+  const showRangeOnMap = useSettingsStore((state) => state.showRangeOnMap);
   const defaultRouteType = useSettingsStore((state) => state.defaultRouteType);
   const setDefaultRouteType = useSettingsStore((state) => state.setDefaultRouteType);
   const toggleCategory = useSettingsStore((state) => state.toggleCategory);
@@ -101,6 +102,7 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
   const setVoiceVolume = useSettingsStore((state) => state.setVoiceVolume);
   const setVoiceRate = useSettingsStore((state) => state.setVoiceRate);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
+  const toggleRangeOnMap = useSettingsStore((state) => state.toggleRangeOnMap);
 
   /** Which of Volume/Rate is expanded to show its slider - the design
    * artboard only shows the closed state, so this interaction (tap to
@@ -210,6 +212,24 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
                     maxLabel={`${formatKmTrimmed(MAX_BRIEFING_RADIUS_METERS)} KM`}
                   />
                 </Column>
+                <Pressable
+                  onPress={toggleRangeOnMap}
+                  style={[styles.categoryRow, styles.rowDivider]}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: showRangeOnMap }}
+                  accessibilityLabel="Show range on map"
+                  accessibilityHint="Shows or hides the configured notification range ring on the map"
+                >
+                  <Column gap="xxs" flex={1}>
+                    <Text style={styles.rowTitle}>SHOW RANGE ON MAP</Text>
+                    <Text style={styles.note}>Draws your warn-me distance as a ring on the map.</Text>
+                  </Column>
+                  <Text
+                    style={[styles.stateText, showRangeOnMap ? styles.stateTextOn : styles.stateTextOff]}
+                  >
+                    {showRangeOnMap ? 'ON' : 'OFF'}
+                  </Text>
+                </Pressable>
               </Stack>
             </Card>
           </Column>

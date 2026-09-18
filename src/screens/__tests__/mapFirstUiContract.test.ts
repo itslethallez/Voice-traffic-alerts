@@ -27,11 +27,14 @@ describe('simplified map-first UI contract', () => {
     expect(drive).toContain('<ReportBar');
     expect(drive).toContain('alerts nearby');
     expect(drive).not.toContain('<ScrollView');
-    expect(drive).toContain('<Speedometer');
     expect(drive).toContain('latestAnnouncement');
     expect(drive).toContain('SHOW ON MAP');
-    expect(drive).toContain('Toggle notification range');
-    expect(drive).toContain('Mute audio');
+    // RANGE and MUTE live in Settings, not on the map screen: the paired
+    // speed sign renders inside the map adapters (left-edge capsule),
+    // not as a bottom-row dial in DriveScreen.
+    expect(drive).not.toContain('Toggle notification range');
+    expect(drive).not.toContain('Mute audio');
+    expect(drive).not.toContain('<Speedometer');
 
     const map = source('src/screens/radar/RadarMap.tsx');
     expect(map).toContain('pitch={50}');
@@ -39,15 +42,32 @@ describe('simplified map-first UI contract', () => {
     expect(map).toContain('ZOOM IN');
     expect(map).toContain('ZOOM OUT');
     expect(map).toContain('RECENTER ON MY LOCATION');
-    expect(map).toContain('rangeToggleToken');
+    // The notification-range ring is driven by the persisted SHOW RANGE
+    // ON MAP setting (Settings > RANGE), not a Drive-screen button token.
+    expect(map).toContain('showRangeOnMap');
+    expect(map).not.toContain('rangeToggleToken');
+    expect(map).toContain('<Speedometer />');
     expect(map).not.toContain('mapModeControl');
-    expect(map).toContain('mapbox://styles/mapbox/navigation-night-v1');
+    // Base map is the bundled "Shotgun Night" style (decluttered +
+    // repaletted navigation-night-v1) unless a Studio URL overrides it.
+    expect(map).toContain('styleJSON: MAP_STYLE_JSON');
+    expect(map).toContain('styleURL: MAP_STYLE_URL');
     expect(map).toContain('borderRadius: ALERT_PIN_SIZE / 2');
 
     const webMap = source('src/screens/radar/RadarMap.web.tsx');
     expect(webMap).toContain('LIVE WEB MAP');
     expect(webMap).toContain('mapVisibleAlerts');
     expect(webMap).toContain('accessibilityLabel');
+    expect(webMap).toContain('<Speedometer />');
+
+    // The moved controls' new home: Settings carries both the mute toggle
+    // (SPEAK THESE > MUTE EVERYTHING) and the range-ring switch (RANGE >
+    // SHOW RANGE ON MAP), so removing the map buttons orphans nothing.
+    const settings = source('src/screens/SettingsScreen.tsx');
+    expect(settings).toContain('MUTE EVERYTHING');
+    expect(settings).toContain('toggleMasterMute');
+    expect(settings).toContain('SHOW RANGE ON MAP');
+    expect(settings).toContain('toggleRangeOnMap');
   });
 
   it('keeps the unverified community intake reviewable inside the Drive sheet', () => {

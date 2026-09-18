@@ -7,6 +7,7 @@ import type { NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { confidenceLabel } from '../../theme/confidence';
 import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
+import { GlassView } from '../../components/base/GlassView';
 import { formatRelativeTime } from '../formatRelativeTime';
 import { formatClosingTime } from './formatClosingTime';
 import { splitCompactDistance } from './formatCompactDistance';
@@ -100,13 +101,13 @@ export function ClosestReportPanel({
   if (!isOnPath) {
     const place = [location.street, location.area].filter((part): part is string => Boolean(part)).join(', ');
     return (
-      <View style={styles.quietRoot} onLayout={onLayout}>
+      <GlassView intensity={45} dim={0.5} style={styles.quietRoot} onLayout={onLayout}>
         <Text style={styles.quietHeader}>CLOSEST · {Math.round(bearingDiffDeg)}° OFF HEADING</Text>
         <Text style={styles.quietBody}>
           {meta.label.toUpperCase()}
           {place ? `, ${place.toUpperCase()}` : ''} — <Text style={styles.quietBodyMuted}>NOT ON YOUR PATH</Text>
         </Text>
-      </View>
+      </GlassView>
     );
   }
 
@@ -122,7 +123,7 @@ export function ClosestReportPanel({
   const alreadyConfirmed = nearbyReport?.confirmedByThisDevice ?? false;
 
   return (
-    <View style={styles.root} onLayout={onLayout}>
+    <GlassView intensity={45} dim={0.5} style={styles.root} onLayout={onLayout}>
       <View style={styles.headerRow}>
         <Text style={styles.headerLabel}>CLOSEST · HEADING TOWARD</Text>
         <Text style={styles.headerStatus}>{offsetLabel(offset)} · CLOSING</Text>
@@ -181,7 +182,7 @@ export function ClosestReportPanel({
           </Pressable>
         ) : null}
       </View>
-    </View>
+    </GlassView>
   );
 }
 
@@ -191,7 +192,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: alpha(colors.charcoal, 0.94),
     borderTopWidth: 1,
     borderTopColor: colors.accent,
     paddingHorizontal: spacing.screenPadding,
@@ -351,7 +351,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: alpha(colors.charcoal, 0.94),
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingHorizontal: spacing.screenPadding,

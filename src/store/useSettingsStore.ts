@@ -49,6 +49,7 @@ interface SettingsStore extends SettingsValues {
   setVoiceVolume: (volume: number) => void;
   setVoiceRate: (rate: number) => void;
   toggleMasterMute: () => void;
+  toggleRangeOnMap: () => void;
   setDefaultRouteType: (routeType: RouteType) => void;
 }
 
@@ -86,6 +87,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ voiceVolume: clamp(volume, MIN_VOICE_VOLUME, MAX_VOICE_VOLUME) }),
       setVoiceRate: (rate) => set({ voiceRate: clamp(rate, MIN_VOICE_RATE, MAX_VOICE_RATE) }),
       toggleMasterMute: () => set((state) => ({ masterMute: !state.masterMute })),
+      toggleRangeOnMap: () => set((state) => ({ showRangeOnMap: !state.showRangeOnMap })),
       setDefaultRouteType: (routeType) => set({ defaultRouteType: routeType }),
     }),
     {

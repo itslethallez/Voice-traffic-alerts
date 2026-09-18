@@ -125,6 +125,12 @@ export interface SettingsValues {
   voiceVolume: number;
   voiceRate: number;
   masterMute: boolean;
+  /** Persistent "show my notification range ring on the map" switch -
+   * the RANGE setting from the Settings screen's RANGE section (the old
+   * on-map RANGE button's job). true draws the announceDistanceMeters
+   * awareness circle + NOTIFICATION AREA label regardless of camera
+   * presentation, so a pan doesn't lose it. */
+  showRangeOnMap: boolean;
   /** Seeds the route-type control on NavigationSearchScreen each time it
    * opens - the driver can still pick a different type per trip there. */
   defaultRouteType: RouteType;
@@ -160,6 +166,7 @@ export const defaultSettingsValues: SettingsValues = {
   voiceVolume: DEFAULT_VOICE_VOLUME,
   voiceRate: DEFAULT_VOICE_RATE,
   masterMute: false,
+  showRangeOnMap: false,
   defaultRouteType: 'safest',
 };
 

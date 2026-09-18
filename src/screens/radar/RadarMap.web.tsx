@@ -8,12 +8,15 @@ import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
 import { env } from '../../config/env';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
+import { GlassView } from '../../components/base/GlassView';
+import { MAP_STYLE_OBJECT, MAP_STYLE_STRIP_LAYERS, MAP_STYLE_URL } from '../../config/mapStyle';
 import { visibleTypesFromFilters } from '../../store/settingsDefaults';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { alpha, colors, map3d, radii, spacing, typography } from '../../theme/tokens';
 import { formatCompactDistance } from './formatCompactDistance';
+import { Speedometer } from './Speedometer';
 
 // Keep Mapbox GL's very deep style-expression generics outside the Expo/RN
 // project type graph; this platform adapter is exercised by the web export.
@@ -25,7 +28,6 @@ interface RadarMapProps {
   now?: number;
   onSpotlightChange?: (active: boolean) => void;
   minimal?: boolean;
-  rangeToggleToken?: number;
 }
 
 const ADELAIDE: [number, number] = [138.6007, -34.9285];
@@ -49,13 +51,11 @@ const lookAheadPadding = (map: { getContainer(): { clientHeight: number } }) => 
 
 /** Browser implementation of the map surface. Native builds continue using
  * RadarMap.tsx/@rnmapbox; Expo web resolves this file and uses Mapbox GL JS. */
-export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleToken = 0 }: RadarMapProps) {
+export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const focusTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showRange, setShowRange] = useState(false);
-  const rangeToggleSeenRef = useRef(0);
   const driverPosition = useTripStore((state) => state.driverPosition);
   const visibleAlerts = useTripStore((state) => state.visibleAlerts);
   const manualReports = useTripStore((state) => state.manualReports);
@@ -63,20 +63,27 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
   const fixedCameras = useTripStore((state) => state.fixedCameras);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const showRangeOnMap = useSettingsStore((state) => state.showRangeOnMap);
+  /** Flips once the mapbox-gl instance exists - the SHOW RANGE ON MAP
+   * effect depends on it so a persisted ON still frames the camera on
+   * first mount (its first run sees a null mapRef and skips). */
+  const [mapReady, setMapReady] = useState(false);
 
+  /**
+   * The Settings screen's SHOW RANGE ON MAP switch drives the range
+   * display now (it replaced DriveScreen's old RANGE button): flipping on
+   * frames the awareness circle north-up, flipping off eases back to the
+   * driver-follow view.
+   */
   useEffect(() => {
-    if (rangeToggleToken === 0 || rangeToggleToken === rangeToggleSeenRef.current) return;
-    rangeToggleSeenRef.current = rangeToggleToken;
-    const next = !showRange;
-    setShowRange(next);
     markersRef.current.forEach((marker) => marker.getPopup?.()?.remove());
-    if (next && driverPosition && mapRef.current) {
+    if (showRangeOnMap && driverPosition && mapRef.current) {
       const delta = announceDistanceMeters / 111_320;
       mapRef.current.fitBounds(
         [[driverPosition.longitude - delta, driverPosition.latitude - delta], [driverPosition.longitude + delta, driverPosition.latitude + delta]],
         { padding: 56, pitch: 50, bearing: 0, duration: 650 }
       );
-    } else if (!next && driverPosition && mapRef.current) {
+    } else if (!showRangeOnMap && driverPosition && mapRef.current) {
       // fitBounds above replaces transform.padding with its own symmetric
       // value - restore the lower-third driver anchor before easing back.
       mapRef.current.setPadding(lookAheadPadding(mapRef.current));
@@ -88,7 +95,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
         duration: 650,
       });
     }
-  }, [rangeToggleToken]);
+  }, [showRangeOnMap, mapReady]);
 
   const mapVisibleCameras = useMemo(() => {
     if (!driverPosition || !alertTypeFilters.fixed_camera) return [];
@@ -121,7 +128,10 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
       : ADELAIDE;
     const map = new mapboxgl.Map({
       container: hostRef.current,
-      style: 'mapbox://styles/mapbox/navigation-night-v1',
+      // "Shotgun Night" - bundled decluttered/repaletted copy of
+      // navigation-night-v1 (see src/config/mapStyle.ts); a Studio-hosted
+      // style URL via EXPO_PUBLIC_MAPBOX_STYLE_URL takes over if set.
+      style: MAP_STYLE_URL ?? MAP_STYLE_OBJECT,
       center,
       zoom: 15.5,
       pitch: 50,
@@ -130,12 +140,19 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
       attributionControl: true,
     });
     mapRef.current = map;
+    setMapReady(true);
     // Debug handle so local tooling (screenshots, manual camera checks) can
     // drive the map without synthesising gestures.
     Object.assign(window, { __shotgunMap: map });
     // Keep the lower-third anchor proportional when the viewport resizes.
     map.on('resize', () => map.setPadding(lookAheadPadding(map)));
     map.on('load', () => {
+      // If a Studio/stock style URL ever replaces the bundled Shotgun
+      // style, re-apply the §8 declutter - the bundled style already lacks
+      // these ids, so this is a no-op safety net there.
+      for (const layerId of MAP_STYLE_STRIP_LAYERS) {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+      }
       // 3D design guide §3 - the world treatment, matching the native
       // adapter's RasterDemSource/Terrain/HillshadeLayer/Atmosphere stack:
       // shaped DEM terrain with restrained hillshade for regional relief,
@@ -397,19 +414,26 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
       accessibilityLabel={`LIVE WEB MAP with ${mapVisibleAlerts.length} current reports`}
     >
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
-      {showRange ? (
-        <View pointerEvents="none" style={styles.rangeLabelBadge} accessible accessibilityLabel={`${formatCompactDistance(announceDistanceMeters)} notification range`}>
+      {showRangeOnMap ? (
+        <GlassView intensity={35} dim={0.45} pointerEvents="none" style={styles.rangeLabelBadge} accessible accessibilityLabel={`${formatCompactDistance(announceDistanceMeters)} notification range`}>
           <Text style={styles.rangeLabelText}>
             {formatCompactDistance(announceDistanceMeters).replace(/km$/, ' KM').replace(/m$/, ' M')} NOTIFICATION AREA
           </Text>
-        </View>
+        </GlassView>
       ) : null}
+      {/* The paired speed sign (design reference Im52.png): a left-edge
+          capsule, vertically centred near the driver rather than parked
+          in a bottom corner. Read-only - never eats a map gesture. */}
+      <View style={styles.speedSignWrap} pointerEvents="none">
+        <Speedometer />
+      </View>
       <View style={styles.mapControls}>
         <Pressable
           style={[styles.recenterButton, !driverPosition && styles.recenterButtonDisabled]}
           onPress={() => {
             if (!driverPosition || !mapRef.current) return;
-            setShowRange(false);
+            // Recentering only returns the camera to driver-follow - the
+            // SHOW RANGE ON MAP setting (and its badge) stays untouched.
             mapRef.current.setPadding(lookAheadPadding(mapRef.current));
             mapRef.current.easeTo({
               center: [driverPosition.longitude, driverPosition.latitude],
@@ -424,7 +448,9 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
           accessibilityLabel="RECENTER ON MY LOCATION"
           accessibilityHint="Centers the map on your current location"
         >
-          <LocateFixed size={20} strokeWidth={2.2} color={colors.accent} />
+          <GlassView intensity={35} dim={0.45} style={styles.controlGlass}>
+            <LocateFixed size={20} strokeWidth={2.2} color={colors.accent} />
+          </GlassView>
         </Pressable>
         <Pressable
           style={styles.zoomButton}
@@ -433,8 +459,10 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
           accessibilityLabel="ZOOM IN"
           accessibilityHint="Increases the map zoom by one level"
         >
-          <Text style={styles.zoomButtonGlyph}>+</Text>
-          <Text style={styles.zoomButtonLabel}>IN</Text>
+          <GlassView intensity={35} dim={0.45} style={styles.controlGlass}>
+            <Text style={styles.zoomButtonGlyph}>+</Text>
+            <Text style={styles.zoomButtonLabel}>IN</Text>
+          </GlassView>
         </Pressable>
         <Pressable
           style={styles.zoomButton}
@@ -443,8 +471,10 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), rangeToggleTok
           accessibilityLabel="ZOOM OUT"
           accessibilityHint="Decreases the map zoom by one level"
         >
-          <Text style={styles.zoomButtonGlyph}>−</Text>
-          <Text style={styles.zoomButtonLabel}>OUT</Text>
+          <GlassView intensity={35} dim={0.45} style={styles.controlGlass}>
+            <Text style={styles.zoomButtonGlyph}>−</Text>
+            <Text style={styles.zoomButtonLabel}>OUT</Text>
+          </GlassView>
         </Pressable>
       </View>
     </View>
@@ -477,6 +507,14 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  /** The paired speed sign anchors to the map's left edge at driver
+   * level (the cruising look-ahead padding parks the puck in the lower
+   * third, so the capsule's top edge sits just above centre). */
+  speedSignWrap: {
+    position: 'absolute',
+    left: spacing.sm,
+    top: '55%',
+  },
   rangeLabelBadge: {
     position: 'absolute',
     alignSelf: 'center',
@@ -484,7 +522,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: radii.lg,
-    backgroundColor: alpha(colors.charcoal, 0.94),
     borderWidth: 1,
     borderColor: alpha(colors.accent, 0.55),
   },
@@ -497,19 +534,15 @@ const styles = StyleSheet.create({
   mapControls: {
     position: 'absolute',
     right: spacing.sm,
-    top: 128,
+    // Below the collapsed top chrome (logo + mode switch + filter chip ≈
+    // 160) so the buttons never sit under DriveScreen's overlay panel.
+    top: 196,
     flexDirection: 'column',
     gap: spacing.xs,
   },
   recenterButton: {
     width: 44,
     height: 44,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: alpha(colors.charcoal, 0.94),
-    borderWidth: 1,
-    borderColor: alpha(colors.accent, 0.45),
   },
   recenterButtonDisabled: {
     opacity: 1,
@@ -517,10 +550,13 @@ const styles = StyleSheet.create({
   zoomButton: {
     width: 44,
     height: 44,
+  },
+  controlGlass: {
+    flex: 1,
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: alpha(colors.charcoal, 0.94),
+    // §8 floating chrome: backdrop blur + soft border (see GlassView).
     borderWidth: 1,
     borderColor: alpha(colors.accent, 0.45),
   },
