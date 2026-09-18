@@ -33,6 +33,15 @@ async function postAlerts(alerts, { onProgress } = {}) {
   const baseUrl = readEnvValue('BACKEND_API_URL', { required: false }) ?? readEnvValue('EXPO_PUBLIC_BACKEND_API_URL');
   const url = ingestUrl(baseUrl);
 
+  // The request target is worth one log line: a mis-set BACKEND_API_URL
+  // (missing the /api suffix, or pointing at a domain with no
+  // deployment) surfaces as Vercel's platform 404 on every POST -
+  // identical-looking per-alert failures that never reach the function.
+  console.log(`ingest endpoint: ${url}`);
+  if (!/\/api\/ingest$/.test(url)) {
+    console.warn('WARNING: URL does not end in /api/ingest - BACKEND_API_URL must include the /api path or every POST hits Vercel\'s platform 404.');
+  }
+
   // Alerts from one run share a source; the env var name is derived
   // from it so this client never needs a source argument. A mixed batch
   // is a bug worth refusing, not something to fan out across secrets.
