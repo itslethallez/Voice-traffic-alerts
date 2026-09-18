@@ -19,11 +19,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # tsc on this tree needs more than Node's default ~4GB heap, and
-      # TS6's flow analysis overflows the default call stack.
+      # TS6's flow analysis overflows the default call stack. --stack-size
+      # only takes effect as a V8 flag on node's own command line - Node
+      # rejects it in NODE_OPTIONS ("--stack-size= is not allowed in
+      # NODE_OPTIONS") - so invoke tsc's entry point through node directly
+      # instead of through the pnpm script wrapper.
       - name: Typecheck
-        run: pnpm typecheck
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144 --stack-size=16384
+        run: node --max-old-space-size=6144 --stack-size=16384 ./node_modules/typescript/bin/tsc --noEmit
 
       - name: Test
         run: pnpm test
