@@ -23,22 +23,26 @@ function toLocalMeters(origin: GeoPoint, point: GeoPoint): { x: number; y: numbe
   };
 }
 
-/** Closest distance from `point` to the segment a->b, in metres. */
-function distanceToSegment(point: GeoPoint, a: GeoPoint, b: GeoPoint): number {
+/** The point on segment a->b closest to `point`, as a GeoPoint. */
+function closestPointOnSegment(point: GeoPoint, a: GeoPoint, b: GeoPoint): GeoPoint {
   const p = toLocalMeters(a, point);
   const end = toLocalMeters(a, b);
   const segmentLengthSq = end.x * end.x + end.y * end.y;
 
   // a and b coincide (a degenerate zero-length segment, e.g. duplicate
   // consecutive route-geometry points) - nothing to project onto.
-  if (segmentLengthSq === 0) return haversineDistance(point, a);
+  if (segmentLengthSq === 0) return a;
 
   const t = Math.max(0, Math.min(1, (p.x * end.x + p.y * end.y) / segmentLengthSq));
-  const closest: GeoPoint = {
+  return {
     latitude: a.latitude + (b.latitude - a.latitude) * t,
     longitude: a.longitude + (b.longitude - a.longitude) * t,
   };
-  return haversineDistance(point, closest);
+}
+
+/** Closest distance from `point` to the segment a->b, in metres. */
+function distanceToSegment(point: GeoPoint, a: GeoPoint, b: GeoPoint): number {
+  return haversineDistance(point, closestPointOnSegment(point, a, b));
 }
 
 /**
@@ -57,6 +61,32 @@ export function distanceToPolyline(point: GeoPoint, polyline: readonly GeoPoint[
   for (let i = 0; i < polyline.length - 1; i++) {
     const distance = distanceToSegment(point, polyline[i], polyline[i + 1]);
     if (distance < closest) closest = distance;
+  }
+  return closest;
+}
+
+/**
+ * The point on `polyline` nearest to `point` - the projection onto the
+ * closest segment, not just the nearest vertex. Used to draw the driver
+ * marker snapped onto the route line while navigating: a cheap "close
+ * enough" snap, not map matching - it has no idea which road the raw GPS
+ * fix is actually on, so a genuinely off-route position gets dragged onto
+ * the line anyway until navigationRuntime's deviation check reroutes.
+ * Returns `point` unchanged for an empty polyline.
+ */
+export function nearestPointOnPolyline(point: GeoPoint, polyline: readonly GeoPoint[]): GeoPoint {
+  if (polyline.length === 0) return point;
+  if (polyline.length === 1) return polyline[0];
+
+  let closest = polyline[0];
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const candidate = closestPointOnSegment(point, polyline[i], polyline[i + 1]);
+    const distance = haversineDistance(point, candidate);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closest = candidate;
+    }
   }
   return closest;
 }

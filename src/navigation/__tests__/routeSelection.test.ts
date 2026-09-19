@@ -2,6 +2,16 @@ import type { MapboxDirectionsResponse, MapboxRoute } from '../../api/mapbox/typ
 import type { RouteHazard } from '../../engine/routeHazardScore';
 import { scoreAndRankRoutes, toPolyline } from '../routeSelection';
 
+// routeSelection.ts imports the trip/settings stores for
+// getHazardsForRouteScoring - mocked so the store chain (config/deviceId
+// -> expo-crypto, an ESM-only module) never loads under jest.
+jest.mock('../../store/useTripStore', () => ({
+  useTripStore: { getState: () => ({ visibleAlerts: [], manualReports: [], nearbyReports: [] }) },
+}));
+jest.mock('../../store/useSettingsStore', () => ({
+  useSettingsStore: { getState: () => ({ categoriesEnabled: {} }) },
+}));
+
 function makeRoute(coordinates: [number, number][], distance = 1000): MapboxRoute {
   return {
     geometry: { type: 'LineString', coordinates },

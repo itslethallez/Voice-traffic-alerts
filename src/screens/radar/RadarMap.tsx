@@ -10,12 +10,14 @@ import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import { awarenessCircleCoordinates, awarenessZoomLevel } from '../../geo/mapScale';
 import { nearestAlertToDriver } from '../../geo/nearestAlert';
+import { nearestPointOnPolyline } from '../../geo/routePolyline';
 import { announcementLocation, resolveAreaName } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
 import { MAP_STYLE_JSON, MAP_STYLE_URL } from '../../config/mapStyle';
 import { visibleTypesFromFilters } from '../../store/settingsDefaults';
 import { useNavigationStore } from '../../store/useNavigationStore';
+import { useRouteOptionsStore } from '../../store/useRouteOptionsStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
@@ -32,6 +34,7 @@ import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
 import { ManeuverBanner } from './ManeuverBanner';
 import { PoliceLightBar } from './PoliceLightBar';
+import { ROUTE_OPTION_COLORS } from './routeOptionPresentation';
 import { Speedometer } from './Speedometer';
 
 /**
@@ -221,6 +224,12 @@ export function RadarMap({
   const navCurrentStepIndex = useNavigationStore((state) => state.currentStepIndex);
   const navDistanceToNextManeuverM = useNavigationStore((state) => state.distanceToNextManeuverM);
   const isNavigating = navigationStatus === 'navigating' || navigationStatus === 'rerouting';
+  /** Stage B's route-option previews - drawn as up-to-three candidate
+   * lines (selected card emphasised) while the RouteOptionsPanel is up,
+   * before any of them becomes Stage C's single activeRoute above. */
+  const routeOptionsStatus = useRouteOptionsStore((state) => state.status);
+  const routeOptions = useRouteOptionsStore((state) => state.options);
+  const selectedRouteOptionId = useRouteOptionsStore((state) => state.selectedId);
 
   /**
    * The Settings screen's SHOW RANGE ON MAP switch drives the 'range'
@@ -429,6 +438,60 @@ export function RadarMap({
     };
   }, [activeRoute]);
 
+  /** Each route option's candidate line, in the same GeoJSON conversion as
+   * routeLine above. All three draw at once so the geometry differences
+   * (side-streets vs highway, safest vs fastest) are visible before the
+   * driver commits to one. */
+  const routeOptionLines = useMemo(
+    () =>
+      routeOptions
+        .filter((option) => option.route.polyline.length >= 2)
+        .map((option) => ({
+          id: option.id,
+          feature: {
+            type: 'Feature' as const,
+            properties: {},
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: option.route.polyline.map((point) => [point.longitude, point.latitude]),
+            },
+          },
+        })),
+    [routeOptions]
+  );
+
+  /**
+   * The on-map driver position. While navigating, the marker (and the
+   * camera that follows it) rides the route polyline via
+   * nearestPointOnPolyline - a display-only snap so GPS jitter doesn't
+   * jitter the puck across the road. The engine still sees the raw fix:
+   * navigationRuntime's step progress and off-route deviation checks run
+   * on driverPosition itself, and this is deliberately not map matching -
+   * an off-route position gets dragged onto the line visually until the
+   * runtime's deviation check reroutes.
+   */
+  const displayDriverPosition = useMemo(
+    () =>
+      isNavigating && activeRoute && driverPosition
+        ? nearestPointOnPolyline(driverPosition, activeRoute.polyline)
+        : driverPosition,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isNavigating, activeRoute, driverPosition?.latitude, driverPosition?.longitude]
+  );
+
+  /** Navigation starting (GO on the options panel, or a future direct
+   * startNavigation call) re-engages driver-follow: route planning leaves
+   * mapPresentation 'free' so GPS ticks couldn't recentre mid-preview, and
+   * a nav view that doesn't follow is useless. On nav end nothing special
+   * is needed - 'nearest' is the cruising default anyway. */
+  const wasNavigatingRef = useRef(false);
+  useEffect(() => {
+    if (isNavigating && !wasNavigatingRef.current) {
+      setMapPresentation('nearest');
+    }
+    wasNavigatingRef.current = isNavigating;
+  }, [isNavigating]);
+
   const awarenessZoom = useMemo(() => {
     if (!driverPosition || mapViewport.width <= 0 || mapViewport.height <= 0) return DEFAULT_ZOOM;
     return awarenessZoomLevel({
@@ -521,8 +584,12 @@ export function RadarMap({
     // Navigating always centers exactly on the driver - unlike 'nearest'
     // mode's midpoint-with-the-closest-alert framing, a turn-by-turn view
     // needs to stay centered on the driver themselves, not drift toward
-    // whatever hazard happens to be nearby.
-    if (isNavigating && driverPosition) return [driverPosition.longitude, driverPosition.latitude];
+    // whatever hazard happens to be nearby. Centers on the snapped
+    // (route-riding) position so the camera glides along the line rather
+    // than wobbling with raw GPS.
+    if (isNavigating && displayDriverPosition) {
+      return [displayDriverPosition.longitude, displayDriverPosition.latitude];
+    }
     if (mapPresentation === 'nearest' && driverPosition && nearestMapAlert) {
       const center = midpoint(driverPosition, nearestMapAlert);
       return [center.longitude, center.latitude];
@@ -537,6 +604,8 @@ export function RadarMap({
     mapPresentation,
     driverPosition?.longitude,
     driverPosition?.latitude,
+    displayDriverPosition?.longitude,
+    displayDriverPosition?.latitude,
     nearestMapAlert?.longitude,
     nearestMapAlert?.latitude,
   ]);
@@ -578,6 +647,13 @@ export function RadarMap({
     if (focusTransitionTimeoutRef.current !== null) {
       clearTimeout(focusTransitionTimeoutRef.current);
       focusTransitionTimeoutRef.current = null;
+    }
+
+    // Route planning owns the camera - a new alert arriving mid-plan must
+    // not steal the route-extent fit the planning effect just ran.
+    if (routeOptionsStatus !== 'idle') {
+      setSettledFocusKey(null);
+      return;
     }
 
     if (!displayFocus) {
@@ -627,7 +703,38 @@ export function RadarMap({
     // Deliberately keyed on focusKey alone so GPS updates do not restart the
     // two-stage transition while it is in progress.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusKey]);
+  }, [focusKey, routeOptionsStatus]);
+
+  /** Route planning owns the camera while it's active: release the
+   * declarative driver-follow (so a GPS tick can't recentre and hide the
+   * candidates) and fit the whole route extent once the options land.
+   * Clearing the plan hands the camera back to 'nearest' follow. */
+  const wasPlanningRef = useRef(false);
+  useEffect(() => {
+    if (routeOptionsStatus === 'ready' && routeOptionLines.length > 0) {
+      setMapPresentation('free');
+      const coordinates = routeOptionLines.flatMap((line) => line.feature.geometry.coordinates);
+      const longitudes = coordinates.map(([longitude]) => longitude);
+      const latitudes = coordinates.map(([, latitude]) => latitude);
+      // The options panel owns the bottom ~half of the screen - pad the
+      // fit so no candidate line tucks behind it.
+      const bottomPad = Math.max(FOCUS_BOUNDS_PADDING[2], Math.round(mapViewport.height * 0.45));
+      cameraRef.current?.fitBounds(
+        [Math.max(...longitudes), Math.max(...latitudes)],
+        [Math.min(...longitudes), Math.min(...latitudes)],
+        [FOCUS_BOUNDS_PADDING[0], FOCUS_BOUNDS_PADDING[1], bottomPad, FOCUS_BOUNDS_PADDING[3]],
+        TRANSITION_ZOOM_IN_DURATION_MS
+      );
+      wasPlanningRef.current = true;
+    } else if (routeOptionsStatus === 'idle' && wasPlanningRef.current) {
+      wasPlanningRef.current = false;
+      setMapPresentation('nearest');
+    }
+    // Keyed on status alone - routeOptionLines being populated is exactly
+    // what 'ready' means; mapViewport only supplies the latest height at
+    // fit time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeOptionsStatus]);
 
   if (!Mapbox) {
     return (
@@ -762,6 +869,25 @@ export function RadarMap({
           </Mapbox.ShapeSource>
         ) : null}
 
+        {/* Stage B previews - every candidate drawn at once in its option
+            colour; the selected card's line sits brighter/thicker so taps
+            on the panel are confirmed on the map immediately. Unmounted
+            wholesale when the plan clears. */}
+        {routeOptionLines.map((line) => (
+          <Mapbox.ShapeSource key={line.id} id={`route-option-source-${line.id}`} shape={line.feature}>
+            <Mapbox.LineLayer
+              id={`route-option-line-${line.id}`}
+              style={{
+                lineColor: ROUTE_OPTION_COLORS[line.id],
+                lineWidth: line.id === selectedRouteOptionId ? 6 : 4,
+                lineOpacity: line.id === selectedRouteOptionId ? 0.95 : 0.4,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </Mapbox.ShapeSource>
+        ))}
+
         {routeLine ? (
           <Mapbox.ShapeSource id="route-line-source" shape={routeLine}>
             <Mapbox.LineLayer
@@ -771,10 +897,10 @@ export function RadarMap({
           </Mapbox.ShapeSource>
         ) : null}
 
-        {driverPosition ? (
+        {displayDriverPosition ? (
           <Mapbox.MarkerView
             id="driver-marker"
-            coordinate={[driverPosition.longitude, driverPosition.latitude]}
+            coordinate={[displayDriverPosition.longitude, displayDriverPosition.latitude]}
             anchor={{ x: 0.5, y: 0.5 }}
           >
             <DriverMark />
@@ -849,11 +975,16 @@ export function RadarMap({
             setZoomAdjustment(0);
             // 'nearest', not 'range' - recentering returns to the app's
             // default driver-centered view; the SHOW RANGE ON MAP setting
-            // (and its ring) stays untouched either way.
+            // (and its ring) stays untouched either way. While navigating
+            // the target is the nav view itself - snapped position at
+            // turn-by-turn zoom, not the cruising awareness framing.
             setMapPresentation('nearest');
             cameraRef.current?.setCamera({
-              centerCoordinate: [driverPosition.longitude, driverPosition.latitude],
-              zoomLevel: awarenessZoom,
+              centerCoordinate: [
+                (displayDriverPosition ?? driverPosition).longitude,
+                (displayDriverPosition ?? driverPosition).latitude,
+              ],
+              zoomLevel: isNavigating ? NAVIGATING_ZOOM : awarenessZoom,
               heading: driverHeadingDeg,
               pitch: 50,
               animationMode: 'easeTo',

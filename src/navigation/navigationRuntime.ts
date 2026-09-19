@@ -1,18 +1,14 @@
 import { fetchDirections, MapboxApiError } from '../api/mapbox/client';
 import type { DriverState } from '../engine/types';
-import type { RouteHazard } from '../engine/routeHazardScore';
 import { distanceToPolyline } from '../geo/routePolyline';
 import type { GeoPoint } from '../geo/types';
 import { formatManeuverInstruction } from '../speech/formatManeuverInstruction';
 import { speakAsync, stopSpeaking } from '../speech/ttsAdapter';
-import { visibleManualReportAlerts } from '../store/manualReportAlert';
-import { visibleNearbyReportAlerts } from '../store/nearbyReportAlert';
-import { enabledTypesFromSettings, type RouteType } from '../store/settingsDefaults';
+import { type RouteType } from '../store/settingsDefaults';
 import { useNavigationStore, type NavigationRoute } from '../store/useNavigationStore';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { useTripStore } from '../store/useTripStore';
 import { selectManeuverAnnouncement, type ManeuverCheckpoint } from './selectManeuverAnnouncement';
-import { routeTypeToRequestOptions, scoreAndRankRoutes } from './routeSelection';
+import { getHazardsForRouteScoring, routeTypeToRequestOptions, scoreAndRankRoutes } from './routeSelection';
 import { computeStepProgress } from './stepProgress';
 
 /**
@@ -24,12 +20,6 @@ import { computeStepProgress } from './stepProgress';
  */
 const OFF_ROUTE_DEVIATION_M = 45;
 const OFF_ROUTE_SUSTAINED_MS = 10_000;
-/** How wide a radius around the driver's position counts as "nearby
- * enough to matter" when gathering manual/nearby reports for route
- * scoring - deliberately generous relative to routeSelection.ts's own
- * HAZARD_CORRIDOR_METERS (which then does the real, route-shaped
- * filtering), just enough to skip fetching truly irrelevant reports. */
-const HAZARD_GATHER_RADIUS_METERS = 6000;
 
 /**
  * Module-level (not React state), same reasoning as tripRuntime.ts's own
@@ -52,28 +42,6 @@ function resetStepTracking(): void {
   currentStepIndex = 0;
   firedManeuverCheckpoints = new Map();
   offRouteSinceMs = null;
-}
-
-/**
- * The same hazard set already visible on the map (RadarMap.tsx's
- * mapVisibleAlerts) and spoken as alerts - Waze's own alerts plus this
- * device's and nearby devices' manual reports, filtered by whichever
- * categories are currently enabled - gathered here independently since
- * this runs outside any component. Keeping route scoring and what the
- * driver already sees/hears in sync by construction, rather than building
- * a second, different notion of "hazard" just for routing.
- */
-function getHazardsForRouteScoring(driverPosition: GeoPoint, nowMs: number): RouteHazard[] {
-  const trip = useTripStore.getState();
-  const enabledTypes = enabledTypesFromSettings(useSettingsStore.getState().categoriesEnabled);
-  const waze = trip.visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
-  const manual = visibleManualReportAlerts(trip.manualReports, driverPosition, nowMs, HAZARD_GATHER_RADIUS_METERS).filter(
-    (alert) => enabledTypes.has(alert.type)
-  );
-  const nearby = visibleNearbyReportAlerts(trip.nearbyReports, driverPosition, nowMs, HAZARD_GATHER_RADIUS_METERS).filter(
-    (alert) => enabledTypes.has(alert.type)
-  );
-  return [...waze, ...manual, ...nearby];
 }
 
 async function requestRoute(
@@ -137,6 +105,38 @@ export async function startNavigation(
       .getState()
       .setError(error instanceof MapboxApiError ? error.message : 'Could not calculate a route.');
   }
+}
+
+export interface StartNavigationWithRouteInput {
+  destination: GeoPoint;
+  destinationLabel: string | null;
+  /** Which of the presented options the driver picked - recorded as
+   * activeRouteType so a later off-route reroute re-requests the same
+   * flavour of route rather than the settings default. */
+  routeType: RouteType;
+  /** The already-fetched route (Stage B's RouteOption.route) - adopted
+   * verbatim rather than re-requested, so the geometry the driver tapped
+   * GO on is exactly the one they get. */
+  route: NavigationRoute;
+}
+
+/**
+ * Stage B -> C handoff: the driver picked one of the route options and
+ * confirmed GO. Unlike startNavigation() this does NOT call Directions
+ * again - the route was already fetched (and hazard-scored) for the
+ * options screen, so re-requesting would both waste a call and risk
+ * handing back different geometry than the card described.
+ */
+export function startNavigationWithRoute(input: StartNavigationWithRouteInput): void {
+  navigationGeneration += 1; // invalidates any in-flight request/reroute
+  resetStepTracking();
+  const store = useNavigationStore.getState();
+  store.setRouting(input.routeType);
+  store.setActiveRoute({
+    destination: input.destination,
+    destinationLabel: input.destinationLabel,
+    route: input.route,
+  });
 }
 
 export function stopNavigation(): void {
@@ -254,6 +254,23 @@ export async function updateNavigationForDriverUpdate(
   currentStepIndex = progress.currentStepIndex;
 
   if (progress.hasArrived) {
+    // Speak the final step's own instruction ("You have arrived at …")
+    // before tearing down - same serialized speech channel as the maneuver
+    // cues, so it can't collide with an announcement still playing.
+    if (!options.masterMute) {
+      const arrivalInstruction = route.steps[route.steps.length - 1]?.maneuver.instruction;
+      if (arrivalInstruction) {
+        try {
+          await stopSpeaking();
+          await speakAsync(arrivalInstruction, {
+            rate: useSettingsStore.getState().voiceRate,
+            volume: useSettingsStore.getState().voiceVolume,
+          });
+        } catch (error) {
+          console.warn('[navigation] failed to speak the arrival instruction', error);
+        }
+      }
+    }
     stopNavigation();
     return;
   }

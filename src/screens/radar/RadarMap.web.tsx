@@ -11,11 +11,16 @@ import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
 import { GlassView } from '../../components/base/GlassView';
 import { MAP_STYLE_OBJECT, MAP_STYLE_STRIP_LAYERS, MAP_STYLE_URL } from '../../config/mapStyle';
 import { visibleTypesFromFilters } from '../../store/settingsDefaults';
+import { nearestPointOnPolyline } from '../../geo/routePolyline';
+import { useNavigationStore } from '../../store/useNavigationStore';
+import { useRouteOptionsStore } from '../../store/useRouteOptionsStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { alpha, colors, map3d, radii, spacing, typography } from '../../theme/tokens';
 import { formatCompactDistance } from './formatCompactDistance';
+import { ManeuverBanner } from './ManeuverBanner';
+import { ROUTE_OPTION_COLORS } from './routeOptionPresentation';
 import { Speedometer } from './Speedometer';
 
 // Keep Mapbox GL's very deep style-expression generics outside the Expo/RN
@@ -41,6 +46,10 @@ const CRUISING_LOOK_AHEAD_PADDING = 0.32;
  * adapter's minZoomLevel so both platforms show the same world. */
 const BUILDING_EXTRUSION_MIN_ZOOM = 13;
 const DEM_SOURCE_ID = 'shotgun-terrain-dem';
+/** Fixed heading-up follow zoom while navigating - the web counterpart of
+ * RadarMap.tsx's NAVIGATING_ZOOM: tighter than the cruising view, a normal
+ * turn-by-turn driving framing. */
+const NAVIGATING_ZOOM = 17;
 
 /** mapbox-gl keeps transform.padding across camera ops, so this is applied
  * once via setPadding and re-applied after any fitBounds that replaced it
@@ -68,6 +77,42 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
    * effect depends on it so a persisted ON still frames the camera on
    * first mount (its first run sees a null mapRef and skips). */
   const [mapReady, setMapReady] = useState(false);
+  /** Stage B's route-option previews - the web counterpart of the
+   * route-option ShapeSources in RadarMap.tsx: all candidates drawn at
+   * once, selected emphasised, cleared wholesale with the plan. */
+  const routeOptionsStatus = useRouteOptionsStore((state) => state.status);
+  const routeOptions = useRouteOptionsStore((state) => state.options);
+  const selectedRouteOptionId = useRouteOptionsStore((state) => state.selectedId);
+  const routeOptionsWereShownRef = useRef(false);
+  /** Stage C's active navigation - the single committed route the
+   * RouteOptionsPanel's GO button produced (routeOptions' previews stand
+   * down at the same moment). The line, the top maneuver banner, and the
+   * heading-up follow camera all read from this. */
+  const navigationStatus = useNavigationStore((state) => state.status);
+  const activeRoute = useNavigationStore((state) => state.activeRoute);
+  const navCurrentStepIndex = useNavigationStore((state) => state.currentStepIndex);
+  const navDistanceToNextManeuverM = useNavigationStore((state) => state.distanceToNextManeuverM);
+  const isNavigating = navigationStatus === 'navigating' || navigationStatus === 'rerouting';
+  /** Banner's rendered height so mapControls can sit below a two-line
+   * instruction - same measured-height contract RadarMap.tsx uses. */
+  const [maneuverBannerHeight, setManeuverBannerHeight] = useState(0);
+
+  /**
+   * The on-map driver position. While navigating, the marker (and the
+   * follow camera) rides the route polyline via nearestPointOnPolyline -
+   * a display-only snap; the engine still sees the raw fix, and an
+   * off-route position gets dragged onto the line visually until
+   * navigationRuntime's deviation check reroutes. Deliberately not map
+   * matching (see routePolyline.ts).
+   */
+  const displayDriverPosition = useMemo(
+    () =>
+      isNavigating && activeRoute && driverPosition
+        ? nearestPointOnPolyline(driverPosition, activeRoute.polyline)
+        : driverPosition,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isNavigating, activeRoute, driverPosition?.latitude, driverPosition?.longitude]
+  );
 
   /**
    * The Settings screen's SHOW RANGE ON MAP switch drives the range
@@ -120,6 +165,173 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     return [...mapVisibleAlerts, focusedAlert];
   }, [mapVisibleAlerts, focusedAlert]);
 
+  /** Stage B preview lines: one GeoJSON source + a data-driven line layer
+   * (colour/selected per feature) holding every candidate route at once -
+   * the same visual contract as RadarMap.tsx's per-option ShapeSources.
+   * setData keeps the layer live across selection changes; an empty
+   * FeatureCollection clears it when the plan goes away. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const apply = () => {
+      const features = routeOptions
+        .filter((option) => option.route.polyline.length >= 2)
+        .map((option) => ({
+          type: 'Feature',
+          properties: {
+            color: ROUTE_OPTION_COLORS[option.id],
+            selected: option.id === selectedRouteOptionId,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: option.route.polyline.map((point) => [point.longitude, point.latitude]),
+          },
+        }));
+      const data = { type: 'FeatureCollection', features };
+      const source = map.getSource('route-options');
+      if (source) {
+        source.setData(data);
+        return;
+      }
+      if (features.length === 0) return;
+      const firstSymbolLayer = map
+        .getStyle()
+        .layers.find((layer: { type: string }) => layer.type === 'symbol');
+      map.addSource('route-options', { type: 'geojson', data });
+      map.addLayer(
+        {
+          id: 'route-options-line',
+          type: 'line',
+          source: 'route-options',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': ['get', 'color'],
+            'line-width': ['case', ['get', 'selected'], 6, 4],
+            'line-opacity': ['case', ['get', 'selected'], 0.95, 0.4],
+          },
+        },
+        firstSymbolLayer ? firstSymbolLayer.id : undefined
+      );
+    };
+
+    // Route options can land while the style is still loading (search
+    // resolves fast on a warm cache) - hold until 'idle' instead of
+    // dropping the draw.
+    if (map.isStyleLoaded()) apply();
+    else map.once('idle', apply);
+  }, [routeOptions, selectedRouteOptionId, mapReady]);
+
+  /** Route planning owns the camera: fit the whole candidate extent once
+   * the options land (the panel owns the bottom ~half of the screen, so
+   * the bottom padding keeps every line clear of it), then hand the
+   * driver-follow padding/framing back when the plan clears. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (routeOptionsStatus === 'ready' && routeOptions.length > 0) {
+      const coordinates = routeOptions.flatMap((option) => option.route.polyline);
+      const longitudes = coordinates.map((point) => point.longitude);
+      const latitudes = coordinates.map((point) => point.latitude);
+      const height = map.getContainer().clientHeight;
+      map.fitBounds(
+        [
+          [Math.min(...longitudes), Math.min(...latitudes)],
+          [Math.max(...longitudes), Math.max(...latitudes)],
+        ],
+        {
+          padding: { top: Math.round(height * 0.1), right: 48, bottom: Math.round(height * 0.45), left: 48 },
+          pitch: 50,
+          bearing: 0,
+          duration: 700,
+        }
+      );
+      routeOptionsWereShownRef.current = true;
+    } else if (routeOptionsStatus === 'idle' && routeOptionsWereShownRef.current) {
+      routeOptionsWereShownRef.current = false;
+      map.setPadding(lookAheadPadding(map));
+      if (driverPosition) {
+        map.easeTo({
+          center: [driverPosition.longitude, driverPosition.latitude],
+          zoom: 15.5,
+          pitch: 50,
+          bearing: useTripStore.getState().driverHeadingDeg,
+          duration: 650,
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeOptionsStatus === 'ready', mapReady]);
+
+  /** Stage C's committed route: one GeoJSON source + line layer, same
+   * setData-keeps-it-live pattern as the route-options preview source
+   * above (and the same visual contract as RadarMap.tsx's route-line
+   * ShapeSource - coolBlue, 5px, rounded). An empty FeatureCollection
+   * clears it when navigation ends. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const apply = () => {
+      const features =
+        activeRoute && activeRoute.polyline.length >= 2
+          ? [
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: activeRoute.polyline.map((point) => [point.longitude, point.latitude]),
+                },
+              },
+            ]
+          : [];
+      const data = { type: 'FeatureCollection', features };
+      const source = map.getSource('active-route');
+      if (source) {
+        source.setData(data);
+        return;
+      }
+      if (features.length === 0) return;
+      const firstSymbolLayer = map
+        .getStyle()
+        .layers.find((layer: { type: string }) => layer.type === 'symbol');
+      map.addSource('active-route', { type: 'geojson', data });
+      map.addLayer(
+        {
+          id: 'active-route-line',
+          type: 'line',
+          source: 'active-route',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': colors.navigation, 'line-width': 5, 'line-opacity': 0.9 },
+        },
+        firstSymbolLayer ? firstSymbolLayer.id : undefined
+      );
+    };
+
+    if (map.isStyleLoaded()) apply();
+    else map.once('idle', apply);
+  }, [activeRoute, mapReady]);
+
+  /** Turn-by-turn follow: while navigating, the camera tracks the snapped
+   * driver position heading-up at close zoom - the web counterpart of
+   * RadarMap.tsx's declarative NAVIGATING_ZOOM / driver-heading Camera
+   * branch. Runs per GPS fix; the short easeTo duration blends consecutive
+   * fixes into a glide instead of a series of jumps. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !isNavigating || !displayDriverPosition) return;
+    map.easeTo({
+      center: [displayDriverPosition.longitude, displayDriverPosition.latitude],
+      zoom: NAVIGATING_ZOOM,
+      pitch: 50,
+      bearing: useTripStore.getState().driverHeadingDeg,
+      duration: 800,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNavigating, displayDriverPosition?.latitude, displayDriverPosition?.longitude, mapReady]);
+
   useEffect(() => {
     if (!hostRef.current || !env.mapboxAccessToken) return;
     mapboxgl.accessToken = env.mapboxAccessToken;
@@ -141,9 +353,15 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     });
     mapRef.current = map;
     setMapReady(true);
-    // Debug handle so local tooling (screenshots, manual camera checks) can
-    // drive the map without synthesising gestures.
-    Object.assign(window, { __shotgunMap: map });
+    // Debug handles so local tooling (screenshots, manual camera checks,
+    // seeded demo state) can drive the map and stores without synthesising
+    // gestures.
+    Object.assign(window, {
+      __shotgunMap: map,
+      __shotgunTripStore: useTripStore,
+      __shotgunRouteOptionsStore: useRouteOptionsStore,
+      __shotgunNavStore: useNavigationStore,
+    });
     // Keep the lower-third anchor proportional when the viewport resizes.
     map.on('resize', () => map.setPadding(lookAheadPadding(map)));
     map.on('load', () => {
@@ -223,7 +441,12 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       });
     });
     return () => {
-      Object.assign(window, { __shotgunMap: null });
+      Object.assign(window, {
+        __shotgunMap: null,
+        __shotgunTripStore: null,
+        __shotgunRouteOptionsStore: null,
+        __shotgunNavStore: null,
+      });
       if (focusTransitionTimeoutRef.current !== null) {
         clearTimeout(focusTransitionTimeoutRef.current);
         focusTransitionTimeoutRef.current = null;
@@ -241,7 +464,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
-    if (driverPosition) {
+    if (displayDriverPosition) {
       const driver = document.createElement('div');
       driver.setAttribute('aria-label', 'Your current location');
       Object.assign(driver.style, {
@@ -253,7 +476,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       });
       markersRef.current.push(
         new mapboxgl.Marker({ element: driver, anchor: 'center' })
-          .setLngLat([driverPosition.longitude, driverPosition.latitude])
+          .setLngLat([displayDriverPosition.longitude, displayDriverPosition.latitude])
           .addTo(map)
       );
     }
@@ -366,11 +589,13 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       if (focusedAlert?.alert_id === alert.alert_id) reportMarker.togglePopup();
       markersRef.current.push(reportMarker);
     }
-  }, [mapRenderableAlerts, mapVisibleCameras, driverPosition, focusedAlert?.alert_id, now]);
+  }, [mapRenderableAlerts, mapVisibleCameras, displayDriverPosition, focusedAlert?.alert_id, now]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !focusedAlert) return;
+    // Route planning owns the camera - a focused alert must not steal the
+    // route-extent fit while the options panel is up.
+    if (!map || !focusedAlert || routeOptionsStatus !== 'idle') return;
 
     if (focusTransitionTimeoutRef.current !== null) {
       clearTimeout(focusTransitionTimeoutRef.current);
@@ -427,17 +652,35 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       <View style={styles.speedSignWrap} pointerEvents="none">
         <Speedometer />
       </View>
-      <View style={styles.mapControls}>
+      {/* Stage C's top turn chip - the same ManeuverBanner the native
+          adapter renders in the headingChip slot. Renders nothing until
+          an active route exists. */}
+      {isNavigating && activeRoute ? (
+        <ManeuverBanner
+          instruction={activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.instruction ?? 'Arriving at destination'}
+          distanceMeters={navDistanceToNextManeuverM}
+          onLayout={(event) => setManeuverBannerHeight(event.nativeEvent.layout.height)}
+        />
+      ) : null}
+      <View
+        style={[
+          styles.mapControls,
+          isNavigating && activeRoute ? { top: 78 + maneuverBannerHeight + 10 } : null,
+        ]}
+      >
         <Pressable
           style={[styles.recenterButton, !driverPosition && styles.recenterButtonDisabled]}
           onPress={() => {
             if (!driverPosition || !mapRef.current) return;
             // Recentering only returns the camera to driver-follow - the
             // SHOW RANGE ON MAP setting (and its badge) stays untouched.
+            // While navigating the target is the nav view itself (snapped
+            // position at turn-by-turn zoom), not the cruising framing.
+            const target = displayDriverPosition ?? driverPosition;
             mapRef.current.setPadding(lookAheadPadding(mapRef.current));
             mapRef.current.easeTo({
-              center: [driverPosition.longitude, driverPosition.latitude],
-              zoom: 15.5,
+              center: [target.longitude, target.latitude],
+              zoom: isNavigating ? NAVIGATING_ZOOM : 15.5,
               pitch: 50,
               bearing: useTripStore.getState().driverHeadingDeg,
               duration: 650,

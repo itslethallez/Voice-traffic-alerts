@@ -24,6 +24,7 @@ import {
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { useCommunityReportStore } from '../store/useCommunityReportStore';
+import { useRouteOptionsStore } from '../store/useRouteOptionsStore';
 import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
 import { formatRelativeTime } from './formatRelativeTime';
 import { formatCompactDistance } from './radar/formatCompactDistance';
@@ -31,6 +32,7 @@ import { ModeSwitch } from './radar/ModeSwitch';
 import { NavigationStatusBar } from './radar/NavigationStatusBar';
 import { RadarMap } from './radar/RadarMap';
 import { ReportBar } from './radar/ReportBar';
+import { RouteOptionsPanel } from './radar/RouteOptionsPanel';
 
 const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;
 
@@ -115,6 +117,10 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
   const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
   const communityCandidates = useCommunityReportStore((state) => state.candidates);
   const dismissCommunityCandidate = useCommunityReportStore((state) => state.dismissCandidate);
+  /** Stage B route-planning state - anything but 'idle' means the map is
+   * showing route previews and the options panel replaces the alerts
+   * sheet/report bar until the plan is picked or cancelled. */
+  const routeOptionsActive = useRouteOptionsStore((state) => state.status !== 'idle');
   const [now, setNow] = useState(() => Date.now());
   /** NavigationStatusBar's actually-rendered height (0 when status is
    * 'idle' and it renders nothing) - passed to RadarMap so the tapped-marker
@@ -292,60 +298,71 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
         </Stack>
       </MapOverlayPanel>
 
-      <MapOverlayPanel edge="bottom" offset={SHEET_PEEK_HEIGHT + spacing.xs} scrim>
-        <Stack gap="sm">
-          <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
-            <NavigationStatusBar nowMs={now} />
-          </View>
-          {/* §8 persistent buttons: Report only - the cruising mockup's
-              single bottom-right FAB (Im140.png). Range ring lives behind
-              Settings > RANGE > SHOW RANGE ON MAP, mute behind SPEAK THESE
-              > MUTE EVERYTHING, and speed sits at the map's left edge as
-              the paired sign inside RadarMap. */}
-          <Row justify="flex-end" align="flex-end">
-            <ReportBar />
-          </Row>
-        </Stack>
-      </MapOverlayPanel>
+      {routeOptionsActive ? (
+        // Route planning owns the bottom edge while it's active - the
+        // alerts sheet and report bar step aside so the three option cards
+        // and their map previews get the whole stage.
+        <MapOverlayPanel edge="bottom" scrim>
+          <RouteOptionsPanel />
+        </MapOverlayPanel>
+      ) : (
+        <>
+          <MapOverlayPanel edge="bottom" offset={SHEET_PEEK_HEIGHT + spacing.xs} scrim>
+            <Stack gap="sm">
+              <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
+                <NavigationStatusBar nowMs={now} />
+              </View>
+              {/* §8 persistent buttons: Report only - the cruising mockup's
+                  single bottom-right FAB (Im140.png). Range ring lives behind
+                  Settings > RANGE > SHOW RANGE ON MAP, mute behind SPEAK THESE
+                  > MUTE EVERYTHING, and speed sits at the map's left edge as
+                  the paired sign inside RadarMap. */}
+              <Row justify="flex-end" align="flex-end">
+                <ReportBar />
+              </Row>
+            </Stack>
+          </MapOverlayPanel>
 
-      <BottomSheet
-        peekHeight={SHEET_PEEK_HEIGHT}
-        onSnapChange={setSheetSnap}
-        header={
-          <Row justify="space-between" align="center">
-            <Text style={styles.sheetTitle}>
-              {nearbyItems.length === 1 ? '1 alert nearby' : `${nearbyItems.length} alerts nearby`}
-            </Text>
-            <Text style={[styles.sheetLive, isOffline && styles.sheetLiveOffline]}>{`● ${liveLabel}`}</Text>
-          </Row>
-        }
-      >
-        <FlatList
-          data={sheetSnap === 'expanded' ? nearbyItems : []}
-          keyExtractor={(item) => item.alert.alert_id}
-          scrollEnabled={sheetSnap === 'expanded'}
-          showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={() => <View style={styles.rowSeparator} />}
-          renderItem={({ item }) => (
-            <NearbyAlertRow item={item} nowMs={now} onPress={() => onFocusAlert?.(item.alert)} />
-          )}
-          ListEmptyComponent={
-            // The collapsed peek is header-only - suppress the empty state
-            // too, or it renders sliced mid-line at the sheet's clip edge.
-            sheetSnap === 'expanded' ? (
-              <Text style={styles.sheetEmpty}>No enabled alerts within your range right now.</Text>
-            ) : null
-          }
-          ListHeaderComponent={
-            sheetSnap === 'expanded' && communityCandidates.length > 0 ? (
-              <CommunityIntakeSection
-                candidates={communityCandidates}
-                onDismiss={dismissCommunityCandidate}
-              />
-            ) : null
-          }
-        />
-      </BottomSheet>
+          <BottomSheet
+            peekHeight={SHEET_PEEK_HEIGHT}
+            onSnapChange={setSheetSnap}
+            header={
+              <Row justify="space-between" align="center">
+                <Text style={styles.sheetTitle}>
+                  {nearbyItems.length === 1 ? '1 alert nearby' : `${nearbyItems.length} alerts nearby`}
+                </Text>
+                <Text style={[styles.sheetLive, isOffline && styles.sheetLiveOffline]}>{`● ${liveLabel}`}</Text>
+              </Row>
+            }
+          >
+            <FlatList
+              data={sheetSnap === 'expanded' ? nearbyItems : []}
+              keyExtractor={(item) => item.alert.alert_id}
+              scrollEnabled={sheetSnap === 'expanded'}
+              showsVerticalScrollIndicator={false}
+              ItemSeparatorComponent={() => <View style={styles.rowSeparator} />}
+              renderItem={({ item }) => (
+                <NearbyAlertRow item={item} nowMs={now} onPress={() => onFocusAlert?.(item.alert)} />
+              )}
+              ListEmptyComponent={
+                // The collapsed peek is header-only - suppress the empty state
+                // too, or it renders sliced mid-line at the sheet's clip edge.
+                sheetSnap === 'expanded' ? (
+                  <Text style={styles.sheetEmpty}>No enabled alerts within your range right now.</Text>
+                ) : null
+              }
+              ListHeaderComponent={
+                sheetSnap === 'expanded' && communityCandidates.length > 0 ? (
+                  <CommunityIntakeSection
+                    candidates={communityCandidates}
+                    onDismiss={dismissCommunityCandidate}
+                  />
+                ) : null
+              }
+            />
+          </BottomSheet>
+        </>
+      )}
     </ScreenContainer>
   );
 }

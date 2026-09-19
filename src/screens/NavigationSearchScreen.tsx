@@ -30,6 +30,7 @@ import type { MapboxSearchSuggestion } from '../api/mapbox/types';
 import { GlassView } from '../components/base/GlassView';
 import { Column, Row, Stack } from '../components/base/Layout';
 import { ScreenContainer } from '../components/base/ScreenContainer';
+import { loadRouteOptions } from '../navigation/routeOptions';
 import { useTripStore } from '../store/useTripStore';
 import { colors, radii, spacing, typography } from '../theme/tokens';
 
@@ -39,17 +40,6 @@ const RESULT_LIMIT = 8;
 
 interface NavigationSearchScreenProps {
   onClose: () => void;
-}
-
-/** What a picked suggestion resolves to after /retrieve - the handoff
- * payload Stage B (route options) consumes. Surfaced on-screen for now so
- * the search itself can be verified end to end before routing exists. */
-interface SelectedDestination {
-  name: string;
-  typeLabel: string;
-  address: string | null;
-  latitude: number;
-  longitude: number;
 }
 
 const FEATURE_TYPE_LABELS: Record<string, string> = {
@@ -125,8 +115,9 @@ function formatDistance(meters: number | undefined): string | null {
  * Navigate mode's Stage A: destination search. Autocomplete-as-you-type
  * via Mapbox Search Box /suggest (addresses + businesses + named places in
  * one query, proximity-biased to the driver), then /retrieve resolves the
- * pick into coordinates. Route options/turn-by-turn (Stage B) aren't built
- * yet - a selection is captured and displayed, not navigated to.
+ * pick into coordinates. A confirmed pick hands straight off to Stage B -
+ * navigation/routeOptions.ts's loadRouteOptions - and this screen closes
+ * back to the map, where the route-options panel takes over.
  */
 export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps) {
   const [query, setQuery] = useState('');
@@ -134,7 +125,6 @@ export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps)
   const [searchState, setSearchState] = useState<'idle' | 'searching' | 'error'>('idle');
   const [retrievingId, setRetrievingId] = useState<string | null>(null);
   const [retrieveError, setRetrieveError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<SelectedDestination | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
   /** Lazily minted (Crypto.randomUUID) so mounting this screen costs no
@@ -184,9 +174,6 @@ export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps)
 
   const handleChangeText = (text: string) => {
     setQuery(text);
-    // Editing after a pick means the destination is being changed - drop
-    // the confirmed card and resume searching.
-    setSelected(null);
     setRetrieveError(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (text.trim().length < MIN_QUERY_LENGTH) {
@@ -216,18 +203,21 @@ export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps)
         return;
       }
       const [longitude, latitude] = coordinates;
-      const destination: SelectedDestination = {
-        name: suggestion.name_preferred ?? suggestion.name,
-        typeLabel: suggestionTypeLabel(suggestion),
-        address: suggestion.full_address ?? suggestion.place_formatted ?? null,
-        latitude,
-        longitude,
-      };
-      // Stage B (route options) consumes this once built - logged for now
-      // so selection can be verified end to end on its own.
-      console.log('[navigate] destination selected', destination);
-      setSelected(destination);
-      setResults([]);
+      if (!driverPosition) {
+        // Rows are disabled until a position exists, so this only fires
+        // from the submit-shortcut path - never silently drop the pick.
+        setRetrieveError('Waiting for your location before routes can be calculated.');
+        return;
+      }
+      // Stage B handoff: loadRouteOptions owns the fetch + hazard scoring
+      // and drives the route-options panel on the map screen this closes
+      // back to.
+      void loadRouteOptions(
+        driverPosition,
+        { latitude, longitude },
+        suggestion.name_preferred ?? suggestion.name
+      );
+      onClose();
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
       console.warn('[navigate] failed to resolve selected suggestion', error);
@@ -250,7 +240,7 @@ export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps)
     setSearchState('idle');
   };
 
-  const showEmpty = searchState === 'idle' && results.length === 0 && query.trim().length >= MIN_QUERY_LENGTH && !selected;
+  const showEmpty = searchState === 'idle' && results.length === 0 && query.trim().length >= MIN_QUERY_LENGTH;
 
   return (
     <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
@@ -293,39 +283,10 @@ export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps)
         </GlassView>
 
         {!driverPosition ? (
-          <Text style={styles.notice}>Waiting for your location - results will be biased to where you are.</Text>
+          <Text style={styles.notice}>Waiting for your location - needed to pick a route.</Text>
         ) : null}
         {searchState === 'error' ? <Text style={styles.errorText}>Search failed. Try again.</Text> : null}
         {retrieveError ? <Text style={styles.errorText}>{retrieveError}</Text> : null}
-
-        {selected ? (
-          <GlassView intensity={40} dim={0.5} style={styles.selectedCard}>
-            <Stack gap="sm">
-              <Row justify="space-between" align="center">
-                <Text style={styles.selectedEyebrow}>DESTINATION</Text>
-                <Pressable
-                  onPress={() => setSelected(null)}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Change destination"
-                >
-                  <Text style={styles.changeText}>CHANGE</Text>
-                </Pressable>
-              </Row>
-              <Column gap="xxs">
-                <Text style={styles.selectedName}>{selected.name}</Text>
-                <Text style={styles.selectedMeta} numberOfLines={2}>
-                  {selected.typeLabel}
-                  {selected.address ? ` · ${selected.address}` : ''}
-                </Text>
-                <Text style={styles.selectedCoords}>
-                  {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
-                </Text>
-              </Column>
-              <Text style={styles.selectedHint}>Route options appear here once Stage B lands.</Text>
-            </Stack>
-          </GlassView>
-        ) : null}
 
         {results.length > 0 ? (
           <GlassView intensity={40} dim={0.4} style={styles.resultsCard}>
@@ -343,7 +304,7 @@ export function NavigationSearchScreen({ onClose }: NavigationSearchScreenProps)
                   <Pressable
                     style={({ pressed }) => [styles.resultRow, pressed && styles.resultRowPressed]}
                     onPress={() => void handleSelect(item)}
-                    disabled={retrievingId !== null}
+                    disabled={retrievingId !== null || !driverPosition}
                     accessibilityRole="button"
                     accessibilityLabel={`Set destination to ${item.name}`}
                   >
@@ -457,43 +418,5 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.display,
     fontSize: typography.fontSize.bodyLarge,
     color: colors.textSecondary,
-  },
-  selectedCard: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-  },
-  selectedEyebrow: {
-    fontFamily: typography.fontFamily.displayMedium,
-    fontSize: typography.fontSize.eyebrow,
-    letterSpacing: typography.letterSpacing.eyebrow,
-    color: colors.accent,
-  },
-  changeText: {
-    fontFamily: typography.fontFamily.displayMedium,
-    fontSize: typography.fontSize.eyebrow,
-    letterSpacing: typography.letterSpacing.eyebrow,
-    color: colors.textSecondary,
-  },
-  selectedName: {
-    fontFamily: typography.fontFamily.displayMedium,
-    fontSize: typography.fontSize.title,
-    color: colors.textPrimary,
-  },
-  selectedMeta: {
-    fontFamily: typography.fontFamily.body,
-    fontSize: typography.fontSize.caption,
-    color: colors.textSecondary,
-  },
-  selectedCoords: {
-    fontFamily: typography.fontFamily.body,
-    fontSize: typography.fontSize.caption,
-    color: colors.textMuted,
-  },
-  selectedHint: {
-    fontFamily: typography.fontFamily.body,
-    fontSize: typography.fontSize.caption,
-    color: colors.textMuted,
   },
 });

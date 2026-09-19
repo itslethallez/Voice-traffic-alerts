@@ -1,13 +1,46 @@
 import type { MapboxDirectionsResponse, MapboxRoute } from '../api/mapbox/types';
 import { scoreRouteHazardExposure, type RouteHazard } from '../engine/routeHazardScore';
 import type { GeoPoint } from '../geo/types';
-import type { RouteType } from '../store/settingsDefaults';
+import { visibleManualReportAlerts } from '../store/manualReportAlert';
+import { visibleNearbyReportAlerts } from '../store/nearbyReportAlert';
+import { enabledTypesFromSettings, type RouteType } from '../store/settingsDefaults';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { useTripStore } from '../store/useTripStore';
 
 /** How far around a candidate route a currently-reported hazard still
  * counts against it - wide enough to catch a hazard on a parallel side
  * street Mapbox's route geometry passes close to, narrow enough not to
  * penalize a route for something genuinely unrelated to it. */
 export const HAZARD_CORRIDOR_METERS = 300;
+
+/** How wide a radius around the driver's position counts as "nearby
+ * enough to matter" when gathering manual/nearby reports for route
+ * scoring - deliberately generous relative to HAZARD_CORRIDOR_METERS
+ * (which then does the real, route-shaped filtering), just enough to skip
+ * fetching truly irrelevant reports. */
+export const HAZARD_GATHER_RADIUS_METERS = 6000;
+
+/**
+ * The same hazard set already visible on the map (RadarMap.tsx's
+ * mapVisibleAlerts) and spoken as alerts - Waze's own alerts plus this
+ * device's and nearby devices' manual reports, filtered by whichever
+ * categories are currently enabled - gathered here independently since
+ * this runs outside any component. Keeping route scoring and what the
+ * driver already sees/hears in sync by construction, rather than building
+ * a second, different notion of "hazard" just for routing.
+ */
+export function getHazardsForRouteScoring(driverPosition: GeoPoint, nowMs: number): RouteHazard[] {
+  const trip = useTripStore.getState();
+  const enabledTypes = enabledTypesFromSettings(useSettingsStore.getState().categoriesEnabled);
+  const waze = trip.visibleAlerts.filter((alert) => enabledTypes.has(alert.type));
+  const manual = visibleManualReportAlerts(trip.manualReports, driverPosition, nowMs, HAZARD_GATHER_RADIUS_METERS).filter(
+    (alert) => enabledTypes.has(alert.type)
+  );
+  const nearby = visibleNearbyReportAlerts(trip.nearbyReports, driverPosition, nowMs, HAZARD_GATHER_RADIUS_METERS).filter(
+    (alert) => enabledTypes.has(alert.type)
+  );
+  return [...waze, ...manual, ...nearby];
+}
 
 export interface ScoredRoute {
   route: MapboxRoute;
