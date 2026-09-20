@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="mapbox-gl.css" rel="stylesheet">
+<style>html,body,#map{margin:0;height:100%;background:#000}</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="mapbox-gl.js"></script>
+<!-- _spike/token.js is gitignored - it must define window.SPIKE_TOKEN
+     with a Mapbox public token (same one as EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN). -->
+<script src="token.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const variant = params.get('v') || 'ours';
+mapboxgl.accessToken = window.SPIKE_TOKEN;
+
+// Shotgun night palette mapped onto Standard's config surface.
+const shotgunConfig = {
+  colorLand: 'hsl(210, 20%, 5%)',
+  colorWater: 'hsl(207, 33%, 8%)',
+  colorGreenspace: 'hsl(170, 8%, 10%)',
+  colorRoads: 'hsl(190, 13%, 23%)',
+  colorTrunks: 'hsl(173, 38%, 41%)',
+  colorMotorways: 'hsl(173, 38%, 41%)',
+  colorRoadLabels: 'hsl(190, 15%, 88%)',
+  colorPlaceLabels: 'hsl(190, 15%, 88%)',
+  colorBuildings: 'hsl(216, 19%, 11%)',
+  showPointOfInterestLabels: false,
+  showTransitLabels: false,
+  showPedestrianRoads: true,
+  show3dBuildings: true,
+};
+// ?v=configtest forces an absurd water color to prove config plumbing works.
+if (variant === 'configtest') shotgunConfig.colorWater = 'hsl(0, 100%, 50%)';
+
+const camera = { center: [138.6007, -34.9285], zoom: 15.5, pitch: 50, bearing: 0 };
+
+let map;
+if (variant === 'ours') {
+  map = new mapboxgl.Map({ container: 'map', style: '/src/config/shotgun-map-style.json', ...camera });
+  // Our app applies terrain + 3D extrusions at runtime; the spike isolates palette,
+  // so the bundled JSON is compared as-shipped.
+} else {
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/standard',
+    config: { basemap: { ...shotgunConfig, lightPreset: variant === 'day' ? 'day' : 'night' } },
+    ...camera,
+  });
+}
+window.__map = map;
+map.on('error', (e) => console.log('MAPERR', e.error && e.error.message));
+</script>
+</body>
+</html>
