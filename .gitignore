@@ -48,3 +48,6 @@ dist-android/
 
 .vercel
 .env*
+
+# spike token - never commit
+_spike/token.js

@@ -12,6 +12,7 @@ import { Column, Row, Stack } from '../components/base/Layout';
 import { GlassView } from '../components/base/GlassView';
 import { MapOverlayPanel } from '../components/base/MapOverlayPanel';
 import { ScreenContainer } from '../components/base/ScreenContainer';
+import { startPerfMonitor, stopPerfMonitor } from '../diagnostics/frameRate';
 import { haversineDistance } from '../geo/distance';
 import type { RecentAnnouncement } from '../speech/types';
 import { visibleManualReportAlerts } from '../store/manualReportAlert';
@@ -161,6 +162,14 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // JS-thread fps + event-loop lag sampler for real-device drive tests -
+  // emits "[perf] jsFps=… loopLag…" every 10s for the log capture (RN's
+  // own perf overlay is dev-only, absent from TestFlight builds).
+  useEffect(() => {
+    startPerfMonitor();
+    return () => stopPerfMonitor();
   }, []);
 
   useEffect(() => {
@@ -345,17 +354,19 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
         <>
           <MapOverlayPanel edge="bottom" offset={SHEET_PEEK_HEIGHT + spacing.xs} scrim>
             <Stack gap="sm">
-              <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
-                <NavigationStatusBar nowMs={now} />
-              </View>
               {/* §8 persistent buttons: Report only - the cruising mockup's
                   single bottom-right FAB (Im140.png). Range ring lives behind
                   Settings > RANGE > SHOW RANGE ON MAP, mute behind SPEAK THESE
                   > MUTE EVERYTHING, and speed sits at the map's left edge as
-                  the paired sign inside RadarMap. */}
+                  the paired sign inside RadarMap. The FAB stacks ABOVE the
+                  nav status bar so the status bar sits flush against the
+                  alerts sheet while navigating. */}
               <Row justify="flex-end" align="flex-end">
                 <ReportBar />
               </Row>
+              <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
+                <NavigationStatusBar nowMs={now} />
+              </View>
             </Stack>
           </MapOverlayPanel>
 

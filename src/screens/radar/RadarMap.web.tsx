@@ -411,7 +411,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
             source: 'active-route',
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': colors.accent,
+              'line-color': map3d.routeLine,
               'line-width': layer.width,
               'line-opacity': layer.opacity,
               ...(layer.blur > 0 ? { 'line-blur': layer.blur } : {}),

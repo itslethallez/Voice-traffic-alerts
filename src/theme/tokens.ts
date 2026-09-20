@@ -62,6 +62,10 @@ export const map3d = {
   atmosphereHorizon: '#10161C',
   atmosphereHigh: '#0A0F14',
   atmosphereSpace: '#04070A',
+  /** Active-route line + glow (§5) — bright amber, a deliberate palette
+   * change from the doc's original cyan spec. Kept in map3d because it
+   * paints the map canvas on both adapters. */
+  routeLine: palette.amber,
 } as const;
 
 /** Multiplies a palette hex (#RRGGBB) by `opacity` into an rgba() string. */
