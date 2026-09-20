@@ -3,6 +3,7 @@ import { X } from 'lucide-react-native';
 import { stopNavigation } from '../../navigation/navigationRuntime';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { colors, radii, spacing, typography } from '../../theme/tokens';
+import { formatArrivalTime } from './formatArrivalTime';
 import { formatCompactDistance } from './formatCompactDistance';
 
 function formatMinutesRemaining(etaMs: number, nowMs: number): string {
@@ -44,6 +45,7 @@ export function NavigationStatusBar({ nowMs }: { nowMs: number }) {
             </Text>
             <Text style={styles.meta} numberOfLines={1}>
               {remainingDistanceM !== null ? formatCompactDistance(remainingDistanceM).toUpperCase() : ''}
+              {etaMs !== null ? ` · ARR ${formatArrivalTime(etaMs)}` : ''}
               {destinationLabel ? ` · ${destinationLabel.toUpperCase()}` : ''}
             </Text>
           </>

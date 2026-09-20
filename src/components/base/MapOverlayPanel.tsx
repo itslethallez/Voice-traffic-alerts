@@ -54,7 +54,13 @@ export function MapOverlayPanel({ edge, offset = 0, scrim = false, style, childr
             styles.scrim,
             // Bleed past the panel's free edge and the screen padding so the
             // fade covers the whole chrome zone, not just the card bounds.
-            edge === 'top' ? { top: -(inset + offset), height: '170%' } : { bottom: 0, height: '170%' },
+            edge === 'top'
+              ? { top: -(inset + offset), height: '170%' }
+              // Bleed past the panel's anchored edge to the screen's true
+              // bottom edge - a bottom-anchored scrim that stops at the
+              // panel leaves the safe-area strip below it (home-indicator
+              // zone) showing raw, un-tinted map.
+              : { bottom: -(inset + offset), height: '170%' },
           ]}
         />
       ) : null}

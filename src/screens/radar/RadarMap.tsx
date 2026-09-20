@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera as CameraIcon, LocateFixed } from 'lucide-react-native';
 import type { WazeAlert } from '../../api/waze/types';
 import { env } from '../../config/env';
@@ -223,6 +224,7 @@ export function RadarMap({
   // Start in overview mode: show the driver's travel arrow and the closest
   // visible report. A single tap switches to the exact Warn me from radius;
   // a pan or pinch leaves the camera entirely in the driver's control.
+  const insets = useSafeAreaInsets();
   const [mapPresentation, setMapPresentation] = useState<MapPresentation>('nearest');
   const [zoomAdjustment, setZoomAdjustment] = useState(0);
   const [selectedAlert, setSelectedAlert] = useState<WazeAlert | null>(null);
@@ -1084,7 +1086,7 @@ export function RadarMap({
             <Mapbox.MarkerView
               key={primary.id}
               coordinate={[primary.camera.position.longitude, primary.camera.position.latitude]}
-              anchor={{ x: 0.5, y: 1 }}
+              anchor={{ x: 0.5, y: markerAnchorY(driverPosition !== null, false) }}
             >
               <View>
                 <FixedCameraMarker camera={primary.camera} driverPosition={driverPosition} />
@@ -1095,7 +1097,10 @@ export function RadarMap({
             <Mapbox.MarkerView
               key={primary.id}
               coordinate={[primary.alert.longitude, primary.alert.latitude]}
-              anchor={{ x: 0.5, y: 1 }}
+              anchor={{
+                x: 0.5,
+                y: markerAnchorY(driverPosition !== null, nearbyReportsById.has(primary.alert.alert_id)),
+              }}
             >
               <View>
                 <AlertMarker
@@ -1138,14 +1143,14 @@ export function RadarMap({
       {/* The paired speed sign (design reference Im52.png): a left-edge
           capsule, vertically centred near the driver rather than parked
           in a bottom corner. Read-only - never eats a map gesture. */}
-      <View style={styles.speedSignWrap} pointerEvents="none">
+      <View style={[styles.speedSignWrap, { left: spacing.sm + insets.left }]} pointerEvents="none">
         <Speedometer />
       </View>
 
       <View
         style={[
           styles.mapControls,
-          { top: topOverlayBottom + spacing.sm },
+          { top: topOverlayBottom + spacing.sm, right: spacing.sm + insets.right },
         ]}
       >
         <Pressable
@@ -1229,7 +1234,7 @@ export function RadarMap({
       </View>
 
       {displayFocus ? (
-        <GlassView intensity={35} dim={0.45} style={[styles.headingChip, { top: topClearance }]} pointerEvents="none">
+        <GlassView intensity={35} dim={0.45} style={[styles.headingChip, { top: topClearance, left: spacing.sm + insets.left }]} pointerEvents="none">
           <Text style={styles.headingChipText}>
             {focusLabel ??
               `${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
@@ -1253,7 +1258,7 @@ export function RadarMap({
           onLayout={(event) => setFocusPanelHeight(event.nativeEvent.layout.height)}
         />
       ) : (
-        <GlassView intensity={35} dim={0.45} style={[styles.headingChip, { top: topClearance }]} pointerEvents="none">
+        <GlassView intensity={35} dim={0.45} style={[styles.headingChip, { top: topClearance, left: spacing.sm + insets.left }]} pointerEvents="none">
           <Text style={styles.headingChipText}>
             {`${compassDirection(driverHeadingDeg).toUpperCase()}BOUND${
               headingStreet ? ` · ${headingStreet.toUpperCase()}` : ''
@@ -1349,7 +1354,10 @@ function AlertMarker({
 
   const marker = (
     <View style={styles.alertMarker}>
-      {shape}
+      {/* The icon lives in a fixed-height box so MarkerView's anchor
+          fraction (markerAnchorY at the callsite) lands the icon's centre
+          on the coordinate regardless of the chips below. */}
+      <View style={styles.markerIconBox}>{shape}</View>
       {distanceMeters !== null ? (
         <View style={styles.alertDistanceChip}>
           <Text style={styles.alertDistanceText}>{formatCompactDistance(distanceMeters).replace(/km$/, ' KM')}</Text>
@@ -1369,7 +1377,7 @@ function AlertMarker({
   // despite its label promising one ("double tap to confirm it's still
   // there"), so tapping it only ever opened the detail card.
   return (
-    <View>
+    <View style={styles.alertMarker}>
       <Pressable
         onPress={() => onSelect(alert)}
         accessibilityRole="button"
@@ -1418,8 +1426,10 @@ function FixedCameraMarker({
 
   return (
     <View accessibilityLabel={accessibilityLabel} style={styles.cameraMarker}>
-      <View style={styles.cameraSquare}>
-        <CameraIcon size={20} strokeWidth={2.2} color={colors.textPrimary} />
+      <View style={styles.markerIconBox}>
+        <View style={styles.cameraSquare}>
+          <CameraIcon size={20} strokeWidth={2.2} color={colors.textPrimary} />
+        </View>
       </View>
       {distanceMeters !== null ? (
         <View style={styles.cameraDistanceChip}>
@@ -1436,6 +1446,24 @@ function Unsupported({ message }: { message: string }) {
       <Text style={styles.unsupportedText}>{message}</Text>
     </View>
   );
+}
+
+/** Marker anchoring: a MarkerView's frame is measured from its content,
+ * and the old y:1 anchor put the *bottom of the distance chip* on the
+ * coordinate - pushing every icon ~40px up-screen, which reads as metres
+ * of ground drift once zoomed out. The icon always sits centred in a
+ * fixed-height box at the top of the marker column, so the correct
+ * anchor fraction is icon-centre / total-frame-height, computed from
+ * exactly which chips are in flow (chip heights are fixed below). */
+const MARKER_ICON_BOX_H = 36;
+const MARKER_CHIP_H = 18;
+const MARKER_CONFIRM_H = 22;
+function markerAnchorY(hasDistanceChip: boolean, hasConfirmChip: boolean): number {
+  const totalH =
+    MARKER_ICON_BOX_H +
+    (hasDistanceChip ? spacing.xxs + MARKER_CHIP_H : 0) +
+    (hasConfirmChip ? spacing.xxs + MARKER_CONFIRM_H : 0);
+  return MARKER_ICON_BOX_H / 2 / totalH;
 }
 
 const POLICE_MARKER_SIZE = 34;
@@ -1466,7 +1494,6 @@ const styles = StyleSheet.create({
   },
   headingChip: {
     position: 'absolute',
-    left: 20,
     // §8 floating chrome: backdrop blur via GlassView.
     paddingVertical: spacing.xxs,
     paddingHorizontal: spacing.xs,
@@ -1480,8 +1507,10 @@ const styles = StyleSheet.create({
   },
   mapControls: {
     position: 'absolute',
-    right: 12,
-    // `top` comes from the measured topOverlayBottom prop at the usage
+    // `top` comes from the measured topOverlayBottom prop and `right` from
+    // the safe-area inset at the usage site - the controls column must sit
+    // below DriveScreen's top overlay panel (taller or shorter depending on
+    // mode) and clear of edge notches.
     // site - it must sit below DriveScreen's top overlay panel, which is
     // taller or shorter depending on mode (mode switch vs maneuver banner).
     flexDirection: 'column',
@@ -1492,7 +1521,9 @@ const styles = StyleSheet.create({
    * third, so the capsule's top edge sits just above centre). */
   speedSignWrap: {
     position: 'absolute',
-    left: spacing.sm,
+    // `left` comes from the safe-area inset at the usage site - edge
+    // clearance matches ScreenContainer's inset pattern, not a fixed
+    // pixel offset that lands under a landscape notch.
     top: '55%',
   },
   rangeLabelBadge: {
@@ -1594,8 +1625,15 @@ const styles = StyleSheet.create({
     color: colors.accent,
   },
   alertMarker: {
-    alignItems: 'flex-start',
+    // Chips must centre on the icon: a wider chip widening the frame on
+    // one side only would move anchor.x=0.5 off the icon's centre.
+    alignItems: 'center',
     gap: spacing.xxs,
+  },
+  markerIconBox: {
+    height: MARKER_ICON_BOX_H,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   policeSquare: {
     width: POLICE_MARKER_SIZE,
@@ -1672,7 +1710,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   alertDistanceChip: {
-    paddingVertical: spacing.xxs,
+    // Fixed height - markerAnchorY at the callsite depends on it.
+    height: MARKER_CHIP_H,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
     backgroundColor: colors.surface,
@@ -1684,7 +1724,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   cameraMarker: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing.xxs,
   },
   cameraSquare: {
@@ -1697,15 +1737,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   cameraDistanceChip: {
-    paddingVertical: spacing.xxs,
+    // Fixed height - markerAnchorY at the callsite depends on it.
+    height: MARKER_CHIP_H,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
     backgroundColor: colors.surface,
   },
   confirmChip: {
-    marginTop: spacing.xxs,
-    alignSelf: 'flex-start',
-    paddingVertical: spacing.xxs,
+    // Fixed height - markerAnchorY at the callsite depends on it.
+    height: MARKER_CONFIRM_H,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xs,
     borderRadius: radii.sm,
     backgroundColor: colors.accent,

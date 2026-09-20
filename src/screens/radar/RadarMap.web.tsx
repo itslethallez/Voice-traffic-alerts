@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LocateFixed } from 'lucide-react-native';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { WazeAlert } from '../../api/waze/types';
@@ -78,6 +79,7 @@ const lookAheadPadding = (map: { getContainer(): { clientHeight: number } }) => 
 /** Browser implementation of the map surface. Native builds continue using
  * RadarMap.tsx/@rnmapbox; Expo web resolves this file and uses Mapbox GL JS. */
 export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBottom = TOP_OVERLAY_FALLBACK }: RadarMapProps) {
+  const insets = useSafeAreaInsets();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -645,7 +647,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       cameraMarker.append(cameraBump, cameraBody);
       if (extraCount > 0) cameraMarker.append(makeClusterBadge(extraCount));
       markersRef.current.push(
-        new mapboxgl.Marker({ element: cameraMarker, anchor: 'bottom' })
+        // Icons are centred on their coordinate - not bottom-anchored:
+        // these are badges, not pins, so a bottom anchor displaces the
+        // icon half its height up-screen, which reads as metres of
+        // ground drift toward whatever is north once zoomed out.
+        new mapboxgl.Marker({ element: cameraMarker, anchor: 'center' })
           .setLngLat([fixedCamera.position.longitude, fixedCamera.position.latitude])
           .addTo(map)
       );
@@ -703,7 +709,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       // spans above) resolve against the marker itself.
       marker.style.position = 'relative';
       if (extraCount > 0) marker.append(makeClusterBadge(extraCount));
-      const reportMarker = new mapboxgl.Marker({ element: marker, anchor: 'bottom' })
+      const reportMarker = new mapboxgl.Marker({ element: marker, anchor: 'center' })
         .setLngLat([alert.longitude, alert.latitude])
         .setPopup(new mapboxgl.Popup({ offset: 22 }).setText(`${meta.label} · ${alert.street ?? alert.city ?? 'Location attached'} · Reported ${Math.max(0, Math.round((now - Date.parse(alert.publish_datetime_utc)) / 60000))} min ago${alert.description ? ` · ${alert.description}` : ''}`))
         .addTo(map);
@@ -772,7 +778,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       {/* The paired speed sign (design reference Im52.png): a left-edge
           capsule, vertically centred near the driver rather than parked
           in a bottom corner. Read-only - never eats a map gesture. */}
-      <View style={styles.speedSignWrap} pointerEvents="none">
+      <View style={[styles.speedSignWrap, { left: spacing.sm + insets.left }]} pointerEvents="none">
         <Speedometer />
       </View>
       {/* Stage C's next-turn banner lives in DriveScreen's top overlay
@@ -781,7 +787,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       <View
         style={[
           styles.mapControls,
-          { top: topOverlayBottom + spacing.sm },
+          { top: topOverlayBottom + spacing.sm, right: spacing.sm + insets.right },
         ]}
       >
         <Pressable
@@ -871,7 +877,9 @@ const styles = StyleSheet.create({
    * third, so the capsule's top edge sits just above centre). */
   speedSignWrap: {
     position: 'absolute',
-    left: spacing.sm,
+    // `left` comes from the safe-area inset at the usage site - edge
+    // clearance matches ScreenContainer's inset pattern, not a fixed
+    // pixel offset that lands under a landscape notch.
     top: '55%',
   },
   rangeLabelBadge: {
@@ -891,8 +899,10 @@ const styles = StyleSheet.create({
   },
   mapControls: {
     position: 'absolute',
-    right: spacing.sm,
-    // `top` comes from the measured topOverlayBottom prop at the usage
+    // `top` comes from the measured topOverlayBottom prop and `right` from
+    // the safe-area inset at the usage site - the controls column must sit
+    // below DriveScreen's top overlay panel (taller or shorter depending on
+    // mode) and clear of edge notches.
     // site - it must sit below DriveScreen's top overlay panel, which is
     // taller or shorter depending on mode (mode switch vs maneuver banner).
     flexDirection: 'column',
