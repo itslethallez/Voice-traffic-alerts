@@ -1,0 +1,103 @@
+# SHOTGUN — Devin Desktop Project Rules
+
+## What this project is
+Shotgun is an Australian road-alert and navigation app. It fuses six data
+sources (crowd API, state police mobile-camera notices, fixed camera/speed
+limit data, a Facebook-derived AI agent, in-app user reports, and roadkill/
+breakdown hotspots) into one confidence-scored map, with two modes:
+Cruising (passive/ambient) and Navigate (turn-by-turn with fastest/safest/
+side-streets-only routing).
+
+## Stack (do not deviate without asking)
+- Mobile app: Expo / React Native, TypeScript
+- Maps & routing: Mapbox GL + Mapbox Directions API
+- Backend: Node.js / TypeScript on Vercel serverless functions in
+  /server in front of Neon Postgres — extend this, don't scaffold a
+  second backend, and never introduce an always-on service
+- Database: Postgres + PostGIS as a Neon extension (spatial queries are
+  mandatory for corridor-relevance and route-avoidance — never
+  approximate with plain lat/lng math)
+- Live delivery: no websocket/persistent-connection layer. Cruising Mode
+  alerts go out via Expo push notifications; the foreground live map
+  short-polls GET /alerts/nearby every 15–30s
+- Cache: Upstash Redis (REST-based, serverless-native) in front of the
+  corridor-relevance query so polling doesn't hammer Postgres — cache
+  layer only, NOT a pub/sub broadcast transport
+- Ingestion: queue-based via Upstash QStash (HTTP-based, triggers Vercel
+  functions), never synchronous scraping inline with API requests
+- Scheduled jobs: GitHub Actions cron, matching the existing
+  refresh-waze-alerts.yml / refresh-fixed-cameras.yml pattern — no
+  node-cron, no worker process, and no Vercel Cron (the repo has no
+  linked Vercel project, and GHA scheduling already works here)
+- Billing: RevenueCat
+- Error tracking: Sentry, wired in from the first commit
+- Dev/staging infra: Neon branch databases for dev (pairs with Vercel
+  preview deployments) + Upstash free tier for Redis/QStash — no local
+  Docker; point at the real services from day one
+
+## Dev environment
+- The repo-root `.env` is the PROD reference. Nothing in dev reads it.
+  Verification runs, tests, migrations, and any ad-hoc script must use the
+  `DATABASE_URL` in `server/.env`, which points at a Neon *branch*.
+- Ask before running anything against a connection string you can't
+  identify as a branch — a DATABASE_URL copied from root `.env` is prod,
+  and "it's only an additive change" is not a reason to run it there.
+
+## Non-negotiables
+- Every alert, regardless of source, MUST conform to the alert schema
+  in /shared/alert-schema.ts before it touches the database. No source
+  writes its own shape directly to the alerts table.
+- No sponsor, partner, or paid placement may ever influence route
+  calculation, alert confidence scoring, or which alerts surface.
+  Sponsorship is presentation-layer only.
+- The alert schema never stores identifying details of individuals
+  (no names, plates, or personal identifiers) — location and incident
+  type only.
+- Nightly scraper jobs must fail loudly (Sentry alert), never silently.
+- All Facebook-derived alerts require human-in-the-loop review until
+  explicitly told otherwise per group.
+
+## Code conventions
+- TypeScript strict mode, no `any` without a comment explaining why
+- One file per source integration under /server/sources/
+- Exception to the above: scheduled source scrapers (police notices,
+  fixed cameras, dataset loads) live in /scripts/ as plain CommonJS JS,
+  with shared machinery in /scripts/scrapers/lib/ and one file per
+  state under /scripts/scrapers/states/. They are NOT TypeScript and
+  NOT under server/ because GitHub Actions runs them as
+  `node scripts/x.js` with only the root pnpm install available -
+  server/ is a separate npm project (own package-lock, not in the pnpm
+  workspace) and the workflow pattern has no TS build/run step. Keep
+  new scrapers dependency-free (Node built-ins + root devDeps only).
+- All spatial queries go through /server/lib/postgis-helpers.ts,
+  never raw inline SQL scattered across services
+- Tests live next to the file they test (*.test.ts, colocated
+  __tests__/ directories)
+
+## UI rules (enforced, not aspirational — see checklist below)
+- Every screen imports spacing, colour and type values from
+  /src/theme/tokens.ts. No hardcoded hex codes, no hardcoded pixel
+  values for padding/margin/gap anywhere in a screen or component file.
+- Absolute positioning (`position: 'absolute'`) is banned outside of
+  /src/components/MapOverlayPanel.tsx. If a screen "needs" absolute
+  positioning to stop things overlapping, that's a sign it should be
+  using a layout primitive (flex row/column with gap) instead — fix
+  the layout, don't patch it with positioning.
+- Every screen is built from the base component set in
+  /src/components/base/ (Card, AlertPill, BottomSheet, MapOverlayPanel,
+  ScreenContainer). No screen defines its own one-off card, pill, or
+  sheet styling — extend or compose the base components.
+- ScreenContainer enforces safe-area insets and a consistent outer
+  padding (tokens.spacing.screenPadding) — every screen is wrapped in
+  it, no exceptions.
+- Maximum 3 levels of nested View before a layout component (Row/Column/
+  Stack from the base set) must be used instead of raw Views.
+- [ADD YOUR OWN RULES HERE — paste the specific rules from the old
+  build that weren't sticking. Rewrite each one as a concrete file
+  path, component, or constraint the way the rules above are written,
+  not as a style preference in prose.]
+
+## When you're unsure
+Ask before generating code that touches: the confidence scoring engine,
+the Facebook ingestion pipeline, or anything billing-related. These are
+the three places a wrong guess is expensive to unwind.

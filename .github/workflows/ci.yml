@@ -1,0 +1,51 @@
+name: CI
+
+on: [push]
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tsc on this tree needs more than Node's default ~4GB heap, and
+      # TS6's flow analysis overflows the default call stack. --stack-size
+      # only takes effect as a V8 flag on node's own command line - Node
+      # rejects it in NODE_OPTIONS ("--stack-size= is not allowed in
+      # NODE_OPTIONS") - so invoke tsc's entry point through node directly
+      # instead of through the pnpm script wrapper.
+      - name: Typecheck
+        run: node --max-old-space-size=6144 --stack-size=16384 ./node_modules/typescript/bin/tsc --noEmit
+
+      - name: Test
+        run: pnpm test
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc

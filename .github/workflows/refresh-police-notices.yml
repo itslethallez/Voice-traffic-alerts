@@ -1,0 +1,95 @@
+name: Refresh police mobile-camera notices
+
+# Nightly at 20:00 UTC = 05:30 ACST / 06:30 ACDT - early enough that the
+# day's notices are in the alerts table before the Adelaide morning
+# commute, late enough that SAPOL's overnight page refresh has happened.
+# GHA cron, not Vercel Cron - same reasoning as refresh-waze-alerts.yml.
+#
+# The scrape goes through ScraperAPI (SAPOL's WAF blocks GitHub Actions
+# runner IPs - see scripts/buildFixedCameraDataset.js's header comment)
+# and each notice address is forward-geocoded via Mapbox. Results POST to
+# /api/ingest with deterministic ids, so re-scraped notices upsert rather
+# than duplicate.
+#
+# Secrets needed: SCRAPERAPI_KEY, EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
+# BACKEND_API_URL (the deployed server/ project's real URL, ending in
+# /api - same value as EXPO_PUBLIC_BACKEND_API_URL in the root .env),
+# INGEST_SECRET_POLICE_NOTICE (the
+# police_notice source's credential - the ingest endpoint maps each
+# source to its own secret, see server/api/ingest.ts). SENTRY_DSN is
+# optional but recommended - the "fail loudly" rule routes through it,
+# with the non-zero exit as backup.
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Presence + length only, never values - an unset GH secret
+      # resolves to an empty string, which readEnvValue then reports
+      # only as a mid-scrape failure. Fail here instead, before the
+      # scrape burns ScraperAPI + Mapbox calls on a doomed run.
+      - name: Verify required secrets are non-empty
+        env:
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: ${{ secrets.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN }}
+          BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
+          INGEST_SECRET_POLICE_NOTICE: ${{ secrets.INGEST_SECRET_POLICE_NOTICE }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          missing=0
+          for var in SCRAPERAPI_KEY EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN BACKEND_API_URL INGEST_SECRET_POLICE_NOTICE; do
+            val="${!var}"
+            if [ -n "$val" ]; then
+              echo "$var: set (${#val} chars)"
+            else
+              echo "::error::$var is not set in repository secrets"
+              missing=1
+            fi
+          done
+          if [ -n "$SENTRY_DSN" ]; then echo "SENTRY_DSN: set"; else echo "SENTRY_DSN: not set (optional)"; fi
+          # BACKEND_API_URL must end in /api (ingestClient appends only
+          # /ingest) AND point at a host with a live deployment - the
+          # probe catches a well-formed but wrong domain, which a shape
+          # check can't (404 = Vercel DEPLOYMENT_NOT_FOUND).
+          case "$BACKEND_API_URL" in
+            */api|*/api/) echo "BACKEND_API_URL: ends in /api";;
+            *://*) echo "::error::BACKEND_API_URL does not end in /api - posts hit Vercel's platform 404"; missing=1;;
+            *) echo "::error::BACKEND_API_URL is missing an https:// scheme"; missing=1;;
+          esac
+          case "$BACKEND_API_URL" in *[[:space:]]*) echo "::error::BACKEND_API_URL contains whitespace"; missing=1;; esac
+          if [ "$missing" = "0" ] && [ -n "$BACKEND_API_URL" ]; then
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${BACKEND_API_URL%/}/ingest")
+            echo "probe GET <BACKEND_API_URL>/ingest -> HTTP $code"
+            case "$code" in
+              404|000) echo "::error::ingest endpoint not found - BACKEND_API_URL has no live deployment at that address"; missing=1;;
+              401|403) echo "::warning::endpoint reachable but returned $code - if Vercel Deployment Protection is on, the scraper will be blocked";;
+            esac
+          fi
+          exit $missing
+
+      - name: Write .env for the scraper
+        run: |
+          echo "SCRAPERAPI_KEY=${{ secrets.SCRAPERAPI_KEY }}" >> .env
+          echo "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=${{ secrets.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN }}" >> .env
+          echo "BACKEND_API_URL=${{ secrets.BACKEND_API_URL }}" >> .env
+          echo "INGEST_SECRET_POLICE_NOTICE=${{ secrets.INGEST_SECRET_POLICE_NOTICE }}" >> .env
+          echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" >> .env
+
+      - name: Scrape police notices and post to /api/ingest
+        run: node scripts/scrapePoliceNotices.js
