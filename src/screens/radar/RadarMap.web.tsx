@@ -6,6 +6,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import type { WazeAlert } from '../../api/waze/types';
 import { haversineDistance } from '../../geo/distance';
 import { clusterMarkers, markerSeparationMeters } from '../../geo/declutterMarkers';
+import { DRIVER_CAR_SVG } from './driverCarGlyph';
 import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
 import {
   baseExaggerationAtZoom,
@@ -360,11 +361,11 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeOptionsStatus === 'ready', mapReady]);
 
-  /** Stage C's committed route: one GeoJSON source + line layer, same
-   * setData-keeps-it-live pattern as the route-options preview source
-   * above (and the same visual contract as RadarMap.tsx's route-line
-   * ShapeSource - coolBlue, 5px, rounded). An empty FeatureCollection
-   * clears it when navigation ends. */
+  /** Stage C's committed route: one GeoJSON source + §5's glow line
+   * stack, same setData-keeps-it-live pattern as the route-options
+   * preview source above (and the same visual contract as RadarMap.tsx's
+   * route-line ShapeSource). An empty FeatureCollection clears it when
+   * navigation ends. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -394,16 +395,31 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
         .getStyle()
         .layers.find((layer: { type: string }) => layer.type === 'symbol');
       map.addSource('active-route', { type: 'geojson', data });
-      map.addLayer(
-        {
-          id: 'active-route-line',
-          type: 'line',
-          source: 'active-route',
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': colors.navigation, 'line-width': 5, 'line-opacity': 0.9 },
-        },
-        firstSymbolLayer ? firstSymbolLayer.id : undefined
-      );
+      // §5's route treatment: two blurred widening glow layers under a
+      // bright narrow core - the same stack RadarMap.tsx declares on the
+      // route-line ShapeSource.
+      const routeLayers = [
+        { id: 'active-route-line-glow-outer', width: 18, blur: 10, opacity: 0.22 },
+        { id: 'active-route-line-glow', width: 10, blur: 4, opacity: 0.45 },
+        { id: 'active-route-line', width: 4.5, blur: 0, opacity: 1 },
+      ];
+      for (const layer of routeLayers) {
+        map.addLayer(
+          {
+            id: layer.id,
+            type: 'line',
+            source: 'active-route',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-color': colors.accent,
+              'line-width': layer.width,
+              'line-opacity': layer.opacity,
+              ...(layer.blur > 0 ? { 'line-blur': layer.blur } : {}),
+            },
+          },
+          firstSymbolLayer ? firstSymbolLayer.id : undefined
+        );
+      }
     };
 
     if (map.isStyleLoaded()) apply();
@@ -566,15 +582,17 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
     markersRef.current = [];
 
     if (displayDriverPosition) {
+      // §7's vehicle marker: the same DRIVER_CAR_SVG the native DriverMark
+      // renders - top-down car in an accent halo. Still points up: the
+      // camera is heading-up, so up = direction of travel.
       const driver = document.createElement('div');
       driver.setAttribute('aria-label', 'Your current location');
       Object.assign(driver.style, {
-        width: '24px',
-        height: '30px',
-        background: colors.white,
-        clipPath: 'polygon(50% 0, 100% 100%, 50% 78%, 0 100%)',
-        filter: 'drop-shadow(0 3px 5px rgba(0,0,0,.65))',
+        width: '34px',
+        height: '45px',
+        filter: `drop-shadow(0 0 10px ${alpha(colors.accent, 0.75)})`,
       });
+      driver.innerHTML = DRIVER_CAR_SVG;
       markersRef.current.push(
         new mapboxgl.Marker({ element: driver, anchor: 'center' })
           .setLngLat([displayDriverPosition.longitude, displayDriverPosition.latitude])

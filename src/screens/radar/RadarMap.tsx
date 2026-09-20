@@ -1072,11 +1072,22 @@ export function RadarMap({
           </Mapbox.ShapeSource>
         ))}
 
+        {/* §5's route treatment: a bright narrow core over two blurred,
+            widening accent layers - reads as one glowing line against the
+            dark base, unmistakable at a glance. */}
         {routeLine ? (
           <Mapbox.ShapeSource id="route-line-source" shape={routeLine}>
             <Mapbox.LineLayer
+              id="route-line-glow-outer"
+              style={{ lineColor: colors.accent, lineWidth: 18, lineBlur: 10, lineOpacity: 0.22, lineCap: 'round', lineJoin: 'round' }}
+            />
+            <Mapbox.LineLayer
+              id="route-line-glow"
+              style={{ lineColor: colors.accent, lineWidth: 10, lineBlur: 4, lineOpacity: 0.45, lineCap: 'round', lineJoin: 'round' }}
+            />
+            <Mapbox.LineLayer
               id="route-line"
-              style={{ lineColor: colors.navigation, lineWidth: 5, lineOpacity: 0.9, lineCap: 'round', lineJoin: 'round' }}
+              style={{ lineColor: colors.accent, lineWidth: 4.5, lineOpacity: 1, lineCap: 'round', lineJoin: 'round' }}
             />
           </Mapbox.ShapeSource>
         ) : null}

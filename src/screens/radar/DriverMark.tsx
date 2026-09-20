@@ -1,34 +1,31 @@
 import { StyleSheet, View } from 'react-native';
+import { SvgXml } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
+import { DRIVER_CAR_SVG } from './driverCarGlyph';
 
 /**
- * The driver's position on the radar map (design_handoff_instrument_face) -
- * a static upward triangle, replacing the shipped PulseRings' pulsing-disc
- * treatment. Always points straight up: RadarMap's Camera already rotates
- * the whole map to heading-up, so "up" already means "the direction the
- * driver is travelling" - same reasoning PulseRings documented for its own
- * fixed-up arrow. No animation - the redesign's one rule is that motion in
- * a driving UI should mean something, and the police light bar is the only
- * thing that still moves. HUD face colour pass adds a static glow, still
- * the same white triangle underneath.
+ * The driver's position on the radar map (design_handoff_instrument_face
+ * + §7's Navigate personality) - a top-down car silhouette inside an
+ * accent halo, replacing the static upward triangle. Always points
+ * straight up: RadarMap's Camera already rotates the whole map to
+ * heading-up, so "up" already means "the direction the driver is
+ * travelling". No animation - the redesign's one rule is that motion in
+ * a driving UI should mean something, and the police light bar is the
+ * only thing that still moves.
  */
 export function DriverMark() {
-  return <View style={styles.triangle} />;
+  return (
+    <View style={styles.halo}>
+      <SvgXml xml={DRIVER_CAR_SVG} width={34} height={45} />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  triangle: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 11,
-    borderRightWidth: 11,
-    borderBottomWidth: 26,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: colors.white,
+  halo: {
     shadowColor: colors.accent,
     shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 12,
+    shadowRadius: 14,
     shadowOpacity: 0.9,
   },
 });

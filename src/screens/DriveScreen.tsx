@@ -261,6 +261,8 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
               }
               distanceMeters={navDistanceToNextManeuverM}
               nextInstruction={activeRoute.steps[navCurrentStepIndex + 2]?.maneuver.instruction ?? null}
+              maneuverType={activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.type}
+              maneuverModifier={activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.modifier}
             />
           ) : (
             <>

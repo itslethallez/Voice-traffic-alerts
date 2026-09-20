@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { X } from 'lucide-react-native';
 import { stopNavigation } from '../../navigation/navigationRuntime';
 import { useNavigationStore } from '../../store/useNavigationStore';
-import { colors, radii, spacing, typography } from '../../theme/tokens';
+import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
 import { formatArrivalTime } from './formatArrivalTime';
 import { formatCompactDistance } from './formatCompactDistance';
 
@@ -73,9 +73,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.navigation,
+    backgroundColor: alpha(colors.surface, 0.92),
+    borderWidth: 1.5,
+    borderColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 12,
+    shadowOpacity: 0.5,
   },
   info: {
     flex: 1,
@@ -95,7 +99,7 @@ const styles = StyleSheet.create({
   },
   eta: {
     fontFamily: typography.fontFamily.display,
-    fontSize: typography.fontSize.title,
+    fontSize: typography.fontSize.stat,
     letterSpacing: typography.letterSpacing.tight,
     color: colors.textPrimary,
   },

@@ -75,7 +75,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     return (p.y / window.__shotgunMap.getContainer().clientHeight).toFixed(3);
   });
   console.log('[nav] puck screen-height fraction:', puckFrac);
-  await page.screenshot({ path: 'nav-cam-check.png' });
+  await page.screenshot({ path: 'nav-visual-check.png' });
   await browser.close();
   console.log('done');
 })().catch((e) => { console.error(e); process.exit(1); });
