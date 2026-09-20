@@ -68,6 +68,12 @@ const DEM_SOURCE_ID = 'shotgun-terrain-dem';
  * RadarMap.tsx's NAVIGATING_ZOOM: tighter than the cruising view, a normal
  * turn-by-turn driving framing. */
 const NAVIGATING_ZOOM = 17;
+/**
+ * §7 Navigate personality: lower and more forward-tilted than cruising.
+ * Matches RadarMap.tsx's NAVIGATING_PITCH/CRUISING_PITCH.
+ */
+const NAVIGATING_PITCH = 62;
+const CRUISING_PITCH = 50;
 
 /** mapbox-gl keeps transform.padding across camera ops, so this is applied
  * once via setPadding and re-applied after any fitBounds that replaced it
@@ -175,7 +181,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       const delta = announceDistanceMeters / 111_320;
       mapRef.current.fitBounds(
         [[driverPosition.longitude - delta, driverPosition.latitude - delta], [driverPosition.longitude + delta, driverPosition.latitude + delta]],
-        { padding: 56, pitch: 50, bearing: 0, duration: 650 }
+        { padding: 56, pitch: CRUISING_PITCH, bearing: 0, duration: 650 }
       );
     } else if (!showRangeOnMap && driverPosition && mapRef.current) {
       // fitBounds above replaces transform.padding with its own symmetric
@@ -184,7 +190,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       mapRef.current.easeTo({
         center: [driverPosition.longitude, driverPosition.latitude],
         zoom: 15.5,
-        pitch: 50,
+        pitch: CRUISING_PITCH,
         bearing: useTripStore.getState().driverHeadingDeg,
         duration: 650,
       });
@@ -332,7 +338,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
         ],
         {
           padding: { top: Math.round(height * 0.1), right: 48, bottom: Math.round(height * 0.45), left: 48 },
-          pitch: 50,
+          pitch: CRUISING_PITCH,
           bearing: 0,
           duration: 700,
         }
@@ -345,7 +351,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
         map.easeTo({
           center: [driverPosition.longitude, driverPosition.latitude],
           zoom: 15.5,
-          pitch: 50,
+          pitch: CRUISING_PITCH,
           bearing: useTripStore.getState().driverHeadingDeg,
           duration: 650,
         });
@@ -412,10 +418,15 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !isNavigating || !displayDriverPosition) return;
+    // §7: nav framing = NAVIGATING_PITCH + the lower-third driver anchor.
+    // transform.padding persists across easeTo, but re-assert it here so a
+    // stray fitBounds (route preview, focus) can never leave the puck
+    // centred mid-navigation.
+    map.setPadding(lookAheadPadding(map));
     map.easeTo({
       center: [displayDriverPosition.longitude, displayDriverPosition.latitude],
       zoom: NAVIGATING_ZOOM,
-      pitch: 50,
+      pitch: NAVIGATING_PITCH,
       bearing: useTripStore.getState().driverHeadingDeg,
       duration: 800,
     });
@@ -436,7 +447,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       style: MAP_STYLE_URL ?? MAP_STYLE_OBJECT,
       center,
       zoom: 15.5,
-      pitch: 50,
+      pitch: CRUISING_PITCH,
       bearing: useTripStore.getState().driverHeadingDeg,
       padding: lookAheadPadding({ getContainer: () => hostRef.current! }),
       attributionControl: true,
@@ -735,9 +746,9 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
         [Math.min(driverPosition.longitude, focusedAlert.longitude), Math.min(driverPosition.latitude, focusedAlert.latitude)],
         [Math.max(driverPosition.longitude, focusedAlert.longitude), Math.max(driverPosition.latitude, focusedAlert.latitude)],
       ];
-      map.fitBounds(bounds, { padding: 72, pitch: 50, bearing: 0, duration: 400 });
+      map.fitBounds(bounds, { padding: 72, pitch: CRUISING_PITCH, bearing: 0, duration: 400 });
       focusTransitionTimeoutRef.current = setTimeout(() => {
-        map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: 50, bearing: 0, duration: 500 });
+        map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: CRUISING_PITCH, bearing: 0, duration: 500 });
         focusTransitionTimeoutRef.current = null;
       }, 400);
 
@@ -749,7 +760,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
       };
     }
 
-    map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: 50, bearing: 0, duration: 500 });
+    map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: CRUISING_PITCH, bearing: 0, duration: 500 });
   }, [focusedAlert?.alert_id, routeOptionsStatus, isNavigating]);
 
   if (!env.mapboxAccessToken) {
@@ -803,7 +814,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
             mapRef.current.easeTo({
               center: [target.longitude, target.latitude],
               zoom: isNavigating ? NAVIGATING_ZOOM : 15.5,
-              pitch: 50,
+              pitch: isNavigating ? NAVIGATING_PITCH : CRUISING_PITCH,
               bearing: useTripStore.getState().driverHeadingDeg,
               duration: 650,
             });

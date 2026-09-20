@@ -37,8 +37,10 @@ describe('simplified map-first UI contract', () => {
     expect(drive).not.toContain('<Speedometer');
 
     const map = source('src/screens/radar/RadarMap.tsx');
-    expect(map).toContain('pitch={50}');
-    expect(map).not.toContain("pitch={mapPresentation === 'range' ? 0 : 50}");
+    expect(map).toContain('NAVIGATING_PITCH = 62');
+    expect(map).toContain('CRUISING_PITCH = 50');
+    expect(map).toContain('pitch={isNavigating ? NAVIGATING_PITCH : CRUISING_PITCH}');
+    expect(map).not.toContain('pitch={50}');
     expect(map).toContain('ZOOM IN');
     expect(map).toContain('ZOOM OUT');
     expect(map).toContain('RECENTER ON MY LOCATION');

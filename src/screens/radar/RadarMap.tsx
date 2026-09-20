@@ -89,6 +89,15 @@ const AWARENESS_CIRCLE_SEGMENTS = 48;
  * awareness/nearest views, matching a normal turn-by-turn app's driving
  * view rather than this app's usual wide situational-awareness framing. */
 const NAVIGATING_ZOOM = 17;
+/**
+ * §7 Navigate personality: the turn-by-turn camera sits lower and more
+ * forward-tilted than Cruising's 50 degrees, and keeps the driver anchored
+ * in the lower third of the frame (the same fraction cruising uses - one
+ * consistent forward anchor across modes). Zoom and heading-up follow were
+ * already correct; this pass adds the pitch and the framing.
+ */
+const NAVIGATING_PITCH = 62;
+const CRUISING_PITCH = 50;
 
 /**
  * 3D design guide §2: in Cruising's driver-following view the vehicle mark
@@ -671,21 +680,24 @@ export function RadarMap({
   /** Cruising gets the lower-third vehicle anchor from the 3D guide - in
    * 'nearest' (driver-following) and kept in 'free' so the padding doesn't
    * ease away under the driver right after their own pan gesture. Suspended
-   * in 'range' (the awareness circle keeps its centred framing), while an
-   * alert is focused, and while navigating - Navigate's own framing is
-   * untouched this pass. */
+   * in 'range' (the awareness circle keeps its centred framing) and while an
+   * alert is focused. Navigate keeps the SAME lower-third anchor (§7: the
+   * forward view belongs to the road ahead) - the web adapter holds this via
+   * transform.padding, so without this branch the native puck would recenter
+   * the moment navigation started. */
   const cruisingLookAhead =
     mapPresentation !== 'range' && !isNavigating && displayFocus === null;
   const cameraPadding = useMemo(
     () => ({
-      paddingTop: cruisingLookAhead
-        ? Math.round(mapViewport.height * CRUISING_LOOK_AHEAD_PADDING_FRACTION)
-        : 0,
+      paddingTop:
+        cruisingLookAhead || isNavigating
+          ? Math.round(mapViewport.height * CRUISING_LOOK_AHEAD_PADDING_FRACTION)
+          : 0,
       paddingLeft: 0,
       paddingRight: 0,
       paddingBottom: showsFocusPanel ? focusPanelHeight : 0,
     }),
-    [cruisingLookAhead, mapViewport.height, showsFocusPanel, focusPanelHeight]
+    [cruisingLookAhead, isNavigating, mapViewport.height, showsFocusPanel, focusPanelHeight]
   );
 
   /** Camera targets are declarative only while Shotgun is presenting one of
@@ -985,7 +997,7 @@ export function RadarMap({
           ref={cameraRef}
           centerCoordinate={cameraCenterCoordinate}
           heading={cameraHeading}
-          pitch={50}
+          pitch={isNavigating ? NAVIGATING_PITCH : CRUISING_PITCH}
           zoomLevel={cameraFollowsPresentation ? cameraZoomLevel : undefined}
           padding={cameraPadding}
           animationMode="easeTo"
@@ -1172,7 +1184,7 @@ export function RadarMap({
               ],
               zoomLevel: isNavigating ? NAVIGATING_ZOOM : awarenessZoom,
               heading: driverHeadingDeg,
-              pitch: 50,
+              pitch: isNavigating ? NAVIGATING_PITCH : CRUISING_PITCH,
               animationMode: 'easeTo',
               animationDuration: 650,
             });
