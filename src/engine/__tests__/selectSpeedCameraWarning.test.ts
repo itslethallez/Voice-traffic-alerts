@@ -329,3 +329,62 @@ describe('hasNearbyWarningTarget', () => {
     ).toBe(false);
   });
 });
+
+describe('routeCorridor (nav mode)', () => {
+  /** A straight polyline from the driver out `lengthMeters` along
+   * `bearingDeg` - enough to exercise the corridor gate without a real
+   * Mapbox route. */
+  function corridorPolyline(bearingDeg: number, lengthMeters: number) {
+    return [DRIVER_POSITION, destinationPoint(DRIVER_POSITION, lengthMeters, bearingDeg)];
+  }
+
+  it('ignores a camera off the route corridor even when it sits inside the bearing cone', () => {
+    const result = selectSpeedCameraWarning({
+      driver: makeDriver({ speedKmh: 100 }),
+      speedLimitKmh: 60,
+      cameras: [makeCamera(300)], // 300m due north - inside the cone while cruising
+      alerts: [],
+      firedCheckpoints: NO_FIRED_CHECKPOINTS,
+      nowMs: NOW_MS,
+      // The route runs east instead - the camera is ~300m off the line.
+      routeCorridor: { polyline: corridorPolyline(90, 2000), corridorMeters: 100 },
+    });
+    expect(result).toBeNull();
+  });
+
+  it('fires for a camera on the route corridor', () => {
+    const result = selectSpeedCameraWarning({
+      driver: makeDriver({ speedKmh: 100 }),
+      speedLimitKmh: 60,
+      cameras: [makeCamera(300)],
+      alerts: [],
+      firedCheckpoints: NO_FIRED_CHECKPOINTS,
+      nowMs: NOW_MS,
+      routeCorridor: { polyline: corridorPolyline(0, 2000), corridorMeters: 100 },
+    });
+    expect(result?.checkpoint).toBe(500);
+  });
+
+  it('corridor replaces the bearing cone - a camera off-heading but on-route still warns', () => {
+    const result = selectSpeedCameraWarning({
+      // Driving east; the camera is due north - a 90-degree bearing diff,
+      // outside the 45-degree cone. Cruising would not warn.
+      driver: makeDriver({ speedKmh: 100, headingDeg: 90 }),
+      speedLimitKmh: 60,
+      cameras: [makeCamera(300)],
+      alerts: [],
+      firedCheckpoints: NO_FIRED_CHECKPOINTS,
+      nowMs: NOW_MS,
+      routeCorridor: { polyline: corridorPolyline(0, 2000), corridorMeters: 100 },
+    });
+    expect(result?.checkpoint).toBe(500);
+  });
+
+  it('hasNearbyWarningTarget respects the corridor too', () => {
+    const offRoute = { polyline: corridorPolyline(90, 2000), corridorMeters: 100 };
+    expect(hasNearbyWarningTarget(makeDriver(), [makeCamera(300)], [], NOW_MS, offRoute)).toBe(false);
+
+    const onRoute = { polyline: corridorPolyline(0, 2000), corridorMeters: 100 };
+    expect(hasNearbyWarningTarget(makeDriver(), [makeCamera(300)], [], NOW_MS, onRoute)).toBe(true);
+  });
+});

@@ -48,9 +48,15 @@ async function requestRoute(
   origin: GeoPoint,
   destination: GeoPoint,
   routeType: RouteType,
-  nowMs: number
+  nowMs: number,
+  reason: 'start' | 'reroute'
 ): Promise<NavigationRoute> {
   const { avoidHazards, exclude } = routeTypeToRequestOptions(routeType);
+  // Logged per-request so a device log can tell a deliberate planning
+  // request pair (see routeOptions.ts) apart from a genuine second fetch
+  // on GO (should never happen - startNavigationWithRoute doesn't call
+  // this) or an off-route reroute.
+  console.log(`[nav] directions request (${reason}) type=${routeType}`);
   const response = await fetchDirections([origin, destination], { alternatives: true, exclude });
   if (response.routes.length === 0) {
     throw new MapboxApiError('Mapbox Directions API returned no routes', null);
@@ -93,9 +99,10 @@ export async function startNavigation(
   const generation = ++navigationGeneration;
   resetStepTracking();
   useNavigationStore.getState().setRouting(options.routeType);
+  console.log(`[nav] startNavigation: fetching route type=${options.routeType}`);
 
   try {
-    const route = await requestRoute(driver.position, destination, options.routeType, Date.now());
+    const route = await requestRoute(driver.position, destination, options.routeType, Date.now(), 'start');
     if (generation !== navigationGeneration) return; // superseded while this fetch was in flight
     useNavigationStore.getState().setActiveRoute({ destination, destinationLabel, route });
   } catch (error) {
@@ -137,12 +144,18 @@ export function startNavigationWithRoute(input: StartNavigationWithRouteInput): 
     destinationLabel: input.destinationLabel,
     route: input.route,
   });
+  console.log(
+    `[nav] startWithRoute: status=${useNavigationStore.getState().status} type=${input.routeType} ` +
+      `dist=${Math.round(input.route.distanceMeters)}m steps=${input.route.steps.length} ` +
+      `dest=${input.destinationLabel ?? '(unlabeled)'} (no refetch)`
+  );
 }
 
 export function stopNavigation(): void {
   navigationGeneration += 1; // invalidates any in-flight request/reroute
   resetStepTracking();
   useNavigationStore.getState().stop();
+  console.log('[nav] stopped - back to cruising');
 }
 
 async function rerouteFromCurrentPosition(driver: DriverState): Promise<void> {
@@ -161,11 +174,13 @@ async function rerouteFromCurrentPosition(driver: DriverState): Promise<void> {
   const generation = ++navigationGeneration;
   store.setRerouting();
   resetStepTracking();
+  console.log(`[nav] rerouting from current position (type=${routeType})`);
 
   try {
-    const route = await requestRoute(driver.position, destination, routeType, Date.now());
+    const route = await requestRoute(driver.position, destination, routeType, Date.now(), 'reroute');
     if (generation !== navigationGeneration) return;
     useNavigationStore.getState().setActiveRoute({ destination, destinationLabel, route });
+    console.log(`[nav] reroute applied: dist=${Math.round(route.distanceMeters)}m steps=${route.steps.length}`);
   } catch (error) {
     if (generation !== navigationGeneration) return;
     console.warn('[navigation] reroute failed, keeping the previous route', error);
@@ -251,9 +266,11 @@ export async function updateNavigationForDriverUpdate(
   if (!route) return;
 
   const progress = computeStepProgress(driver.position, route.steps, currentStepIndex);
+  const previousStepIndex = currentStepIndex;
   currentStepIndex = progress.currentStepIndex;
 
   if (progress.hasArrived) {
+    console.log(`[nav] arrived at ${store.destinationLabel ?? 'destination'} - ending navigation`);
     // Speak the final step's own instruction ("You have arrived at …")
     // before tearing down - same serialized speech channel as the maneuver
     // cues, so it can't collide with an announcement still playing.
@@ -275,6 +292,20 @@ export async function updateNavigationForDriverUpdate(
     return;
   }
 
+  const deviationM = distanceToPolyline(driver.position, route.polyline);
+  const etaMs =
+    nowMs + (progress.remainingDistanceM / Math.max(route.distanceMeters, 1)) * route.durationSeconds * 1000;
+
+  // Per-processed-fix progress line: on a healthy device this ticks every
+  // location update with decreasing remain/eta. If the serialized chain
+  // is backed up behind speech, these lines arrive in bursts of stale
+  // values instead - the frozen-ETA signature.
+  console.log(
+    `[nav] step ${progress.currentStepIndex}${progress.currentStepIndex !== previousStepIndex ? ` (was ${previousStepIndex})` : ''} ` +
+      `next=${Math.round(progress.distanceToNextManeuverM)}m remain=${Math.round(progress.remainingDistanceM)}m ` +
+      `eta=+${Math.round((etaMs - nowMs) / 1000)}s dev=${Math.round(deviationM)}m`
+  );
+
   useNavigationStore.getState().setStepProgress({
     currentStepIndex: progress.currentStepIndex,
     distanceToNextManeuverM: progress.distanceToNextManeuverM,
@@ -282,7 +313,7 @@ export async function updateNavigationForDriverUpdate(
     // Assumes the remaining time is proportional to remaining distance at
     // the route's own average pace - an approximation, not a live
     // recompute against current speed, good enough for a driving ETA.
-    etaMs: nowMs + (progress.remainingDistanceM / Math.max(route.distanceMeters, 1)) * route.durationSeconds * 1000,
+    etaMs,
   });
 
   if (!options.masterMute) {
@@ -291,7 +322,6 @@ export async function updateNavigationForDriverUpdate(
 
   if (store.status !== 'navigating') return; // already mid-reroute; don't trigger a second one
 
-  const deviationM = distanceToPolyline(driver.position, route.polyline);
   if (deviationM <= OFF_ROUTE_DEVIATION_M) {
     offRouteSinceMs = null;
     return;
@@ -299,10 +329,12 @@ export async function updateNavigationForDriverUpdate(
 
   if (offRouteSinceMs === null) {
     offRouteSinceMs = nowMs;
+    console.log(`[nav] off-route deviation ${Math.round(deviationM)}m - watching for ${OFF_ROUTE_SUSTAINED_MS / 1000}s before rerouting`);
     return;
   }
 
   if (nowMs - offRouteSinceMs >= OFF_ROUTE_SUSTAINED_MS) {
+    console.log(`[nav] off-route sustained (${Math.round(deviationM)}m) - rerouting`);
     void rerouteFromCurrentPosition(driver);
   }
 }

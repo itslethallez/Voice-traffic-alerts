@@ -32,20 +32,27 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
     }
     if (!data?.locations?.length) return;
 
-    const now = Date.now();
-    for (const location of data.locations) {
-      const driver = toDriverState(
-        {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          heading: location.coords.heading,
-          speed: location.coords.speed,
-        },
-        lastKnownDriver
-      );
-      lastKnownDriver = driver;
-      await handleDriverUpdate(driver, now);
+    // Only the newest location in each batch is worth a full engine pass -
+    // position is a latest-wins value, and replaying every deferred fix
+    // through the serialized chain (each potentially awaiting a TTS
+    // utterance) is exactly how the queue fell behind on device.
+    // handleDriverUpdate itself also drops a fix superseded while queued,
+    // but there's no reason to enqueue the stale ones at all.
+    if (data.locations.length > 1) {
+      console.log(`[drive] background batch of ${data.locations.length} fixes - using latest only`);
     }
+    const location = data.locations[data.locations.length - 1];
+    const driver = toDriverState(
+      {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        heading: location.coords.heading,
+        speed: location.coords.speed,
+      },
+      lastKnownDriver
+    );
+    lastKnownDriver = driver;
+    await handleDriverUpdate(driver, Date.now(), 'background');
   }
 );
 

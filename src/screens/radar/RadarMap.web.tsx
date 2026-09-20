@@ -4,7 +4,17 @@ import { LocateFixed } from 'lucide-react-native';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { WazeAlert } from '../../api/waze/types';
 import { haversineDistance } from '../../geo/distance';
+import { clusterMarkers, markerSeparationMeters } from '../../geo/declutterMarkers';
 import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
+import {
+  baseExaggerationAtZoom,
+  exaggerationScaleForRelief,
+  reliefSamplePoints,
+  scaledExaggerationExpression,
+  TERRAIN_RELIEF_RESAMPLE_DISTANCE_M,
+  trimmedReliefM,
+  trueReliefFromMeasured,
+} from '../../geo/terrainRelief';
 import { env } from '../../config/env';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
@@ -19,7 +29,6 @@ import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { alpha, colors, map3d, radii, spacing, typography } from '../../theme/tokens';
 import { formatCompactDistance } from './formatCompactDistance';
-import { ManeuverBanner } from './ManeuverBanner';
 import { ROUTE_OPTION_COLORS } from './routeOptionPresentation';
 import { Speedometer } from './Speedometer';
 
@@ -33,7 +42,15 @@ interface RadarMapProps {
   now?: number;
   onSpotlightChange?: (active: boolean) => void;
   minimal?: boolean;
+  /** Absolute y of the bottom edge of DriveScreen's measured top overlay
+   * chrome (safe-area inset + panel content, including the ManeuverBanner
+   * while navigating) - the map's own floating controls start below it.
+   * Same contract as RadarMap.tsx. */
+  topOverlayBottom?: number;
 }
+
+/** Pre-measurement fallback for topOverlayBottom - see RadarMap.tsx. */
+const TOP_OVERLAY_FALLBACK = 170;
 
 const ADELAIDE: [number, number] = [138.6007, -34.9285];
 
@@ -60,7 +77,7 @@ const lookAheadPadding = (map: { getContainer(): { clientHeight: number } }) => 
 
 /** Browser implementation of the map surface. Native builds continue using
  * RadarMap.tsx/@rnmapbox; Expo web resolves this file and uses Mapbox GL JS. */
-export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProps) {
+export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBottom = TOP_OVERLAY_FALLBACK }: RadarMapProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -90,12 +107,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
    * heading-up follow camera all read from this. */
   const navigationStatus = useNavigationStore((state) => state.status);
   const activeRoute = useNavigationStore((state) => state.activeRoute);
-  const navCurrentStepIndex = useNavigationStore((state) => state.currentStepIndex);
-  const navDistanceToNextManeuverM = useNavigationStore((state) => state.distanceToNextManeuverM);
   const isNavigating = navigationStatus === 'navigating' || navigationStatus === 'rerouting';
-  /** Banner's rendered height so mapControls can sit below a two-line
-   * instruction - same measured-height contract RadarMap.tsx uses. */
-  const [maneuverBannerHeight, setManeuverBannerHeight] = useState(0);
 
   /**
    * The on-map driver position. While navigating, the marker (and the
@@ -113,6 +125,41 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isNavigating, activeRoute, driverPosition?.latitude, driverPosition?.longitude]
   );
+
+  /**
+   * Terrain-drape legibility fix (geo/terrainRelief.ts): draped line
+   * layers follow DEM noise in flat areas, making straight streets wavy.
+   * Samples the DEM's own elevations on a ring around the driver and
+   * scales exaggeration down when the measured relief is flat - hills
+   * keep the full guide curve. Web counterpart of the native adapter's
+   * mapViewRef.queryTerrainElevation effect.
+   */
+  const lastReliefSampleRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  /** The scale currently applied to the terrain style - needed to undo
+   * the exaggeration baked into queryTerrainElevation's readings. */
+  const appliedTerrainScaleRef = useRef(1);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !driverPosition) return;
+    const last = lastReliefSampleRef.current;
+    if (last && haversineDistance(driverPosition, last) < TERRAIN_RELIEF_RESAMPLE_DISTANCE_M) return;
+    const elevations = reliefSamplePoints(driverPosition)
+      .map((point) => map.queryTerrainElevation([point.longitude, point.latitude]))
+      .filter((value: unknown): value is number => typeof value === 'number' && Number.isFinite(value));
+    // DEM tiles not loaded yet - leave lastReliefSampleRef unset so the
+    // next fix retries instead of waiting for a 600m move.
+    if (elevations.length < 5) return;
+    lastReliefSampleRef.current = driverPosition;
+    const reliefM = trueReliefFromMeasured(
+      trimmedReliefM(elevations),
+      baseExaggerationAtZoom(map.getZoom()) * appliedTerrainScaleRef.current
+    );
+    const scale = exaggerationScaleForRelief(reliefM);
+    appliedTerrainScaleRef.current = scale;
+    console.log(`[map] terrain relief ${reliefM.toFixed(0)}m -> exaggeration scale ${scale.toFixed(2)}`);
+    map.setTerrain({ source: DEM_SOURCE_ID, exaggeration: scaledExaggerationExpression(scale) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverPosition?.latitude, driverPosition?.longitude, mapReady]);
 
   /**
    * The Settings screen's SHOW RANGE ON MAP switch drives the range
@@ -164,6 +211,47 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     }
     return [...mapVisibleAlerts, focusedAlert];
   }, [mapVisibleAlerts, focusedAlert]);
+
+  /**
+   * On-map marker decluttering (geo/declutterMarkers.ts) - same contract
+   * as the native adapter: markers closer than one glyph-width on screen
+   * group into a cluster, the most relevant marker (pinned = focused,
+   * else nearest the driver) draws with a "+N" badge. Zoom comes from the
+   * live map so the separation stays a fixed on-screen size.
+   */
+  const markerClusters = useMemo(() => {
+    const pinnedIds = new Set(
+      [focusedAlert?.alert_id].filter((id): id is string => Boolean(id)).map((id) => `alert:${id}`)
+    );
+    const zoom = mapRef.current?.getZoom() ?? 15.5;
+    const items: Array<
+      { id: string; latitude: number; longitude: number } & (
+        | { kind: 'camera'; camera: FixedSpeedCamera }
+        | { kind: 'alert'; alert: WazeAlert }
+      )
+    > = [
+      ...mapVisibleCameras.map((camera) => ({
+        id: `camera:${camera.id}`,
+        kind: 'camera' as const,
+        latitude: camera.position.latitude,
+        longitude: camera.position.longitude,
+        camera,
+      })),
+      ...mapRenderableAlerts.map((alert) => ({
+        id: `alert:${alert.alert_id}`,
+        kind: 'alert' as const,
+        latitude: alert.latitude,
+        longitude: alert.longitude,
+        alert,
+      })),
+    ];
+    return clusterMarkers(items, {
+      separationMeters: markerSeparationMeters(zoom, driverPosition?.latitude ?? -34.9285),
+      driverPosition,
+      pinnedIds,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapVisibleCameras, mapRenderableAlerts, driverPosition, focusedAlert?.alert_id, mapReady]);
 
   /** Stage B preview lines: one GeoJSON source + a data-driven line layer
    * (colour/selected per feature) holding every candidate route at once -
@@ -481,7 +569,36 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       );
     }
 
-    for (const fixedCamera of mapVisibleCameras) {
+    // "+N" badge for a decluttered cluster's primary marker - the count of
+    // the other markers sharing that spot (geo/declutterMarkers.ts).
+    const makeClusterBadge = (extraCount: number) => {
+      const badge = document.createElement('span');
+      badge.textContent = `+${extraCount}`;
+      Object.assign(badge.style, {
+        position: 'absolute',
+        top: '-6px',
+        right: '-8px',
+        minWidth: '18px',
+        height: '18px',
+        padding: '0 3px',
+        boxSizing: 'border-box',
+        borderRadius: '999px',
+        background: colors.accent,
+        color: colors.background,
+        font: `700 11px ${typography.fontFamily.display}, Arial, sans-serif`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+      });
+      return badge;
+    };
+
+    for (const cluster of markerClusters) {
+      const primary = cluster.primary;
+      const extraCount = cluster.members.length - 1;
+      if (primary.kind === 'camera') {
+      const fixedCamera = primary.camera;
       const cameraMarker = document.createElement('div');
       cameraMarker.setAttribute('aria-label', `Fixed speed camera, ${fixedCamera.label}`);
       Object.assign(cameraMarker.style, {
@@ -526,14 +643,14 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       });
       cameraBody.append(cameraLens);
       cameraMarker.append(cameraBump, cameraBody);
+      if (extraCount > 0) cameraMarker.append(makeClusterBadge(extraCount));
       markersRef.current.push(
         new mapboxgl.Marker({ element: cameraMarker, anchor: 'bottom' })
           .setLngLat([fixedCamera.position.longitude, fixedCamera.position.latitude])
           .addTo(map)
       );
-    }
-
-    for (const alert of mapRenderableAlerts) {
+      } else {
+      const alert = primary.alert;
       const meta = alertTypeMeta(alert.type, alert.subtype);
       // Shape is the at-a-glance differentiator inside the police family
       // (all coolBlue): square + light bar = live sighting, rotated tag =
@@ -582,20 +699,26 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       marker.addEventListener('click', () => {
         map.easeTo({ center: [alert.longitude, alert.latitude], zoom: 16, duration: 600 });
       });
+      // position:relative so the cluster badge (and the police light-bar
+      // spans above) resolve against the marker itself.
+      marker.style.position = 'relative';
+      if (extraCount > 0) marker.append(makeClusterBadge(extraCount));
       const reportMarker = new mapboxgl.Marker({ element: marker, anchor: 'bottom' })
         .setLngLat([alert.longitude, alert.latitude])
         .setPopup(new mapboxgl.Popup({ offset: 22 }).setText(`${meta.label} · ${alert.street ?? alert.city ?? 'Location attached'} · Reported ${Math.max(0, Math.round((now - Date.parse(alert.publish_datetime_utc)) / 60000))} min ago${alert.description ? ` · ${alert.description}` : ''}`))
         .addTo(map);
       if (focusedAlert?.alert_id === alert.alert_id) reportMarker.togglePopup();
       markersRef.current.push(reportMarker);
+      }
     }
-  }, [mapRenderableAlerts, mapVisibleCameras, displayDriverPosition, focusedAlert?.alert_id, now]);
+  }, [markerClusters, displayDriverPosition, focusedAlert?.alert_id, now]);
 
   useEffect(() => {
     const map = mapRef.current;
-    // Route planning owns the camera - a focused alert must not steal the
-    // route-extent fit while the options panel is up.
-    if (!map || !focusedAlert || routeOptionsStatus !== 'idle') return;
+    // Route planning and navigation both own the camera - a focused alert
+    // must not steal the route-extent fit while the options panel is up,
+    // nor pull the camera off the driver mid-navigation.
+    if (!map || !focusedAlert || routeOptionsStatus !== 'idle' || isNavigating) return;
 
     if (focusTransitionTimeoutRef.current !== null) {
       clearTimeout(focusTransitionTimeoutRef.current);
@@ -621,7 +744,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     }
 
     map.flyTo({ center: [focusedAlert.longitude, focusedAlert.latitude], zoom: 16, pitch: 50, bearing: 0, duration: 500 });
-  }, [focusedAlert?.alert_id]);
+  }, [focusedAlert?.alert_id, routeOptionsStatus, isNavigating]);
 
   if (!env.mapboxAccessToken) {
     return (
@@ -640,7 +763,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
     >
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
       {showRangeOnMap ? (
-        <GlassView intensity={35} dim={0.45} pointerEvents="none" style={styles.rangeLabelBadge} accessible accessibilityLabel={`${formatCompactDistance(announceDistanceMeters)} notification range`}>
+        <GlassView intensity={35} dim={0.45} pointerEvents="none" style={[styles.rangeLabelBadge, { top: topOverlayBottom + spacing.xs }]} accessible accessibilityLabel={`${formatCompactDistance(announceDistanceMeters)} notification range`}>
           <Text style={styles.rangeLabelText}>
             {formatCompactDistance(announceDistanceMeters).replace(/km$/, ' KM').replace(/m$/, ' M')} NOTIFICATION AREA
           </Text>
@@ -652,20 +775,13 @@ export function RadarMap({ focusedAlert = null, now = Date.now() }: RadarMapProp
       <View style={styles.speedSignWrap} pointerEvents="none">
         <Speedometer />
       </View>
-      {/* Stage C's top turn chip - the same ManeuverBanner the native
-          adapter renders in the headingChip slot. Renders nothing until
-          an active route exists. */}
-      {isNavigating && activeRoute ? (
-        <ManeuverBanner
-          instruction={activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.instruction ?? 'Arriving at destination'}
-          distanceMeters={navDistanceToNextManeuverM}
-          onLayout={(event) => setManeuverBannerHeight(event.nativeEvent.layout.height)}
-        />
-      ) : null}
+      {/* Stage C's next-turn banner lives in DriveScreen's top overlay
+          panel now (flow layout in the ModeSwitch's slot while
+          navigating) - nothing map-internal to render here. */}
       <View
         style={[
           styles.mapControls,
-          isNavigating && activeRoute ? { top: 78 + maneuverBannerHeight + 10 } : null,
+          { top: topOverlayBottom + spacing.sm },
         ]}
       >
         <Pressable
@@ -761,7 +877,6 @@ const styles = StyleSheet.create({
   rangeLabelBadge: {
     position: 'absolute',
     alignSelf: 'center',
-    top: 78,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: radii.lg,
@@ -777,9 +892,9 @@ const styles = StyleSheet.create({
   mapControls: {
     position: 'absolute',
     right: spacing.sm,
-    // Below the collapsed top chrome (logo + mode switch + filter chip ≈
-    // 160) so the buttons never sit under DriveScreen's overlay panel.
-    top: 196,
+    // `top` comes from the measured topOverlayBottom prop at the usage
+    // site - it must sit below DriveScreen's top overlay panel, which is
+    // taller or shorter depending on mode (mode switch vs maneuver banner).
     flexDirection: 'column',
     gap: spacing.xs,
   },

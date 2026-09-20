@@ -15,6 +15,16 @@ import { dedupeNearbyAlerts } from './dedupeNearbyAlerts';
 import { sortBySeverity } from './severity';
 import type { AnnounceableAlert, DriverState } from './types';
 
+/** Nav-mode announce gate: proximity to the remaining route polyline
+ * (distanceToPolyline <= corridorMeters) instead of the cruising
+ * radius+bearing window. Shared by selectAnnounceableAlerts and
+ * selectSpeedCameraWarning so both speak only about what's on the drive
+ * ahead. */
+export interface RouteCorridor {
+  polyline: readonly GeoPoint[];
+  corridorMeters: number;
+}
+
 export interface AnnounceSettings {
   /** undefined means every category is enabled - Step 7's Settings screen passes its own. */
   enabledTypes?: ReadonlySet<WazeAlertType>;
@@ -27,7 +37,7 @@ export interface AnnounceSettings {
    * ANNOUNCE_MIN_DISTANCE_M floor and freshness/dedupe rules still apply on
    * top of this. undefined (cruising mode, or navigation with no route yet)
    * leaves the existing radius+bearing behaviour untouched. */
-  routeCorridor?: { polyline: readonly GeoPoint[]; corridorMeters: number };
+  routeCorridor?: RouteCorridor;
 }
 
 export const defaultAnnounceSettings: AnnounceSettings = {

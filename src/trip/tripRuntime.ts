@@ -21,7 +21,7 @@ import type { ManualReport, NearbyReport } from '../store/useTripStore';
 import { applyFetchResult, initialAlertsCache } from '../engine/cache';
 import { initialMovementState, updateMovementState } from '../engine/movement';
 import { planPoll } from '../engine/pollPlanner';
-import { selectAnnounceableAlerts } from '../engine/selectAlerts';
+import { selectAnnounceableAlerts, type RouteCorridor } from '../engine/selectAlerts';
 import { selectBriefingAlerts } from '../engine/selectBriefingAlerts';
 import {
   hasNearbyWarningTarget,
@@ -267,8 +267,12 @@ export function resetTripRuntime(): void {
   corridorAlerts = [];
   // Also start a fresh serialization chain - otherwise a call already
   // queued behind the old chain (from before this reset) would still run
-  // afterwards and write into the just-reset state.
+  // afterwards and write into the just-reset state. Clearing the queued
+  // ticket and bumping the generation means any .then still pending on
+  // the old chain drops out without running its stale pass.
   updateChain = Promise.resolve();
+  latestQueuedUpdate = null;
+  chainGeneration += 1;
   // Radar UI mirror (Step 11) - drop the previous trip's alerts so a
   // fresh trip doesn't briefly show stale markers before the first fetch.
   useTripStore.getState().setVisibleAlerts([]);
@@ -392,9 +396,76 @@ async function pollIfDue(driver: DriverState, nowMs: number, announceDistanceMet
  * time, in call order, regardless of which source triggered them.
  */
 let updateChain: Promise<void> = Promise.resolve();
+/** True while a serialized pass is mid-execution (its awaited speech and
+ * fetches included). A fix that arrives while this is set will run
+ * meaningfully late if it runs at all - so it's eligible for supersession
+ * by a newer fix (see latestQueuedUpdate). A fix arriving while the chain
+ * is idle starts within a microtask and is never worth dropping. */
+let passInFlight = false;
+/** Bumped by resetTripRuntime so a ticket still queued on the old chain
+ * can never run its pass into freshly-reset state once it drains. */
+let chainGeneration = 0;
 
-export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<void> {
-  const run = updateChain.then(() => handleDriverUpdateSerialized(driver, nowMs));
+export type DriverUpdateSource = 'foreground' | 'background';
+
+/**
+ * The newest fix that queued while a pass was in flight. When the running
+ * pass finishes, only this ticket runs a full pass - any older queued
+ * tickets were superseded while they waited and resolve immediately
+ * instead of replaying a stale position through the whole pipeline
+ * minutes late. This bounds the backlog to at most one pending fix -
+ * what keeps ETA, maneuver progress and reroute detection computed from
+ * where the driver actually is rather than where they were when the last
+ * utterance started. The position mirror is unaffected by dropping:
+ * every fix already wrote useTripStore synchronously at call time below.
+ */
+let latestQueuedUpdate: { driver: DriverState; nowMs: number; source: DriverUpdateSource } | null = null;
+
+export function handleDriverUpdate(
+  driver: DriverState,
+  nowMs: number,
+  source: DriverUpdateSource = 'foreground'
+): Promise<void> {
+  // Radar UI mirror (Step 11) - written at call time, NOT inside the
+  // serialized pass. A pass can sit behind seconds of awaited TTS/network
+  // work; if the marker/camera/snapped position only updated when the
+  // pass dequeued, the puck would freeze for the length of every
+  // utterance and then jump - the jagged, lagging marker seen on device.
+  // Read-only for every decision below (they all take `driver` directly),
+  // so writing it here carries no ordering hazard.
+  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg, driver.speedKmh);
+
+  const generation = chainGeneration;
+  const queuedWhileBusy = passInFlight;
+  const ticket = { driver, nowMs, source, droppable: queuedWhileBusy };
+  if (queuedWhileBusy) {
+    latestQueuedUpdate = ticket;
+  }
+
+  const run = updateChain.then(async () => {
+    if (generation !== chainGeneration) return; // trip reset while this fix was queued
+    if (ticket.droppable && ticket !== latestQueuedUpdate) {
+      // A newer fix already replaced this one while it was queued behind
+      // a running pass - replaying its stale position would only drag the
+      // engine backwards.
+      console.log(`[trip] dropped stale driver update (src=${ticket.source}, superseded while queued)`);
+      return;
+    }
+    if (ticket === latestQueuedUpdate) latestQueuedUpdate = null;
+    passInFlight = true;
+    const startedAtMs = Date.now();
+    try {
+      await handleDriverUpdateSerialized(ticket.driver, ticket.nowMs);
+    } finally {
+      passInFlight = false;
+      const tookMs = Date.now() - startedAtMs;
+      if (tookMs >= SLOW_UPDATE_PASS_MS) {
+        console.log(
+          `[trip] driver-update pass took ${tookMs}ms (src=${ticket.source}) - speech/network serialization`
+        );
+      }
+    }
+  });
   // Swallow here so a rejected update doesn't poison the chain for
   // whatever call comes after it - handleDriverUpdateSerialized already
   // catches its own fetch/speech failures, so a rejection reaching this
@@ -402,6 +473,12 @@ export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<
   updateChain = run.catch(() => {});
   return run;
 }
+
+/** Passes slower than this get a log line - on device that almost always
+ * means an awaited TTS utterance or a slow alert fetch was holding the
+ * chain (the real-time evidence for queue lag, next to the
+ * '[trip] dropped stale driver update' lines). */
+const SLOW_UPDATE_PASS_MS = 1500;
 
 /**
  * Speed-camera / corroborated-police-report warning (Step 12 Part 4): fires
@@ -423,16 +500,20 @@ export function handleDriverUpdate(driver: DriverState, nowMs: number): Promise<
  * speakAsync, bypassing the announcer's priority queue
  * (submitCandidates/tick) entirely - that queue's 20s MIN_ANNOUNCEMENT_GAP_MS
  * and distance-based dedupe don't fit this feature's own fixed 500m/200m
- * checkpoints (see engine/selectSpeedCameraWarning.ts).
+ * checkpoints (see engine/selectSpeedCameraWarning.ts). In nav mode the
+ * same route corridor that gates hazard announcements also gates these
+ * targets, so a camera or police report on a nearby-but-off-route street
+ * doesn't warn mid-navigation.
  */
 async function checkSpeedCameraWarning(
   driver: DriverState,
   nowMs: number,
-  settings: ReturnType<typeof useSettingsStore.getState>
+  settings: ReturnType<typeof useSettingsStore.getState>,
+  routeCorridor: RouteCorridor | undefined
 ): Promise<void> {
   if (!settings.alertTypeFilters.fixed_camera) return;
   const cameras = getActiveFixedCameras();
-  if (!hasNearbyWarningTarget(driver, cameras, alertsCache.alerts, nowMs)) return;
+  if (!hasNearbyWarningTarget(driver, cameras, alertsCache.alerts, nowMs, routeCorridor)) return;
 
   prefetchSpeedLimit(driver.position).catch(() => {});
   const speedLimitKmh = getCachedSpeedLimit(driver.position) ?? null;
@@ -444,6 +525,7 @@ async function checkSpeedCameraWarning(
     alerts: alertsCache.alerts,
     firedCheckpoints: speedWarningFiredCheckpoints,
     nowMs,
+    routeCorridor,
   });
   if (!warning) return;
 
@@ -474,9 +556,8 @@ async function checkSpeedCameraWarning(
  * through handleDriverUpdate() above, which serializes it.
  */
 async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number): Promise<void> {
-  // Radar UI mirror (Step 11) - read-only, doesn't affect any decision below.
-  useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg, driver.speedKmh);
-
+  // The position mirror was already written synchronously by
+  // handleDriverUpdate() before this fix queued - nothing to redo here.
   const settings = useSettingsStore.getState();
   await pollIfDue(driver, nowMs, settings.announceDistanceMeters);
 
@@ -529,7 +610,7 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   );
   announcerState = result.state;
 
-  await checkSpeedCameraWarning(driver, nowMs, settings);
+  await checkSpeedCameraWarning(driver, nowMs, settings, routeCorridor);
 }
 
 /**

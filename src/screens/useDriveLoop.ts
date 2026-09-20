@@ -113,6 +113,9 @@ export function useDriveLoop(): void {
     function handOffToLive(briefingDriver: DriverState) {
       if (cancelled) return;
       phaseRef.current = 'live';
+      console.log(
+        `[drive] live - foreground watch active${backgroundGranted ? ' + background location task' : ' (background denied)'}`
+      );
 
       const pending = latestPendingLocationRef.current;
       latestPendingLocationRef.current = null;
@@ -178,7 +181,7 @@ export function useDriveLoop(): void {
         // phase === 'live'
         const driver = toDriverState(toRawLocationSample(location), driverRef.current);
         driverRef.current = driver;
-        void handleDriverUpdate(driver, nowMs);
+        void handleDriverUpdate(driver, nowMs, 'foreground');
       });
     })();
 

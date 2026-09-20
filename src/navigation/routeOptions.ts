@@ -59,6 +59,11 @@ export async function loadRouteOptions(
 ): Promise<void> {
   const generation = ++routeOptionsGeneration;
   useRouteOptionsStore.getState().startLoading({ destination, destinationLabel });
+  // By design this fires TWO Directions calls for the same
+  // origin/destination (the second adds exclude=motorway for SIDE
+  // STREETS) - logged explicitly so a network trace showing the pair is
+  // recognised as the planning fan-out, not an accidental duplicate.
+  console.log('[routes] planning: directions x2 (default + exclude=motorway)');
 
   try {
     const hazards = getHazardsForRouteScoring(origin, Date.now());
@@ -85,6 +90,7 @@ export async function loadRouteOptions(
       ...(sideStreets ? [toRouteOption('sidestreets', sideStreets, hazards)] : []),
     ];
     useRouteOptionsStore.getState().setReady(options);
+    console.log(`[routes] ready: ${options.map((o) => o.id).join(', ')}`);
   } catch (error) {
     if (generation !== routeOptionsGeneration) return;
     console.warn('[navigate] route options failed', error);
@@ -121,6 +127,7 @@ export function confirmRouteSelection(): void {
   const option = options.find((candidate) => candidate.id === selectedId) ?? options[0];
   if (!option || !destination) return;
 
+  console.log(`[routes] GO confirmed: ${option.id} - handing fetched route to navigation (no refetch)`);
   startNavigationWithRoute({
     destination,
     destinationLabel,

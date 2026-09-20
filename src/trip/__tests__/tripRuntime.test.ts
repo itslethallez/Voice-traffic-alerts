@@ -344,6 +344,53 @@ describe('handleDriverUpdate', () => {
     expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
   });
 
+  it('drops a queued update superseded by a newer fix instead of replaying it', async () => {
+    const now = Date.now();
+    let resolveFirstFetch: (result: ReturnType<typeof ok>) => void = () => {};
+    const firstFetchGate = new Promise<ReturnType<typeof ok>>((resolve) => {
+      resolveFirstFetch = resolve;
+    });
+
+    fetchAlertsForBoundingBox
+      .mockImplementationOnce(() => firstFetchGate)
+      .mockResolvedValue(ok([]));
+
+    const secondDriver: DriverState = { ...driver, position: destinationPoint(driver.position, 20, 0) };
+    const thirdDriver: DriverState = { ...driver, position: destinationPoint(driver.position, 40, 0) };
+
+    const first = handleDriverUpdate(driver, now);
+    // Let the first fix's pass actually start (it parks on the gated
+    // fetch) - only fixes queued while a pass is in flight are
+    // supersedeable.
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(1);
+
+    // Second queues behind the running pass and third supersedes it
+    // before the chain reaches it - simulating fixes arriving faster
+    // than a speech/network-bound pass drains them.
+    const second = handleDriverUpdate(secondDriver, now + MOVING_POLL_INTERVAL_MS);
+    const third = handleDriverUpdate(thirdDriver, now + MOVING_POLL_INTERVAL_MS * 2);
+
+    resolveFirstFetch(ok([]));
+    await Promise.all([first, second, third]);
+
+    // Second never ran a pass: only first and third polled. If the queue
+    // had replayed every fix there would be three fetches.
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(2);
+
+    // The position mirror still reflects every fix synchronously -
+    // including the superseded one - so the marker never waits on the
+    // serialized pass.
+    expect(setDriverPosition).toHaveBeenCalledTimes(3);
+    expect(setDriverPosition).toHaveBeenLastCalledWith(
+      thirdDriver.position,
+      thirdDriver.headingDeg,
+      thirdDriver.speedKmh
+    );
+  });
+
   it('does not leave a fresh update stuck behind one still queued from before a reset', async () => {
     const now = Date.now();
     let resolveStaleFetch: (result: ReturnType<typeof ok>) => void = () => {};
@@ -356,9 +403,14 @@ describe('handleDriverUpdate', () => {
       .mockResolvedValueOnce(ok([]));
 
     // Kick off an update but never let its fetch resolve yet - simulates
-    // a call still queued on the serialization chain (e.g. a slow
-    // in-flight fetch) right as a new trip starts and resets the runtime.
+    // a call still on the serialization chain (e.g. a slow in-flight
+    // fetch) right as a new trip starts and resets the runtime. Let its
+    // pass actually start first so it's parked on the gated fetch.
     const stale = handleDriverUpdate(driver, now);
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+    expect(fetchAlertsForBoundingBox).toHaveBeenCalledTimes(1);
 
     resetTripRuntime();
 

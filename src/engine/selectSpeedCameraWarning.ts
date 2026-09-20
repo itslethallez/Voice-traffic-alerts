@@ -3,7 +3,9 @@ import type { FixedSpeedCamera } from '../data/fixedSpeedCameras';
 import { bearingBetween, bearingDifference } from '../geo/bearing';
 import { isBearingAnnounceable, isFreshEnoughToAnnounce } from '../geo/announceWindow';
 import { haversineDistance } from '../geo/distance';
+import { distanceToPolyline } from '../geo/routePolyline';
 import type { GeoPoint } from '../geo/types';
+import type { RouteCorridor } from './selectAlerts';
 import type { DriverState } from './types';
 
 export type WarningTargetKind = 'camera' | 'report';
@@ -61,15 +63,33 @@ function gatherTargets(cameras: FixedSpeedCamera[], alerts: WazeAlert[]): Warnin
  * exclude this feature's own 200m checkpoint. A corroborated report must
  * also still be fresh (the existing 30-minute announce-window freshness
  * check) - a camera has no such check, since it's permanent infrastructure.
+ *
+ * In nav mode (routeCorridor set) the bearing cone is replaced by
+ * proximity to the remaining route - same substitution
+ * selectAnnounceableAlerts makes for hazard announcements - so a camera
+ * or police report on a nearby-but-off-route street doesn't warn
+ * mid-navigation. The 500m outer checkpoint still applies on top.
  */
-function isGeometricallyEligible(driver: DriverState, target: WarningTarget, alerts: WazeAlert[], nowMs: number): boolean {
+function isGeometricallyEligible(
+  driver: DriverState,
+  target: WarningTarget,
+  alerts: WazeAlert[],
+  nowMs: number,
+  routeCorridor: RouteCorridor | undefined
+): boolean {
   const distanceMeters = haversineDistance(driver.position, target.position);
   const outerCheckpoint = SPEED_WARNING_CHECKPOINTS_M[0];
   if (distanceMeters > outerCheckpoint) return false;
 
-  const bearingDeg = bearingBetween(driver.position, target.position);
-  const bearingDiffDeg = bearingDifference(driver.headingDeg, bearingDeg);
-  if (!isBearingAnnounceable(bearingDiffDeg)) return false;
+  if (routeCorridor) {
+    if (distanceToPolyline(target.position, routeCorridor.polyline) > routeCorridor.corridorMeters) {
+      return false;
+    }
+  } else {
+    const bearingDeg = bearingBetween(driver.position, target.position);
+    const bearingDiffDeg = bearingDifference(driver.headingDeg, bearingDeg);
+    if (!isBearingAnnounceable(bearingDiffDeg)) return false;
+  }
 
   if (target.kind === 'report') {
     const alert = alerts.find((a) => a.alert_id === target.id);
@@ -91,9 +111,12 @@ export function hasNearbyWarningTarget(
   driver: DriverState,
   cameras: FixedSpeedCamera[],
   alerts: WazeAlert[],
-  nowMs: number
+  nowMs: number,
+  routeCorridor?: RouteCorridor
 ): boolean {
-  return gatherTargets(cameras, alerts).some((target) => isGeometricallyEligible(driver, target, alerts, nowMs));
+  return gatherTargets(cameras, alerts).some((target) =>
+    isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor)
+  );
 }
 
 export interface SelectSpeedCameraWarningInput {
@@ -106,6 +129,9 @@ export interface SelectSpeedCameraWarningInput {
   /** Which checkpoints have already fired for which target id this trip. */
   firedCheckpoints: ReadonlyMap<string, ReadonlySet<SpeedWarningCheckpoint>>;
   nowMs: number;
+  /** Nav mode only: proximity to the remaining route replaces the
+   * bearing-of-travel cone - see isGeometricallyEligible. */
+  routeCorridor?: RouteCorridor;
 }
 
 export interface SpeedCameraWarningResult {
@@ -137,12 +163,12 @@ export interface SpeedCameraWarningResult {
  * rather than staying silent because a lookup happened to fail.
  */
 export function selectSpeedCameraWarning(input: SelectSpeedCameraWarningInput): SpeedCameraWarningResult | null {
-  const { driver, speedLimitKmh, cameras, alerts, firedCheckpoints, nowMs } = input;
+  const { driver, speedLimitKmh, cameras, alerts, firedCheckpoints, nowMs, routeCorridor } = input;
   if (speedLimitKmh !== null && driver.speedKmh < speedLimitKmh + SPEED_WARNING_BUFFER_KMH) return null;
   const confirmedSpeeding = speedLimitKmh !== null;
 
   const targets = gatherTargets(cameras, alerts).filter((target) =>
-    isGeometricallyEligible(driver, target, alerts, nowMs)
+    isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor)
   );
 
   let best: SpeedCameraWarningResult | null = null;

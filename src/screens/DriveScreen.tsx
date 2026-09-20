@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Settings as SettingsIcon, SlidersHorizontal } from 'lucide-react-native';
 import type { WazeAlert } from '../api/waze/types';
 import type { SortedFacebookNotification } from '../notifications/sortFacebookNotification';
@@ -24,10 +25,12 @@ import {
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { useCommunityReportStore } from '../store/useCommunityReportStore';
+import { useNavigationStore } from '../store/useNavigationStore';
 import { useRouteOptionsStore } from '../store/useRouteOptionsStore';
 import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
 import { formatRelativeTime } from './formatRelativeTime';
 import { formatCompactDistance } from './radar/formatCompactDistance';
+import { ManeuverBanner } from './radar/ManeuverBanner';
 import { ModeSwitch } from './radar/ModeSwitch';
 import { NavigationStatusBar } from './radar/NavigationStatusBar';
 import { RadarMap } from './radar/RadarMap';
@@ -121,6 +124,21 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
    * showing route previews and the options panel replaces the alerts
    * sheet/report bar until the plan is picked or cancelled. */
   const routeOptionsActive = useRouteOptionsStore((state) => state.status !== 'idle');
+  /** While navigating, §8's "large next-turn instruction" replaces the
+   * Cruising chrome (mode switch + filters) as the dominant top element -
+   * rendered inside this panel so it can never overlap the way the old
+   * absolute-positioned banner did. */
+  const navigationStatus = useNavigationStore((state) => state.status);
+  const activeRoute = useNavigationStore((state) => state.activeRoute);
+  const navCurrentStepIndex = useNavigationStore((state) => state.currentStepIndex);
+  const navDistanceToNextManeuverM = useNavigationStore((state) => state.distanceToNextManeuverM);
+  const isNavigating = navigationStatus === 'navigating' || navigationStatus === 'rerouting';
+  const insets = useSafeAreaInsets();
+  /** Measured height of this screen's top overlay chrome - passed to
+   * RadarMap so its absolute-positioned elements (controls column,
+   * heading chip, range badge) start below it instead of a fixed offset
+   * that drifts when the chrome's contents change. */
+  const [topChromeHeight, setTopChromeHeight] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   /** NavigationStatusBar's actually-rendered height (0 when status is
    * 'idle' and it renders nothing) - passed to RadarMap so the tapped-marker
@@ -202,9 +220,11 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
         now={now}
         minimal
         navStatusBarHeight={navStatusBarHeight}
+        topOverlayBottom={insets.top + topChromeHeight}
       />
 
       <MapOverlayPanel edge="top" scrim>
+        <View onLayout={(event) => setTopChromeHeight(event.nativeEvent.layout.height)}>
         <Stack gap="sm">
           <Row justify="space-between" align="center">
             {/* Mockup header is [menu][centred logo][gear] - we have no
@@ -233,55 +253,68 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
             ) : null}
           </Row>
 
-          {/* §8's compact mode switch: Cruising is the active segment on
-              this screen; Navigate is the plan-a-trip entry (the old
-              top-right search button's job, now where the mockups put it). */}
-          <ModeSwitch onNavigatePress={onOpenSearch} />
+          {isNavigating && activeRoute ? (
+            <ManeuverBanner
+              instruction={
+                activeRoute.steps[navCurrentStepIndex + 1]?.maneuver.instruction ??
+                'Arriving at destination'
+              }
+              distanceMeters={navDistanceToNextManeuverM}
+              nextInstruction={activeRoute.steps[navCurrentStepIndex + 2]?.maneuver.instruction ?? null}
+            />
+          ) : (
+            <>
+              {/* §8's compact mode switch: Cruising is the active segment on
+                  this screen; Navigate is the plan-a-trip entry (the old
+                  top-right search button's job, now where the mockups put it). */}
+              <ModeSwitch onNavigatePress={onOpenSearch} />
 
-          <Row justify="flex-end">
-            <Pressable
-              onPress={() => setFiltersExpanded((current) => !current)}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: filtersExpanded }}
-              accessibilityLabel={filtersExpanded ? 'Hide alert filters' : 'Show alert filters'}
-              accessibilityHint="Toggles the alert category filter row"
-            >
-              <GlassView
-                intensity={35}
-                dim={0.4}
-                style={[styles.filterChip, filtersExpanded && styles.filterChipActive]}
-              >
-                <SlidersHorizontal size={14} strokeWidth={2.2} color={colors.accent} />
-                <Text style={styles.filterChipLabel}>FILTERS</Text>
-              </GlassView>
-            </Pressable>
-          </Row>
-
-          {filtersExpanded ? (
-            <GlassView intensity={40} dim={0.45} style={styles.filterCard}>
-              <Row gap="xs" wrap>
-                {ALERT_FILTER_CATEGORIES.map((category) => {
-                  const enabled = alertTypeFilters[category];
-                  return (
-                    <Pressable
-                      key={category}
-                      onPress={() => toggleAlertTypeFilter(category)}
-                      accessibilityRole="button"
-                      accessibilityState={{ checked: enabled }}
-                      accessibilityLabel={`${category} alerts`}
-                      accessibilityHint={
-                        enabled
-                          ? 'Hide this category from the map, the nearby list and announcements'
-                          : 'Show this category on the map, the nearby list and announcements'
-                      }
-                    >
-                      <AlertPill type={category} size="sm" enabled={enabled} />
-                    </Pressable>
-                  );
-                })}
+              <Row justify="flex-end">
+                <Pressable
+                  onPress={() => setFiltersExpanded((current) => !current)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: filtersExpanded }}
+                  accessibilityLabel={filtersExpanded ? 'Hide alert filters' : 'Show alert filters'}
+                  accessibilityHint="Toggles the alert category filter row"
+                >
+                  <GlassView
+                    intensity={35}
+                    dim={0.4}
+                    style={[styles.filterChip, filtersExpanded && styles.filterChipActive]}
+                  >
+                    <SlidersHorizontal size={14} strokeWidth={2.2} color={colors.accent} />
+                    <Text style={styles.filterChipLabel}>FILTERS</Text>
+                  </GlassView>
+                </Pressable>
               </Row>
-            </GlassView>
-          ) : null}
+
+              {filtersExpanded ? (
+                <GlassView intensity={40} dim={0.45} style={styles.filterCard}>
+                  <Row gap="xs" wrap>
+                    {ALERT_FILTER_CATEGORIES.map((category) => {
+                      const enabled = alertTypeFilters[category];
+                      return (
+                        <Pressable
+                          key={category}
+                          onPress={() => toggleAlertTypeFilter(category)}
+                          accessibilityRole="button"
+                          accessibilityState={{ checked: enabled }}
+                          accessibilityLabel={`${category} alerts`}
+                          accessibilityHint={
+                            enabled
+                              ? 'Hide this category from the map, the nearby list and announcements'
+                              : 'Show this category on the map, the nearby list and announcements'
+                          }
+                        >
+                          <AlertPill type={category} size="sm" enabled={enabled} />
+                        </Pressable>
+                      );
+                    })}
+                  </Row>
+                </GlassView>
+              ) : null}
+            </>
+          )}
 
           {bannerMessage ? (
             <GlassView intensity={40} dim={0.5} style={styles.glassCard}>
@@ -296,6 +329,7 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
             />
           ) : null}
         </Stack>
+        </View>
       </MapOverlayPanel>
 
       {routeOptionsActive ? (
