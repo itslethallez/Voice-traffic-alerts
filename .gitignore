@@ -51,3 +51,9 @@ dist-android/
 
 # spike token - never commit
 _spike/token.js
+
+# local screenshot/probe scratch output
+/_*.png
+/_*.js
+/.tmp-*
+/*.png
