@@ -4,10 +4,18 @@ import type { GeoPoint } from '../../geo/types';
 import { defaultSettingsValues } from '../../store/settingsDefaults';
 import { useNavigationStore, type NavigationRoute } from '../../store/useNavigationStore';
 import {
+  REROUTE_FAILED_BANNER,
+  REROUTE_FAILED_NOTICE,
+  REROUTING_NOTICE,
   startNavigationWithRoute,
   stopNavigation,
   updateNavigationForDriverUpdate,
 } from '../navigationRuntime';
+
+const pulseHaptic = jest.fn();
+jest.mock('../../feedback/haptics', () => ({
+  pulseHaptic: (pattern: number[]) => pulseHaptic(pattern),
+}));
 
 const fetchDirections = jest.fn();
 jest.mock('../../api/mapbox/client', () => ({
@@ -166,13 +174,99 @@ describe('updateNavigationForDriverUpdate', () => {
     expect(state.destination).toBeNull();
   });
 
-  it('skips arrival speech when master-muted but still ends navigation', async () => {
+  it('gives a haptic arrival cue instead of speech when master-muted, and still ends navigation', async () => {
     go();
     await updateNavigationForDriverUpdate(driverAt(TURN), Date.now(), { masterMute: true });
     await updateNavigationForDriverUpdate(driverAt(ARRIVE), Date.now(), { masterMute: true });
 
     expect(speakAsync).not.toHaveBeenCalled();
+    expect(pulseHaptic).toHaveBeenCalledTimes(1);
     expect(useNavigationStore.getState().status).toBe('idle');
+  });
+});
+
+describe('rerouting', () => {
+  /** ~`meters` east of `point`. */
+  const eastOf = (point: GeoPoint, meters: number): GeoPoint => ({
+    latitude: point.latitude,
+    longitude: point.longitude + meters / (111_320 * Math.cos((point.latitude * Math.PI) / 180)),
+  });
+  const flush = async () => {
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  };
+  const T0 = 1_800_000_000_000;
+  const at = (position: GeoPoint, nowMs: number, masterMute = false) =>
+    updateNavigationForDriverUpdate(driverAt(position), nowMs, { masterMute });
+
+  /** On route 600m before the turn, then 100m off it for longer than the
+   * sustained off-route window - the second off-route fix fires the reroute. */
+  const driveOffRoute = async (masterMute = false, startMs = T0) => {
+    const offRoute = eastOf(northOf(TURN, 500), 100);
+    await at(offRoute, startMs + 1_000, masterMute);
+    await at(offRoute, startMs + 12_000, masterMute);
+    await flush();
+  };
+
+  beforeEach(() => {
+    startNavigationWithRoute({
+      destination: ARRIVE,
+      destinationLabel: 'Arrival Ave',
+      routeType: 'quickest',
+      route: makeRoute(),
+    });
+    fetchDirections.mockRejectedValue(new Error('offline'));
+  });
+
+  it('speaks "Rerouting" and, when the reroute fails, a clear failure notice', async () => {
+    await at(northOf(TURN, 600), T0);
+    await driveOffRoute();
+
+    const spoken = speakAsync.mock.calls.map(([text]) => text);
+    expect(spoken).toContain(REROUTING_NOTICE);
+    expect(spoken).toContain(REROUTE_FAILED_NOTICE);
+    expect(fetchDirections).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the last known progress and ETA after a failed reroute instead of resetting to step 0', async () => {
+    await at(TURN, T0); // step 1 - the reset bug would put this back to step 0
+    const offRoute = eastOf(northOf(ARRIVE, 500), 100);
+    await at(offRoute, T0 + 1_000);
+    await at(offRoute, T0 + 12_000);
+    await flush();
+
+    const state = useNavigationStore.getState();
+    expect(state.status).toBe('navigating');
+    expect(state.errorMessage).toBe(REROUTE_FAILED_BANNER);
+    expect(state.currentStepIndex).toBe(1);
+    expect(state.remainingDistanceM).toBeLessThan(700);
+    expect(state.etaMs).toBeLessThan(T0 + 12_000 + 60_000);
+  });
+
+  it('announces a failure once per off-route episode, not on every retry', async () => {
+    await at(northOf(TURN, 600), T0);
+    await driveOffRoute();
+    await driveOffRoute(false, T0 + 20_000);
+
+    expect(fetchDirections).toHaveBeenCalledTimes(2);
+    const failures = speakAsync.mock.calls.filter(([text]) => text === REROUTE_FAILED_NOTICE);
+    expect(failures).toHaveLength(1);
+  });
+
+  it('clears the failure banner once the driver is back on the previous route', async () => {
+    await at(northOf(TURN, 600), T0);
+    await driveOffRoute();
+    await at(northOf(TURN, 400), T0 + 20_000);
+
+    expect(useNavigationStore.getState().errorMessage).toBeNull();
+  });
+
+  it('falls back to a haptic pulse for a failed reroute when master-muted', async () => {
+    await at(northOf(TURN, 600), T0, true);
+    await driveOffRoute(true);
+
+    expect(speakAsync).not.toHaveBeenCalled();
+    expect(pulseHaptic).toHaveBeenCalledTimes(1);
+    expect(useNavigationStore.getState().errorMessage).toBe(REROUTE_FAILED_BANNER);
   });
 });
 

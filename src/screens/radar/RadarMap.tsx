@@ -12,7 +12,6 @@ import { haversineDistance, midpoint } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import { awarenessCircleCoordinates, awarenessZoomLevel } from '../../geo/mapScale';
 import { nearestAlertToDriver } from '../../geo/nearestAlert';
-import { nearestPointOnPolyline } from '../../geo/routePolyline';
 import { announcementLocation, resolveAreaName } from '../../speech/formatAnnouncement';
 import { visibleManualReportAlerts } from '../../store/manualReportAlert';
 import { visibleNearbyReportAlerts } from '../../store/nearbyReportAlert';
@@ -42,7 +41,6 @@ import type {
 } from '@rnmapbox/maps';
 import { GlassView } from '../../components/base/GlassView';
 import { ClosestReportPanel } from './ClosestReportPanel';
-import { DriverMark } from './DriverMark';
 import { formatCompactDistance } from './formatCompactDistance';
 import { PoliceLightBar } from './PoliceLightBar';
 import { ROUTE_OPTION_COLORS } from './routeOptionPresentation';
@@ -89,6 +87,9 @@ const AWARENESS_CIRCLE_SEGMENTS = 48;
  * awareness/nearest views, matching a normal turn-by-turn app's driving
  * view rather than this app's usual wide situational-awareness framing. */
 const NAVIGATING_ZOOM = 17;
+const DRIVER_PUCK_IMAGE = 'shotgun-driver-car';
+// Raster of driverCarGlyph's SVG (teal accent, charcoal glass) at 1x/2x/3x.
+const DRIVER_PUCK_SOURCE = require('../../../assets/driver-car.png');
 /**
  * §7 Navigate personality: the turn-by-turn camera sits lower and more
  * forward-tilted than Cruising's 50 degrees, and keeps the driver anchored
@@ -503,25 +504,6 @@ export function RadarMap({
     [routeOptions]
   );
 
-  /**
-   * The on-map driver position. While navigating, the marker (and the
-   * camera that follows it) rides the route polyline via
-   * nearestPointOnPolyline - a display-only snap so GPS jitter doesn't
-   * jitter the puck across the road. The engine still sees the raw fix:
-   * navigationRuntime's step progress and off-route deviation checks run
-   * on driverPosition itself, and this is deliberately not map matching -
-   * an off-route position gets dragged onto the line visually until the
-   * runtime's deviation check reroutes.
-   */
-  const displayDriverPosition = useMemo(
-    () =>
-      isNavigating && activeRoute && driverPosition
-        ? nearestPointOnPolyline(driverPosition, activeRoute.polyline)
-        : driverPosition,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isNavigating, activeRoute, driverPosition?.latitude, driverPosition?.longitude]
-  );
-
   /** Navigation starting (GO on the options panel, or a future direct
    * startNavigation call) re-engages driver-follow: route planning leaves
    * mapPresentation 'free' so GPS ticks couldn't recentre mid-preview, and
@@ -709,18 +691,16 @@ export function RadarMap({
    * imperative bounds-fit has completed; otherwise its child effect can jump
    * straight to zoom 16 before RadarMap establishes driver-to-target context. */
   const cameraFocus = displayFocus && settledFocusKey === focusKey ? displayFocus : null;
+  /** Navigate hands the camera to Mapbox's native follow mode, driven by the
+   * same native location feed as the LocationPuck - one timing source, so
+   * the puck and camera can't drift apart the way a JS-driven easeTo per
+   * Expo fix did. Any user gesture flips presentation to 'free', which
+   * releases follow; recenter re-engages it. */
+  const nativeFollow = isNavigating && cameraFollowsPresentation && !cameraFocus;
   const cameraCenterCoordinate = useMemo<[number, number] | undefined>(() => {
     if (!cameraFollowsPresentation) return undefined;
     if (cameraFocus) return [cameraFocus.longitude, cameraFocus.latitude];
-    // Navigating always centers exactly on the driver - unlike 'nearest'
-    // mode's midpoint-with-the-closest-alert framing, a turn-by-turn view
-    // needs to stay centered on the driver themselves, not drift toward
-    // whatever hazard happens to be nearby. Centers on the snapped
-    // (route-riding) position so the camera glides along the line rather
-    // than wobbling with raw GPS.
-    if (isNavigating && displayDriverPosition) {
-      return [displayDriverPosition.longitude, displayDriverPosition.latitude];
-    }
+    if (nativeFollow) return undefined;
     if (mapPresentation === 'nearest' && driverPosition && nearestMapAlert) {
       const center = midpoint(driverPosition, nearestMapAlert);
       return [center.longitude, center.latitude];
@@ -731,12 +711,10 @@ export function RadarMap({
     cameraFollowsPresentation,
     cameraFocus?.longitude,
     cameraFocus?.latitude,
-    isNavigating,
+    nativeFollow,
     mapPresentation,
     driverPosition?.longitude,
     driverPosition?.latitude,
-    displayDriverPosition?.longitude,
-    displayDriverPosition?.latitude,
     nearestMapAlert?.longitude,
     nearestMapAlert?.latitude,
   ]);
@@ -754,7 +732,7 @@ export function RadarMap({
   // always follows the driver's heading (heading-up) regardless of
   // mapPresentation - a turn-by-turn view has to rotate with the driver,
   // not sit north-up the way range mode deliberately does.
-  const cameraHeading = !cameraFollowsPresentation
+  const cameraHeading = !cameraFollowsPresentation || nativeFollow
     ? undefined
     : cameraFocus
       ? 0
@@ -998,8 +976,19 @@ export function RadarMap({
           centerCoordinate={cameraCenterCoordinate}
           heading={cameraHeading}
           pitch={isNavigating ? NAVIGATING_PITCH : CRUISING_PITCH}
-          zoomLevel={cameraFollowsPresentation ? cameraZoomLevel : undefined}
+          zoomLevel={cameraFollowsPresentation && !nativeFollow ? cameraZoomLevel : undefined}
           padding={cameraPadding}
+          followUserLocation={nativeFollow}
+          followUserMode={Mapbox.UserTrackingMode.FollowWithCourse}
+          followZoomLevel={NAVIGATING_ZOOM + zoomAdjustment}
+          followPitch={NAVIGATING_PITCH}
+          followPadding={cameraPadding}
+          onUserTrackingModeChange={(event) => {
+            console.log(
+              `[map] native follow=${event.nativeEvent.payload.followUserLocation} ` +
+                `mode=${event.nativeEvent.payload.followUserMode ?? 'none'}`
+            );
+          }}
           animationMode="easeTo"
           animationDuration={600}
         />
@@ -1092,15 +1081,17 @@ export function RadarMap({
           </Mapbox.ShapeSource>
         ) : null}
 
-        {displayDriverPosition ? (
-          <Mapbox.MarkerView
-            id="driver-marker"
-            coordinate={[displayDriverPosition.longitude, displayDriverPosition.latitude]}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <DriverMark />
-          </Mapbox.MarkerView>
-        ) : null}
+        {/* Mapbox's native puck rides the native location feed, the same
+            one native follow mode tracks. Not snapped to the route line -
+            navigationRuntime still runs step/ETA/off-route on Expo fixes. */}
+        <Mapbox.Images images={{ [DRIVER_PUCK_IMAGE]: DRIVER_PUCK_SOURCE }} />
+        <Mapbox.LocationPuck
+          topImage={DRIVER_PUCK_IMAGE}
+          puckBearing="course"
+          puckBearingEnabled
+          pulsing={{ isEnabled: false }}
+          visible={driverPosition !== null}
+        />
 
         {markerClusters.map((cluster) => {
           const primary = cluster.primary;
@@ -1184,18 +1175,15 @@ export function RadarMap({
             setZoomAdjustment(0);
             // 'nearest', not 'range' - recentering returns to the app's
             // default driver-centered view; the SHOW RANGE ON MAP setting
-            // (and its ring) stays untouched either way. While navigating
-            // the target is the nav view itself - snapped position at
-            // turn-by-turn zoom, not the cruising awareness framing.
+            // (and its ring) stays untouched either way.
             setMapPresentation('nearest');
+            // While navigating, 'nearest' re-engages native follow itself.
+            if (isNavigating) return;
             cameraRef.current?.setCamera({
-              centerCoordinate: [
-                (displayDriverPosition ?? driverPosition).longitude,
-                (displayDriverPosition ?? driverPosition).latitude,
-              ],
-              zoomLevel: isNavigating ? NAVIGATING_ZOOM : awarenessZoom,
+              centerCoordinate: [driverPosition.longitude, driverPosition.latitude],
+              zoomLevel: awarenessZoom,
               heading: driverHeadingDeg,
-              pitch: isNavigating ? NAVIGATING_PITCH : CRUISING_PITCH,
+              pitch: CRUISING_PITCH,
               animationMode: 'easeTo',
               animationDuration: 650,
             });

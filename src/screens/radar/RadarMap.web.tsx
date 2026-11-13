@@ -582,7 +582,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
     markersRef.current = [];
 
     if (displayDriverPosition) {
-      // §7's vehicle marker: the same DRIVER_CAR_SVG the native DriverMark
+      // §7's vehicle marker: the same DRIVER_CAR_SVG the native puck PNG
       // renders - top-down car in an accent halo. Still points up: the
       // camera is heading-up, so up = direction of travel.
       const driver = document.createElement('div');

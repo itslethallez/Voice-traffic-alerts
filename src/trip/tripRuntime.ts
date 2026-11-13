@@ -256,6 +256,8 @@ async function refreshCorridorAlerts(driver: DriverState): Promise<void> {
 
 /** Call when a new trip starts (e.g. app cold start) to clear all of the above. */
 export function resetTripRuntime(): void {
+  lastForegroundFixAtMs = null;
+  ignoringBackgroundFixes = false;
   announcerState = createInitialAnnouncerState();
   movementState = initialMovementState;
   speedState = initialSpeedState;
@@ -408,6 +410,14 @@ let chainGeneration = 0;
 
 export type DriverUpdateSource = 'foreground' | 'background';
 
+/** While the foreground watch has delivered a fix this recently, background
+ * task fixes are ignored. They're Balanced-accuracy and up to 15s stale on
+ * arrival; interleaved with 3s High-accuracy fixes they drag the puck,
+ * step progress and ETA backwards and forwards on every batch. */
+const FOREGROUND_FIX_FRESH_MS = 30_000;
+let lastForegroundFixAtMs: number | null = null;
+let ignoringBackgroundFixes = false;
+
 /**
  * The newest fix that queued while a pass was in flight. When the running
  * pass finishes, only this ticket runs a full pass - any older queued
@@ -426,6 +436,20 @@ export function handleDriverUpdate(
   nowMs: number,
   source: DriverUpdateSource = 'foreground'
 ): Promise<void> {
+  if (source === 'foreground') {
+    lastForegroundFixAtMs = nowMs;
+  } else if (lastForegroundFixAtMs !== null && nowMs - lastForegroundFixAtMs < FOREGROUND_FIX_FRESH_MS) {
+    if (!ignoringBackgroundFixes) {
+      ignoringBackgroundFixes = true;
+      console.log('[trip] ignoring background fixes - foreground watch is live');
+    }
+    return Promise.resolve();
+  }
+  if (source === 'background' && ignoringBackgroundFixes) {
+    ignoringBackgroundFixes = false;
+    console.log('[trip] foreground watch quiet - using background fixes');
+  }
+
   // Radar UI mirror (Step 11) - written at call time, NOT inside the
   // serialized pass. A pass can sit behind seconds of awaited TTS/network
   // work; if the marker/camera/snapped position only updated when the

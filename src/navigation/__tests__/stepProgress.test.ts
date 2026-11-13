@@ -62,4 +62,32 @@ describe('computeStepProgress', () => {
     expect(progress.hasArrived).toBe(true);
     expect(progress.remainingDistanceM).toBe(0);
   });
+
+  it('advances past a maneuver the fixes skipped over without ever landing near it', () => {
+    // 3s fixes at speed: the last fix was on step 0, this one is 300m into step 1.
+    const intoStepOne = { latitude: MID.latitude + 300 / 111_320, longitude: LON };
+    const progress = computeStepProgress(intoStepOne, STEPS, 0);
+    expect(progress.currentStepIndex).toBe(1);
+    expect(progress.distanceToNextManeuverM).toBeGreaterThan(650);
+    expect(progress.distanceToNextManeuverM).toBeLessThan(750);
+  });
+
+  it('measures distance to the next maneuver along the step, not from its start', () => {
+    const quarterWay = { latitude: START.latitude + 250 / 111_320, longitude: LON };
+    const progress = computeStepProgress(quarterWay, STEPS, 0);
+    expect(progress.currentStepIndex).toBe(0);
+    expect(progress.distanceToNextManeuverM).toBeGreaterThan(700);
+    expect(progress.distanceToNextManeuverM).toBeLessThan(800);
+    expect(progress.remainingDistanceM).toBeCloseTo(progress.distanceToNextManeuverM + 1000, 5);
+  });
+
+  it('arrives when a fix overshoots the destination without landing within the threshold', () => {
+    const pastEnd = { latitude: END.latitude + 40 / 111_320, longitude: LON };
+    expect(computeStepProgress(pastEnd, STEPS, 1).hasArrived).toBe(true);
+  });
+
+  it('does not arrive when the nearest route point is the destination but the driver is well off the road', () => {
+    const offToTheSide = { latitude: END.latitude, longitude: LON + 200 / (111_320 * Math.cos((END.latitude * Math.PI) / 180)) };
+    expect(computeStepProgress(offToTheSide, STEPS, 1).hasArrived).toBe(false);
+  });
 });
