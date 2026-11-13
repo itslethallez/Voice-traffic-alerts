@@ -42,6 +42,7 @@ export function NavigationStatusBar({ nowMs }: { nowMs: number }) {
             <Text style={styles.eta}>
               {etaMs !== null ? formatMinutesRemaining(etaMs, nowMs) : '—'}
               {status === 'rerouting' ? ' · REROUTING…' : ''}
+              {status === 'navigating' && errorMessage ? ` · ${errorMessage}` : ''}
             </Text>
             <Text style={styles.meta} numberOfLines={1}>
               {remainingDistanceM !== null ? formatCompactDistance(remainingDistanceM).toUpperCase() : ''}

@@ -151,6 +151,19 @@ describe('handleDriverUpdate', () => {
     };
   });
 
+  it('ignores background fixes while the foreground watch is live, and uses them once it goes quiet', async () => {
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate(driver, now, 'foreground');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    await handleDriverUpdate(driver, now + 5_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    await handleDriverUpdate(driver, now + 45_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(2);
+  });
+
   it('polls immediately on the first update', async () => {
     fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
     await handleDriverUpdate(driver, Date.now());

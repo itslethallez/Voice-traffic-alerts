@@ -1,5 +1,6 @@
 import { fetchDirections, MapboxApiError } from '../api/mapbox/client';
 import type { DriverState } from '../engine/types';
+import { pulseHaptic } from '../feedback/haptics';
 import { distanceToPolyline } from '../geo/routePolyline';
 import type { GeoPoint } from '../geo/types';
 import { formatManeuverInstruction } from '../speech/formatManeuverInstruction';
@@ -32,6 +33,9 @@ const OFF_ROUTE_SUSTAINED_MS = 10_000;
 let currentStepIndex = 0;
 let firedManeuverCheckpoints: Map<number, Set<ManeuverCheckpoint>> = new Map();
 let offRouteSinceMs: number | null = null;
+/** One failure notice per off-route episode - a retry every 10s while
+ * still off-route shouldn't repeat it each time. */
+let rerouteFailureAnnounced = false;
 /** Bumped on every start/stop/reroute so a Directions response for a
  * superseded request (the driver picked a new destination, or cancelled,
  * while the old fetch was still in flight) can't land and clobber newer
@@ -42,6 +46,38 @@ function resetStepTracking(): void {
   currentStepIndex = 0;
   firedManeuverCheckpoints = new Map();
   offRouteSinceMs = null;
+  rerouteFailureAnnounced = false;
+}
+
+export const REROUTING_NOTICE = 'Rerouting.';
+export const REROUTE_FAILED_NOTICE =
+  "Couldn't get a new route. Directions may be wrong until you're back on the route.";
+export const REROUTE_FAILED_BANNER = 'REROUTE FAILED';
+const DEFAULT_ARRIVAL_NOTICE = 'You have arrived.';
+const ARRIVAL_HAPTIC_PATTERN = [0, 250, 150, 250];
+const REROUTE_FAILED_HAPTIC_PATTERN = [0, 500];
+
+/** Speaks a navigation notice, falling back to a haptic pulse when muted
+ * or when speech fails - these notices must never pass silently. */
+async function announceNotice(text: string, masterMute: boolean, hapticPattern: number[] | null): Promise<void> {
+  if (masterMute) {
+    if (hapticPattern) {
+      console.log(`[nav] notice (muted, haptic): ${text}`);
+      pulseHaptic(hapticPattern);
+    }
+    return;
+  }
+  console.log(`[nav] notice: ${text}`);
+  try {
+    await stopSpeaking();
+    await speakAsync(text, {
+      rate: useSettingsStore.getState().voiceRate,
+      volume: useSettingsStore.getState().voiceVolume,
+    });
+  } catch (error) {
+    console.warn('[navigation] failed to speak a navigation notice', error);
+    if (hapticPattern) pulseHaptic(hapticPattern);
+  }
 }
 
 async function requestRoute(
@@ -158,7 +194,7 @@ export function stopNavigation(): void {
   console.log('[nav] stopped - back to cruising');
 }
 
-async function rerouteFromCurrentPosition(driver: DriverState): Promise<void> {
+async function rerouteFromCurrentPosition(driver: DriverState, masterMute: boolean): Promise<void> {
   const store = useNavigationStore.getState();
   const { destination, destinationLabel, activeRouteType } = store;
   if (!destination) return;
@@ -173,29 +209,37 @@ async function rerouteFromCurrentPosition(driver: DriverState): Promise<void> {
 
   const generation = ++navigationGeneration;
   store.setRerouting();
-  resetStepTracking();
+  // Step tracking is only reset once a new route actually lands - until
+  // then progress keeps tracking the current route, so a failure leaves
+  // the last known step/ETA in place.
   console.log(`[nav] rerouting from current position (type=${routeType})`);
+  void announceNotice(REROUTING_NOTICE, masterMute, null);
 
   try {
     const route = await requestRoute(driver.position, destination, routeType, Date.now(), 'reroute');
     if (generation !== navigationGeneration) return;
+    resetStepTracking();
     useNavigationStore.getState().setActiveRoute({ destination, destinationLabel, route });
     console.log(`[nav] reroute applied: dist=${Math.round(route.distanceMeters)}m steps=${route.steps.length}`);
   } catch (error) {
     if (generation !== navigationGeneration) return;
-    console.warn('[navigation] reroute failed, keeping the previous route', error);
     // Serve what we have rather than dropping navigation entirely on a
     // transient failure - same posture as engine/cache.ts's
-    // applyFetchResult for Waze alerts. Falls back to 'navigating' (not
-    // 'rerouting', which would otherwise stick) via setStepProgress below.
-    const stale = useNavigationStore.getState();
-    if (stale.activeRoute) {
-      useNavigationStore.getState().setStepProgress({
-        currentStepIndex: 0,
-        distanceToNextManeuverM: stale.activeRoute.steps[0]?.distance ?? 0,
-        remainingDistanceM: stale.activeRoute.distanceMeters,
-        etaMs: Date.now() + stale.activeRoute.durationSeconds * 1000,
-      });
+    // applyFetchResult for Waze alerts - but say so out loud: a silent
+    // fallback would read as "back on route".
+    const progress = useNavigationStore.getState();
+    console.warn(
+      `[navigation] reroute failed, keeping the previous route at step ${progress.currentStepIndex} ` +
+        `remain=${Math.round(progress.remainingDistanceM ?? 0)}m`,
+      error
+    );
+    useNavigationStore.getState().resumeNavigating(REROUTE_FAILED_BANNER);
+    // Re-arm the off-route watch so a still-off-route driver retries after
+    // another sustained window rather than immediately.
+    offRouteSinceMs = null;
+    if (!rerouteFailureAnnounced) {
+      rerouteFailureAnnounced = true;
+      await announceNotice(REROUTE_FAILED_NOTICE, masterMute, REROUTE_FAILED_HAPTIC_PATTERN);
     }
   }
 }
@@ -273,21 +317,10 @@ export async function updateNavigationForDriverUpdate(
     console.log(`[nav] arrived at ${store.destinationLabel ?? 'destination'} - ending navigation`);
     // Speak the final step's own instruction ("You have arrived at …")
     // before tearing down - same serialized speech channel as the maneuver
-    // cues, so it can't collide with an announcement still playing.
-    if (!options.masterMute) {
-      const arrivalInstruction = route.steps[route.steps.length - 1]?.maneuver.instruction;
-      if (arrivalInstruction) {
-        try {
-          await stopSpeaking();
-          await speakAsync(arrivalInstruction, {
-            rate: useSettingsStore.getState().voiceRate,
-            volume: useSettingsStore.getState().voiceVolume,
-          });
-        } catch (error) {
-          console.warn('[navigation] failed to speak the arrival instruction', error);
-        }
-      }
-    }
+    // cues. Master mute gets a haptic pulse instead: no silent arrivals.
+    const arrivalInstruction =
+      route.steps[route.steps.length - 1]?.maneuver.instruction || DEFAULT_ARRIVAL_NOTICE;
+    await announceNotice(arrivalInstruction, options.masterMute, ARRIVAL_HAPTIC_PATTERN);
     stopNavigation();
     return;
   }
@@ -324,6 +357,11 @@ export async function updateNavigationForDriverUpdate(
 
   if (deviationM <= OFF_ROUTE_DEVIATION_M) {
     offRouteSinceMs = null;
+    if (rerouteFailureAnnounced) {
+      rerouteFailureAnnounced = false;
+      useNavigationStore.getState().resumeNavigating(null);
+      console.log('[nav] back on the previous route after a failed reroute');
+    }
     return;
   }
 
@@ -335,7 +373,7 @@ export async function updateNavigationForDriverUpdate(
 
   if (nowMs - offRouteSinceMs >= OFF_ROUTE_SUSTAINED_MS) {
     console.log(`[nav] off-route sustained (${Math.round(deviationM)}m) - rerouting`);
-    void rerouteFromCurrentPosition(driver);
+    void rerouteFromCurrentPosition(driver, options.masterMute);
   }
 }
 
