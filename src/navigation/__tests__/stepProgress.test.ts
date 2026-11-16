@@ -117,6 +117,11 @@ describe('computeStepProgress', () => {
       expect(computeStepProgress(betweenLegs, uTurnSteps, 0, 0).currentStepIndex).toBe(0);
     });
 
+    it('stays on the current leg when driving against it while right on it', () => {
+      const progress = computeStepProgress(halfway, uTurnSteps, 0, 180);
+      expect(progress.currentStepIndex).toBe(0);
+    });
+
     it('stays on the earlier leg when heading is unknown', () => {
       expect(computeStepProgress(betweenLegs, uTurnSteps, 0, null).currentStepIndex).toBe(0);
     });

@@ -150,12 +150,17 @@ export function computeStepProgress(
     (candidate) =>
       candidate.lateralM <= Math.max(closestLateralM + PROJECTION_TIE_TOLERANCE_M, ON_STEP_TOLERANCE_M)
   );
+  // Heading can only pick a leg about as close as the earliest one - it
+  // breaks near-ties, it doesn't pull a fix that sits on one road onto
+  // another nearly ON_STEP_TOLERANCE_M away (e.g. reversing on this one).
+  const earliestLateralM = plausible[0]?.lateralM ?? Number.POSITIVE_INFINITY;
   const headingMatch =
     headingDeg === null
       ? undefined
       : plausible.find(
           (candidate) =>
             candidate.bearingDeg !== null &&
+            candidate.lateralM <= earliestLateralM + PROJECTION_TIE_TOLERANCE_M &&
             angleBetweenDeg(candidate.bearingDeg, headingDeg) <= HEADING_MATCH_MAX_DEG
         );
   let projection = headingMatch ?? plausible[0] ?? projections[0];
