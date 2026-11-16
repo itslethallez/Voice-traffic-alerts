@@ -18,6 +18,12 @@ const PROJECTION_LOOKAHEAD_STEPS = 4;
  * close to both steps) on the earlier one. */
 const PROJECTION_TIE_TOLERANCE_M = 5;
 
+/** While the fix is this close to an earlier step, it stays on that step
+ * even if a later one (a parallel carriageway after a U-turn, a looping
+ * leg) is closer - the index never regresses, so a jump ahead on GPS
+ * noise would skip those maneuvers for good. */
+const ON_STEP_TOLERANCE_M = 30;
+
 /** A fix projected onto the very end of the final leg only counts as
  * arrival while it's roughly on the road - an off-route driver whose
  * nearest route point happens to be the destination hasn't arrived. */
@@ -121,7 +127,10 @@ export function computeStepProgress(
   }
   const closestLateralM = Math.min(...projections.map((projection) => projection.lateralM));
   let projection =
-    projections.find((candidate) => candidate.lateralM <= closestLateralM + PROJECTION_TIE_TOLERANCE_M) ??
+    projections.find(
+      (candidate) =>
+        candidate.lateralM <= Math.max(closestLateralM + PROJECTION_TIE_TOLERANCE_M, ON_STEP_TOLERANCE_M)
+    ) ??
     projections[0];
 
   let currentStepIndex = projection.stepIndex;

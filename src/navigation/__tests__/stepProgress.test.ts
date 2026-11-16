@@ -90,4 +90,28 @@ describe('computeStepProgress', () => {
     const offToTheSide = { latitude: END.latitude, longitude: LON + 200 / (111_320 * Math.cos((END.latitude * Math.PI) / 180)) };
     expect(computeStepProgress(offToTheSide, STEPS, 1).hasArrived).toBe(false);
   });
+
+  it('stays on the current step when GPS drifts toward a parallel later leg', () => {
+    const metersEast = (point: { latitude: number; longitude: number }, m: number) => ({
+      latitude: point.latitude,
+      longitude: point.longitude + m / (111_320 * Math.cos((point.latitude * Math.PI) / 180)),
+    });
+    const withPath = (step: MapboxRouteStep, path: { latitude: number; longitude: number }[]): MapboxRouteStep => ({
+      ...step,
+      geometry: { type: 'LineString', coordinates: path.map((p) => [p.longitude, p.latitude]) },
+    });
+    const midEast = metersEast(MID, 20);
+    const startEast = metersEast(START, 20);
+    // North on one carriageway, U-turn, back south on the parallel one 20m east.
+    const uTurnSteps = [
+      withPath(makeStep(START, 1000), [START, MID]),
+      withPath(makeStep(MID, 20), [MID, midEast]),
+      withPath(makeStep(midEast, 1000), [midEast, startEast]),
+      makeStep(startEast, 0),
+    ];
+    const halfway = { latitude: (START.latitude + MID.latitude) / 2, longitude: LON };
+    // 15m east: closer to the southbound leg (5m) than the current one (15m).
+    const progress = computeStepProgress(metersEast(halfway, 15), uTurnSteps, 0);
+    expect(progress.currentStepIndex).toBe(0);
+  });
 });
