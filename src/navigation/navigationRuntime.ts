@@ -54,6 +54,10 @@ function resetStepTracking(): void {
   rerouteFailureNoticePending = false;
 }
 
+/** Below this, GPS course is too noisy to tell which of two nearby route
+ * legs (e.g. either side of a U-turn) the driver is on. */
+const HEADING_RELIABLE_MIN_SPEED_KMH = 10;
+
 export const REROUTING_NOTICE = 'Rerouting.';
 export const REROUTE_FAILED_NOTICE =
   "Couldn't get a new route. Directions may be wrong until you're back on the route.";
@@ -313,7 +317,12 @@ export async function updateNavigationForDriverUpdate(
   const route = store.activeRoute;
   if (!route) return;
 
-  const progress = computeStepProgress(driver.position, route.steps, currentStepIndex);
+  const progress = computeStepProgress(
+    driver.position,
+    route.steps,
+    currentStepIndex,
+    driver.speedKmh >= HEADING_RELIABLE_MIN_SPEED_KMH ? driver.headingDeg : null
+  );
   const previousStepIndex = currentStepIndex;
   currentStepIndex = progress.currentStepIndex;
 

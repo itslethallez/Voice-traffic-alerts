@@ -91,7 +91,7 @@ describe('computeStepProgress', () => {
     expect(computeStepProgress(offToTheSide, STEPS, 1).hasArrived).toBe(false);
   });
 
-  it('stays on the current step when GPS drifts toward a parallel later leg', () => {
+  describe('parallel legs either side of a U-turn', () => {
     const metersEast = (point: { latitude: number; longitude: number }, m: number) => ({
       latitude: point.latitude,
       longitude: point.longitude + m / (111_320 * Math.cos((point.latitude * Math.PI) / 180)),
@@ -110,8 +110,21 @@ describe('computeStepProgress', () => {
       makeStep(startEast, 0),
     ];
     const halfway = { latitude: (START.latitude + MID.latitude) / 2, longitude: LON };
-    // 15m east: closer to the southbound leg (5m) than the current one (15m).
-    const progress = computeStepProgress(metersEast(halfway, 15), uTurnSteps, 0);
-    expect(progress.currentStepIndex).toBe(0);
+    // 15m east: closer to the southbound leg (5m) than the northbound one (15m).
+    const betweenLegs = metersEast(halfway, 15);
+
+    it('stays on the outbound leg when GPS drifts toward the return leg', () => {
+      expect(computeStepProgress(betweenLegs, uTurnSteps, 0, 0).currentStepIndex).toBe(0);
+    });
+
+    it('stays on the earlier leg when heading is unknown', () => {
+      expect(computeStepProgress(betweenLegs, uTurnSteps, 0, null).currentStepIndex).toBe(0);
+    });
+
+    it('moves to the return leg once heading shows the U-turn happened outside the maneuver radius', () => {
+      const progress = computeStepProgress(betweenLegs, uTurnSteps, 0, 180);
+      expect(progress.currentStepIndex).toBe(2);
+      expect(progress.remainingDistanceM).toBeLessThan(600);
+    });
   });
 });

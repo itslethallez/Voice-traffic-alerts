@@ -18,11 +18,14 @@ const PROJECTION_LOOKAHEAD_STEPS = 4;
  * close to both steps) on the earlier one. */
 const PROJECTION_TIE_TOLERANCE_M = 5;
 
-/** While the fix is this close to an earlier step, it stays on that step
- * even if a later one (a parallel carriageway after a U-turn, a looping
- * leg) is closer - the index never regresses, so a jump ahead on GPS
- * noise would skip those maneuvers for good. */
+/** Steps within this distance of the fix are all plausible matches - on a
+ * parallel carriageway after a U-turn, or a looping leg, GPS noise alone
+ * can't say which one the driver is on, so direction of travel decides. */
 const ON_STEP_TOLERANCE_M = 30;
+
+/** A step matches the driver's heading when the road there runs within
+ * this many degrees of it - i.e. the driver isn't travelling against it. */
+const HEADING_MATCH_MAX_DEG = 90;
 
 /** A fix projected onto the very end of the final leg only counts as
  * arrival while it's roughly on the road - an off-route driver whose
@@ -64,11 +67,18 @@ interface Projection {
   lateralM: number;
   /** 0..1 along the step's own path. */
   fraction: number;
+  /** Bearing of the path segment the fix projects onto, degrees from north. */
+  bearingDeg: number | null;
+}
+
+function angleBetweenDeg(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
 }
 
 function projectOntoStep(point: GeoPoint, path: readonly GeoPoint[], stepIndex: number): Projection {
   if (path.length < 2) {
-    return { stepIndex, lateralM: haversineDistance(point, path[0]), fraction: 1 };
+    return { stepIndex, lateralM: haversineDistance(point, path[0]), fraction: 1, bearingDeg: null };
   }
 
   const metersPerDegreeLon = METERS_PER_DEGREE_LAT * Math.cos((point.latitude * Math.PI) / 180);
@@ -80,6 +90,7 @@ function projectOntoStep(point: GeoPoint, path: readonly GeoPoint[], stepIndex: 
   let totalM = 0;
   let bestLateralM = Number.POSITIVE_INFINITY;
   let bestAlongM = 0;
+  let bestBearingDeg: number | null = null;
   for (let i = 0; i < path.length - 1; i++) {
     const a = toXY(path[i]);
     const b = toXY(path[i + 1]);
@@ -92,11 +103,17 @@ function projectOntoStep(point: GeoPoint, path: readonly GeoPoint[], stepIndex: 
     if (lateralM < bestLateralM) {
       bestLateralM = lateralM;
       bestAlongM = totalM + segmentM * t;
+      bestBearingDeg = lengthSq === 0 ? null : ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
     }
     totalM += segmentM;
   }
 
-  return { stepIndex, lateralM: bestLateralM, fraction: totalM === 0 ? 1 : bestAlongM / totalM };
+  return {
+    stepIndex,
+    lateralM: bestLateralM,
+    fraction: totalM === 0 ? 1 : bestAlongM / totalM,
+    bearingDeg: bestBearingDeg,
+  };
 }
 
 /**
@@ -107,11 +124,14 @@ function projectOntoStep(point: GeoPoint, path: readonly GeoPoint[], stepIndex: 
  * maneuver for the step to advance, which at driving speed with 3s fixes
  * it often doesn't. `steps` is one route's full, in-order step list;
  * Mapbox's final step is always an "arrive" step with no maneuver after it.
+ * `headingDeg` (null when unreliable, e.g. at low speed) picks between
+ * steps that are all close to the fix, such as both sides of a U-turn.
  */
 export function computeStepProgress(
   driverPosition: GeoPoint,
   steps: readonly MapboxRouteStep[],
-  previousStepIndex: number
+  previousStepIndex: number,
+  headingDeg: number | null = null
 ): StepProgress {
   if (steps.length === 0) {
     return { currentStepIndex: 0, distanceToNextManeuverM: 0, remainingDistanceM: 0, hasArrived: true };
@@ -126,12 +146,19 @@ export function computeStepProgress(
     projections.push(projectOntoStep(driverPosition, stepPath(steps, index), index));
   }
   const closestLateralM = Math.min(...projections.map((projection) => projection.lateralM));
-  let projection =
-    projections.find(
-      (candidate) =>
-        candidate.lateralM <= Math.max(closestLateralM + PROJECTION_TIE_TOLERANCE_M, ON_STEP_TOLERANCE_M)
-    ) ??
-    projections[0];
+  const plausible = projections.filter(
+    (candidate) =>
+      candidate.lateralM <= Math.max(closestLateralM + PROJECTION_TIE_TOLERANCE_M, ON_STEP_TOLERANCE_M)
+  );
+  const headingMatch =
+    headingDeg === null
+      ? undefined
+      : plausible.find(
+          (candidate) =>
+            candidate.bearingDeg !== null &&
+            angleBetweenDeg(candidate.bearingDeg, headingDeg) <= HEADING_MATCH_MAX_DEG
+        );
+  let projection = headingMatch ?? plausible[0] ?? projections[0];
 
   let currentStepIndex = projection.stepIndex;
   const remainingInStepM = (index: number, fraction: number) => steps[index].distance * (1 - fraction);
