@@ -36,6 +36,10 @@ let offRouteSinceMs: number | null = null;
 /** One failure notice per off-route episode - a retry every 10s while
  * still off-route shouldn't repeat it each time. */
 let rerouteFailureAnnounced = false;
+/** Set when a reroute fails; spoken by the next driver update so the notice
+ * goes through the serialized trip chain rather than cutting off a hazard
+ * announcement mid-sentence from the detached reroute promise. */
+let rerouteFailureNoticePending = false;
 /** Bumped on every start/stop/reroute so a Directions response for a
  * superseded request (the driver picked a new destination, or cancelled,
  * while the old fetch was still in flight) can't land and clobber newer
@@ -47,6 +51,7 @@ function resetStepTracking(): void {
   firedManeuverCheckpoints = new Map();
   offRouteSinceMs = null;
   rerouteFailureAnnounced = false;
+  rerouteFailureNoticePending = false;
 }
 
 export const REROUTING_NOTICE = 'Rerouting.';
@@ -194,7 +199,7 @@ export function stopNavigation(): void {
   console.log('[nav] stopped - back to cruising');
 }
 
-async function rerouteFromCurrentPosition(driver: DriverState, masterMute: boolean): Promise<void> {
+async function rerouteFromCurrentPosition(driver: DriverState): Promise<void> {
   const store = useNavigationStore.getState();
   const { destination, destinationLabel, activeRouteType } = store;
   if (!destination) return;
@@ -213,7 +218,6 @@ async function rerouteFromCurrentPosition(driver: DriverState, masterMute: boole
   // then progress keeps tracking the current route, so a failure leaves
   // the last known step/ETA in place.
   console.log(`[nav] rerouting from current position (type=${routeType})`);
-  void announceNotice(REROUTING_NOTICE, masterMute, null);
 
   try {
     const route = await requestRoute(driver.position, destination, routeType, Date.now(), 'reroute');
@@ -239,7 +243,7 @@ async function rerouteFromCurrentPosition(driver: DriverState, masterMute: boole
     offRouteSinceMs = null;
     if (!rerouteFailureAnnounced) {
       rerouteFailureAnnounced = true;
-      await announceNotice(REROUTE_FAILED_NOTICE, masterMute, REROUTE_FAILED_HAPTIC_PATTERN);
+      rerouteFailureNoticePending = true;
     }
   }
 }
@@ -349,6 +353,11 @@ export async function updateNavigationForDriverUpdate(
     etaMs,
   });
 
+  if (rerouteFailureNoticePending) {
+    rerouteFailureNoticePending = false;
+    await announceNotice(REROUTE_FAILED_NOTICE, options.masterMute, REROUTE_FAILED_HAPTIC_PATTERN);
+  }
+
   if (!options.masterMute) {
     await speakManeuverIfDue(route, progress.currentStepIndex, progress.distanceToNextManeuverM);
   }
@@ -373,7 +382,10 @@ export async function updateNavigationForDriverUpdate(
 
   if (nowMs - offRouteSinceMs >= OFF_ROUTE_SUSTAINED_MS) {
     console.log(`[nav] off-route sustained (${Math.round(deviationM)}m) - rerouting`);
-    void rerouteFromCurrentPosition(driver, options.masterMute);
+    const reroute = rerouteFromCurrentPosition(driver);
+    // Spoken here, inside the serialized pass, not from the detached reroute.
+    await announceNotice(REROUTING_NOTICE, options.masterMute, null);
+    void reroute;
   }
 }
 

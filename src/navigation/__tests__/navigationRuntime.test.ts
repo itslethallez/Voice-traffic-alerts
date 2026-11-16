@@ -199,12 +199,14 @@ describe('rerouting', () => {
     updateNavigationForDriverUpdate(driverAt(position), nowMs, { masterMute });
 
   /** On route 600m before the turn, then 100m off it for longer than the
-   * sustained off-route window - the second off-route fix fires the reroute. */
+   * sustained off-route window - the second off-route fix fires the reroute,
+   * the third (next) fix speaks any failure notice. */
   const driveOffRoute = async (masterMute = false, startMs = T0) => {
     const offRoute = eastOf(northOf(TURN, 500), 100);
     await at(offRoute, startMs + 1_000, masterMute);
     await at(offRoute, startMs + 12_000, masterMute);
     await flush();
+    await at(offRoute, startMs + 13_000, masterMute);
   };
 
   beforeEach(() => {
