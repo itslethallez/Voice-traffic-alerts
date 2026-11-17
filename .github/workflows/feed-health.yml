@@ -39,4 +39,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Optional repo variable; empty falls back to the repo owner.
+          FEED_ALERT_ASSIGNEE: ${{ vars.FEED_ALERT_ASSIGNEE }}
         run: node scripts/checkFeedHealth.js
