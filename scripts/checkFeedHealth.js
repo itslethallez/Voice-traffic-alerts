@@ -11,8 +11,8 @@
  *   - a run succeeded within the feed's max age (catches a schedule that
  *     silently stopped firing).
  * Unhealthy -> opens a "Feed down: <feed>" issue (label feed-health)
- * assigned to the owner, or comments on the open one when there's a new
- * failed run. Healthy again -> comments and closes it. Exits non-zero
+ * assigned to the owner, then re-pings on it at most once a day while the
+ * feed stays down (a 5-minute feed must not ping every run). Healthy again -> comments and closes it. Exits non-zero
  * while any feed is unhealthy so the watchdog run itself goes red too.
  *
  * Env (set by the workflow): GITHUB_TOKEN, GITHUB_REPOSITORY,
@@ -41,7 +41,13 @@ function evaluateFeed(feed, status, nowMs) {
   if (status.state !== 'active') {
     reasons.push(`workflow is ${status.state} - scheduled runs have stopped (re-enable it in the Actions tab)`);
   }
-  if (status.latestRun && FAILED_CONCLUSIONS.has(status.latestRun.conclusion)) {
+  // Runs are listed by start time, so with overlapping runs the "latest"
+  // can be a failure that finished before a later-finishing success.
+  const supersededBySuccess =
+    status.latestRun &&
+    status.latestSuccess &&
+    Date.parse(status.latestSuccess.updated_at) >= Date.parse(status.latestRun.updated_at);
+  if (status.latestRun && FAILED_CONCLUSIONS.has(status.latestRun.conclusion) && !supersededBySuccess) {
     reasons.push(`latest run ${status.latestRun.conclusion} at ${status.latestRun.created_at}: ${status.latestRun.html_url}`);
   }
   if (!status.latestSuccess) {
@@ -61,10 +67,9 @@ function issueTitle(feed) {
   return `Feed down: ${feed.name}`;
 }
 
-/** Hidden marker so the same failed run is only reported once. */
-function runMarker(status) {
-  return `<!-- feed-health run:${status.latestRun ? status.latestRun.id : 'none'} state:${status.state} -->`;
-}
+const REMINDER_INTERVAL_MS = 24 * HOUR_MS;
+/** Hidden marker identifying watchdog-written issue bodies and comments. */
+const MARKER = '<!-- feed-health -->';
 
 function issueBody(feed, verdict, status, assignee) {
   return [
@@ -73,7 +78,7 @@ function issueBody(feed, verdict, status, assignee) {
     ...verdict.reasons.map((reason) => `- ${reason}`),
     '',
     'This issue closes itself once the feed succeeds again.',
-    runMarker(status),
+    MARKER,
   ].join('\n');
 }
 
@@ -112,8 +117,10 @@ function createGitHubClient(token, repo) {
       (await api('GET', `/repos/${repo}/issues?state=open&labels=${LABEL}&per_page=100`)).find(
         (issue) => issue.title === title
       ) ?? null,
-    listCommentBodies: async (number) =>
-      (await api('GET', `/repos/${repo}/issues/${number}/comments?per_page=100`)).map((comment) => comment.body),
+    listCommentBodiesSince: async (number, sinceIso) =>
+      (await api('GET', `/repos/${repo}/issues/${number}/comments?since=${encodeURIComponent(sinceIso)}&per_page=100`)).map(
+        (comment) => comment.body
+      ),
     createIssue: (title, body, assignee) =>
       api('POST', `/repos/${repo}/issues`, { title, body, labels: [LABEL], assignees: [assignee] }),
     comment: (number, body) => api('POST', `/repos/${repo}/issues/${number}/comments`, { body }),
@@ -143,9 +150,12 @@ async function checkFeed(client, feed, assignee, nowMs) {
     const created = await client.createIssue(title, body, assignee);
     console.log(`[feed-health] ${feed.name}: opened #${created.number}`);
   } else {
-    const marker = runMarker(status);
-    const seen = openIssue.body?.includes(marker) || (await client.listCommentBodies(openIssue.number)).some((b) => b.includes(marker));
-    if (!seen) {
+    const sinceIso = new Date(nowMs - REMINDER_INTERVAL_MS).toISOString();
+    const openedRecently = Date.parse(openIssue.created_at) > nowMs - REMINDER_INTERVAL_MS;
+    const pingedRecently =
+      openedRecently ||
+      (await client.listCommentBodiesSince(openIssue.number, sinceIso)).some((comment) => comment.includes(MARKER));
+    if (!pingedRecently) {
       await client.comment(openIssue.number, body);
       console.log(`[feed-health] ${feed.name}: updated #${openIssue.number}`);
     }

@@ -7,6 +7,7 @@ const run = (id: number, conclusion: string, h: number) => ({
   id,
   conclusion,
   created_at: hoursAgo(h),
+  updated_at: hoursAgo(h),
   html_url: `https://github.com/o/r/actions/runs/${id}`,
 });
 
@@ -24,6 +25,14 @@ describe('evaluateFeed', () => {
     );
     expect(verdict.healthy).toBe(false);
     expect(verdict.reasons[0]).toContain('latest run failure');
+  });
+
+  it('ignores a failure that finished before a later-finishing success', () => {
+    const failedEarly = { ...run(3, 'failure', 1), updated_at: hoursAgo(0.9) };
+    const succeededLater = { ...run(2, 'success', 2), updated_at: hoursAgo(0.5) };
+    expect(
+      evaluateFeed(daily, { state: 'active', latestRun: failedEarly, latestSuccess: succeededLater }, NOW).healthy
+    ).toBe(true);
   });
 
   it('flags a feed with no success inside its max age (schedule stopped firing)', () => {
@@ -47,7 +56,7 @@ describe('checkFeed', () => {
   const makeClient = (status: object, openIssue: object | null, comments: string[] = []) => ({
     getStatus: jest.fn().mockResolvedValue(status),
     findOpenIssue: jest.fn().mockResolvedValue(openIssue),
-    listCommentBodies: jest.fn().mockResolvedValue(comments),
+    listCommentBodiesSince: jest.fn().mockResolvedValue(comments),
     createIssue: jest.fn().mockResolvedValue({ number: 7 }),
     comment: jest.fn().mockResolvedValue(null),
     close: jest.fn().mockResolvedValue(null),
@@ -63,14 +72,18 @@ describe('checkFeed', () => {
     expect(client.createIssue).toHaveBeenCalledWith(issueTitle(daily), expect.stringContaining('@owner'), 'owner');
   });
 
-  it('comments once per new failed run, not on every check', async () => {
-    const client = makeClient(failing, { number: 7, body: 'old <!-- feed-health run:8 state:active -->' });
-    await checkFeed(client, daily, 'owner', NOW);
-    expect(client.comment).toHaveBeenCalledTimes(1);
+  it('re-pings at most once a day while the feed stays down', async () => {
+    const stale = makeClient(failing, { number: 7, body: '', created_at: hoursAgo(48) }, []);
+    await checkFeed(stale, daily, 'owner', NOW);
+    expect(stale.comment).toHaveBeenCalledTimes(1);
 
-    const seenClient = makeClient(failing, { number: 7, body: 'x' }, ['<!-- feed-health run:9 state:active -->']);
-    await checkFeed(seenClient, daily, 'owner', NOW);
-    expect(seenClient.comment).not.toHaveBeenCalled();
+    const pinged = makeClient(failing, { number: 7, body: '', created_at: hoursAgo(48) }, ['x <!-- feed-health -->']);
+    await checkFeed(pinged, daily, 'owner', NOW);
+    expect(pinged.comment).not.toHaveBeenCalled();
+
+    const fresh = makeClient(failing, { number: 7, body: '', created_at: hoursAgo(2) }, []);
+    await checkFeed(fresh, daily, 'owner', NOW);
+    expect(fresh.comment).not.toHaveBeenCalled();
   });
 
   it('closes the issue when the feed recovers', async () => {
