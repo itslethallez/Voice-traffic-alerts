@@ -16,6 +16,7 @@ import { DriveScreen } from './src/screens/DriveScreen';
 import { NavigationSearchScreen } from './src/screens/NavigationSearchScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { useDriveLoop } from './src/screens/useDriveLoop';
+import { NAVIGATE_MODE_ENABLED } from './src/config/featureFlags';
 import { useFacebookNotificationSource } from './src/notifications/useFacebookNotificationSource';
 import { DesignSystemPreviewScreen } from './src/screens/DesignSystemPreviewScreen';
 import { hud } from './src/theme/colors';
@@ -83,7 +84,7 @@ export default function App() {
             <DriveScreen
               focusedAlert={focusedAlert}
               onFocusAlert={focusAlertOnMap}
-              onOpenSearch={() => setShowNavigationSearch(true)}
+              onOpenSearch={NAVIGATE_MODE_ENABLED ? () => setShowNavigationSearch(true) : undefined}
               onOpenSettings={() => setTab('settings')}
             />
           </View>
@@ -95,7 +96,7 @@ export default function App() {
           </View>
         </View>
         <StatusBar style="light" />
-        {showNavigationSearch ? (
+        {NAVIGATE_MODE_ENABLED && showNavigationSearch ? (
           <View style={styles.screen}>
             <NavigationSearchScreen
               onClose={() => setShowNavigationSearch(false)}
