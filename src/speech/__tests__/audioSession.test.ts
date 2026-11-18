@@ -11,10 +11,11 @@ describe('configureDuckingAudioSession', () => {
     setAudioModeAsync.mockClear();
   });
 
-  it('requests duckOthers interruption mode with silent-mode playback allowed', async () => {
+  it('requests duckOthers, silent-mode playback and background playback', async () => {
     await configureDuckingAudioSession();
     expect(setAudioModeAsync).toHaveBeenCalledWith({
       playsInSilentMode: true,
+      shouldPlayInBackground: true,
       interruptionMode: 'duckOthers',
     });
   });
