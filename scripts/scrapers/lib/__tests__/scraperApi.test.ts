@@ -21,11 +21,18 @@ describe('fetchViaScraperApi', () => {
     expect(params(0).get('premium')).toBeNull();
   });
 
-  it('retries the standard pool on 500 before a final premium attempt', async () => {
+  it('alternates standard and premium for each round on 500', async () => {
     fetchMock.mockResolvedValue(reply(500, 'Request failed'));
-    await expect(fetchViaScraperApi('https://example.gov.au', { standardAttempts: 3 })).rejects.toThrow('500');
+    await expect(fetchViaScraperApi('https://example.gov.au', { rounds: 2 })).rejects.toThrow('500');
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(params(3).get('premium')).toBe('true');
+    expect([0, 1, 2, 3].map((call) => params(call).get('premium'))).toEqual([null, 'true', null, 'true']);
+  });
+
+  it('tries premium first when preferred', async () => {
+    fetchMock.mockResolvedValueOnce(reply(500)).mockResolvedValueOnce(reply(200, 'ok'));
+    await expect(fetchViaScraperApi('https://example.gov.au', { preferredPremium: true })).resolves.toBe('ok');
+    expect(params(0).get('premium')).toBe('true');
+    expect(params(1).get('premium')).toBeNull();
   });
 
   it('succeeds on a later standard retry', async () => {
