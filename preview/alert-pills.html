@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlertPill + map markers — police family variants</title>
+<style>
+  /* Faithful to src/components/base/AlertPill.tsx + src/theme/tokens.ts:
+     coolBlue #3BA3FF at 14% bg / 40% border, radius pill 999, icon 13px md /
+     11px sm at strokeWidth 2.2, label displayMedium uppercase, caption 12 /
+     eyebrow 11, letterSpacing 1.8, over charcoal #0B0F12. */
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #0B0F12;
+    color: #E6EBEE;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding: 40px;
+    box-sizing: border-box;
+  }
+  h1 { font-size: 13px; letter-spacing: 2px; color: #5C6870; font-weight: 600; margin: 0; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(59,163,255,0.4);
+    background: rgba(59,163,255,0.14);
+    color: #3BA3FF;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.8px;
+  }
+  .pill.md { padding: 8px 12px; font-size: 12px; }
+  .pill.sm { padding: 4px 8px; font-size: 11px; }
+  .pill svg { display: block; }
+  .pill.off {
+    background: rgba(11,15,18,0.88);
+    border-color: #2A3238;
+    color: #9AA7B0;
+  }
+  .pill.off svg { color: #5C6870; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; background: #3BA3FF; }
+  .pill.amber { border-color: rgba(255,176,32,0.4); background: rgba(255,176,32,0.14); color: #FFB020; }
+  .pill.amber .dot { background: #FFB020; }
+  .pill.red { border-color: rgba(255,77,79,0.4); background: rgba(255,77,79,0.14); color: #FF4D4F; }
+  .pill.red .dot { background: #FF4D4F; }
+  .caption { font-size: 11px; letter-spacing: 1.8px; color: #5C6870; text-transform: uppercase; }
+
+  /* Map markers — faithful to RadarMap.tsx / RadarMap.web.tsx:
+     POLICE = 34px coolBlue square, radius sm, 9px red/blue light bar + 'P';
+     MOBILE_CAMERA = 26px coolBlue square rotated 45deg, 'M' counter-rotated;
+     FIXED_CAMERA = 30px circle, 4px coolBlue border over 25% coolBlue fill, 'F'.
+     All in the coolBlue family; shape is the at-a-glance differentiator. */
+  .maprow { display: flex; gap: 40px; align-items: flex-end; }
+  .mapcase { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .maptile {
+    width: 120px; height: 100px; border-radius: 8px;
+    /* dark, desaturated "map at night" backdrop so marker contrast is honest */
+    background: linear-gradient(160deg, #1a2226 0%, #141b1e 55%, #10161a 100%);
+    border: 1px solid #2A3238;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mk-label { font-size: 10px; letter-spacing: 1.6px; color: #9AA7B0; text-transform: uppercase; }
+  .mk { display: flex; align-items: center; justify-content: center; position: relative; }
+
+  .mk-police {
+    width: 34px; height: 34px; border-radius: 6px;
+    background: #3BA3FF;
+    flex-direction: column; justify-content: flex-start;
+    overflow: hidden;
+  }
+  .mk-police .lightbar {
+    width: 100%; height: 9px;
+    background: linear-gradient(90deg, #FF4D4F 0 50%, #3BA3FF 50%);
+    border-radius: 4px 4px 0 0;
+    animation: strobe 0.62s infinite alternate;
+  }
+  .mk-police .glyph { color: #fff; font-weight: 700; font-size: 15px; line-height: 15px; margin-top: 2px; }
+  @keyframes strobe { from { filter: brightness(1.8); } to { filter: brightness(0.55); } }
+  @media (prefers-reduced-motion: reduce) { .mk-police .lightbar { animation: none; } }
+
+  .mk-mobile {
+    width: 26px; height: 26px; border-radius: 6px;
+    background: #3BA3FF;
+    transform: rotate(45deg);
+  }
+  .mk-mobile .glyph { color: #fff; font-weight: 700; font-size: 15px; line-height: 15px; transform: rotate(-45deg); }
+
+  .mk-fixed {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 4px solid #3BA3FF;
+    background: rgba(59,163,255,0.25);
+  }
+  .mk-fixed .glyph { color: #fff; font-weight: 700; font-size: 10px; line-height: 11px; letter-spacing: 1.2px; }
+</style>
+</head>
+<body>
+
+<h1>ALERTPILL — POLICE FAMILY (COOLBLUE, DISTINCT GLYPHS)</h1>
+
+<div class="caption">md — the three variants</div>
+<div class="row">
+  <span class="pill md">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+    Police
+  </span>
+  <span class="pill md">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg>
+    Mobile camera
+  </span>
+  <span class="pill md">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"/><path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"/><path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"/><path d="M2 21v-4"/><path d="M7 9h.01"/></svg>
+    Fixed camera
+  </span>
+</div>
+
+<div class="caption">sm — as they appear in the Drive filter row</div>
+<div class="row">
+  <span class="pill sm">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+    Police
+  </span>
+  <span class="pill sm">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg>
+    Mobile camera
+  </span>
+  <span class="pill sm">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"/><path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"/><path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"/><path d="M2 21v-4"/><path d="M7 9h.01"/></svg>
+    Fixed camera
+  </span>
+</div>
+
+<div class="caption">disabled state (pill toggled off)</div>
+<div class="row">
+  <span class="pill sm off">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg>
+    Mobile camera
+  </span>
+</div>
+
+<div class="caption">context — full Drive filter row (dot types unchanged)</div>
+<div class="row">
+  <span class="pill sm"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>Police</span>
+  <span class="pill sm"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg>Mobile camera</span>
+  <span class="pill sm"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"/><path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"/><path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"/><path d="M2 21v-4"/><path d="M7 9h.01"/></svg>Fixed camera</span>
+  <span class="pill sm red"><span class="dot"></span>Traffic</span>
+  <span class="pill sm red"><span class="dot"></span>Accident</span>
+  <span class="pill sm amber"><span class="dot"></span>Closure</span>
+  <span class="pill sm" style="border-color:rgba(45,212,191,0.4);background:rgba(45,212,191,0.14);color:#2DD4BF"><span class="dot" style="background:#2DD4BF"></span>Roadkill</span>
+  <span class="pill sm amber"><span class="dot"></span>Hazard</span>
+</div>
+
+<h1 style="margin-top:24px">MAP MARKERS — SAME FAMILY, DISTINCT SHAPES (RadarMap.tsx / .web.tsx)</h1>
+
+<div class="caption">marker + matching pill</div>
+<div class="maprow">
+  <div class="mapcase">
+    <div class="maptile"><div class="mk mk-police"><div class="lightbar"></div><span class="glyph">P</span></div></div>
+    <span class="mk-label">police — square + light bar</span>
+  </div>
+  <div class="mapcase">
+    <div class="maptile"><div class="mk mk-mobile"><span class="glyph">M</span></div></div>
+    <span class="mk-label">mobile camera — rotated tag</span>
+  </div>
+  <div class="mapcase">
+    <div class="maptile"><div class="mk mk-fixed"><span class="glyph">F</span></div></div>
+    <span class="mk-label">fixed camera — ring / halo</span>
+  </div>
+</div>
+
+<div class="caption">all three on one tile — glance check at driving distance</div>
+<div class="maprow">
+  <div class="mapcase">
+    <div class="maptile" style="width:260px;gap:34px">
+      <div class="mk mk-police"><div class="lightbar"></div><span class="glyph">P</span></div>
+      <div class="mk mk-mobile"><span class="glyph">M</span></div>
+      <div class="mk mk-fixed"><span class="glyph">F</span></div>
+    </div>
+    <span class="mk-label">P · M · F</span>
+  </div>
+</div>
+
+</body>
+</html>

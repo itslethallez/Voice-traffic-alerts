@@ -1,0 +1,73 @@
+# shotgun-api
+
+Vercel serverless API in front of Neon Postgres. The Expo app never holds
+DB credentials — it only calls this.
+
+## Layout
+
+- `api/` — one Vercel function per endpoint (`/api/reports`, `/api/cameras`, `/api/ingest`, `/api/alerts/nearby`)
+- `lib/` — `db.ts` (Neon), `redis.ts` (Upstash cache), `sentry.ts`, `notify.ts` (alert fan-out)
+- `migrations/` — node-pg-migrate migrations for the `alerts` table and onward
+- `../shared/alert-schema.ts` — the Zod schema every alert is validated against at `/api/ingest`
+
+  Constraint: `../shared/` sits OUTSIDE the Vercel project root
+  (`server/`). Node resolves imports upward from the importing file, so
+  `shared/alert-schema.ts` can never see `server/node_modules` — its
+  `zod` import resolves from `shared/node_modules` or the repo-root
+  install instead. `server/package.json`'s `postinstall` runs
+  `npm install --prefix ../shared` so `shared/node_modules/zod` exists
+  in the Vercel build sandbox (only `server/` gets an install there).
+  Anything `../shared/` imports must be declared in
+  `shared/package.json`, not assumed present from root.
+
+`schema.sql` is the legacy one-shot setup for the pre-existing tables
+(`fixed_cameras`, `user_reports`, …) — still run once on a fresh database.
+New tables go through `migrations/` instead.
+
+## Setup
+
+```sh
+cd server
+npm install
+cp .env.example .env   # fill in DATABASE_URL (Neon branch), INGEST_SECRET_*, etc.
+npm run migrate        # applies migrations/ against DATABASE_URL
+```
+
+Run locally with `vercel dev` once a Vercel project is linked, or exercise
+the handlers via `pnpm jest server/` from the repo root. For the live
+end-to-end check (real HTTP + real Neon, inserts and cleans up one row):
+
+```sh
+pnpm jest --testMatch '**/server/e2e/*.test.ts'   # from repo root
+```
+
+## Verify the ingest path
+
+```sh
+curl -X POST http://localhost:3000/api/ingest \
+  -H 'content-type: application/json' \
+  -H 'x-ingest-secret: dev-secret' \
+  -d '{"type":"mobile_camera","lat":-34.92,"lng":138.60,"radius_m":250,"confidence":80,"source":"police_notice","first_seen":"2026-09-17T04:00:00Z","expires_at":"2026-09-17T05:00:00Z","corroboration_count":0}'
+```
+
+The secret in the header must be the one configured for the payload's
+`source` (`INGEST_SECRET_POLICE_NOTICE` here) — the endpoint resolves
+the secret to a source and 403s on a mismatch.
+
+Then confirm in Postgres (`geography` column should read back as a point):
+
+```sql
+SELECT id, type, ST_AsText(location::geometry) FROM alerts ORDER BY created_at DESC LIMIT 1;
+```
+
+## Notes
+
+- Migrations: `npm run migrate` / `npm run migrate:down`. Chose
+  node-pg-migrate over Prisma — it's a thin SQL runner that fits the
+  existing raw-`sql` data layer; Prisma would add an ORM + codegen step
+  for a handful of endpoints.
+- `alerts.location` is PostGIS `geography(Point,4326)` — `ST_DWithin`
+  works in metres directly for the corridor query in Phase 1.
+- Redis is a cache only; live delivery is Expo push + polling, scheduled
+  jobs are GitHub Actions cron (see `../.github/workflows/`), and queued
+  work is QStash (see `../.windsurfrules`).

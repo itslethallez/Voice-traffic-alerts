@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.streetwise'
+version = '1.0.0'
+
+android {
+  namespace 'expo.modules.facebooknotificationlistener'
+
+  defaultConfig {
+    versionName '1.0.0'
+  }
+}

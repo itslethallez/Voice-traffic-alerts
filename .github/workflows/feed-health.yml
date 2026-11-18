@@ -1,0 +1,44 @@
+name: Feed health watchdog
+
+# Opens a "Feed down: <feed>" issue assigned to the repo owner (GitHub
+# notifies by email/app) when a data feed fails, goes stale or gets its
+# schedule disabled, and closes it when the feed recovers. Runs straight
+# after every feed run, plus every 6 hours to catch a schedule that has
+# stopped firing. See scripts/checkFeedHealth.js.
+on:
+  workflow_run:
+    workflows:
+      - Refresh police mobile-camera notices
+      - Refresh fixed camera dataset
+      - Refresh central Waze alert mirror
+    types: [completed]
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: feed-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check feeds and open/close issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # Optional repo variable; empty falls back to the repo owner.
+          FEED_ALERT_ASSIGNEE: ${{ vars.FEED_ALERT_ASSIGNEE }}
+        run: node scripts/checkFeedHealth.js

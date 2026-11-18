@@ -1,0 +1,226 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { CarFront, Navigation2, Siren, TrafficCone, TriangleAlert, type LucideIcon } from 'lucide-react-native';
+import { useTripStore, type ManualReportCategory } from '../../store/useTripStore';
+import { GlassView } from '../../components/base/GlassView';
+import { alpha, colors, spacing, typography } from '../../theme/tokens';
+
+const ICON_SIZE = 22;
+const ICON_STROKE_WIDTH = 2;
+/** The cruising mockup's report FAB (Im140.png): a small circle at the
+ * map's bottom-right, just above the sheet - ~14% of the mockup screen's
+ * width, well under the old 112px dial. Fixed size so it can't grow on
+ * tablets. */
+const REPORT_DIAL_SIZE = 64;
+const CATEGORY_BUTTON_SIZE = 56;
+
+/** How long a just-filed cell offers UNDO before reverting to its resting
+ * label - long enough to catch a second glance-free tap, short enough that
+ * it never lingers as a stale affordance for a report the driver meant to
+ * keep. */
+const UNDO_WINDOW_MS = 4000;
+
+interface ReportCellDef {
+  category: ManualReportCategory;
+  label: string;
+  Icon: LucideIcon;
+  stroke: string;
+}
+
+/** Per-category icon colours reuse the AlertPill coding (AlertPill.tsx's
+ * PILL_META): police informational blue, accident/traffic critical red,
+ * hazard caution amber. */
+const CELLS: ReportCellDef[] = [
+  { category: 'POLICE', label: 'POLICE', Icon: Siren, stroke: colors.coolBlue },
+  { category: 'ACCIDENT', label: 'ACCIDENT', Icon: CarFront, stroke: colors.red },
+  { category: 'HAZARD', label: 'HAZARD', Icon: TriangleAlert, stroke: colors.amber },
+  {
+    // JAM is already a first-class alert type. This cast keeps the requested
+    // UI-only change local while the older manual-report store type catches up.
+    category: 'JAM' as ManualReportCategory,
+    label: 'JAM',
+    Icon: TrafficCone,
+    stroke: colors.red,
+  },
+];
+
+/**
+ * The Drive screen's report control: a small circular FAB at the map's
+ * bottom-right just above the sheet, matching the cruising mockup's
+ * floating button (Im140.png - dark translucent circle, soft border,
+ * filled send-cursor arrow, no label). Tapping it fans the four category
+ * buttons out above it in normal flow (the column grows upward inside
+ * the bottom-anchored overlay panel, so the FAB itself never moves);
+ * tapping a category files the report via useTripStore's pushManualReport
+ * and collapses back to the resting FAB. Tapping the FAB again while
+ * expanded collapses it with no report filed.
+ */
+export function ReportBar() {
+  const [expanded, setExpanded] = useState(false);
+  const pushManualReport = useTripStore((state) => state.pushManualReport);
+  const removeManualReport = useTripStore((state) => state.removeManualReport);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (undoTimeoutRef.current !== null) clearTimeout(undoTimeoutRef.current);
+    },
+    []
+  );
+
+  const handleCategoryPress = useCallback(
+    (def: ReportCellDef) => {
+      const localKey = pushManualReport(def.category, null);
+      setPendingKey(localKey);
+      setPendingLabel(def.label);
+      setExpanded(false);
+      undoTimeoutRef.current = setTimeout(() => {
+        setPendingKey(null);
+        setPendingLabel(null);
+        undoTimeoutRef.current = null;
+      }, UNDO_WINDOW_MS);
+    },
+    [pushManualReport]
+  );
+
+  const handleUndo = useCallback(() => {
+    if (!pendingKey) return;
+    if (undoTimeoutRef.current !== null) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
+    }
+    removeManualReport(pendingKey);
+    setPendingKey(null);
+    setPendingLabel(null);
+  }, [pendingKey, removeManualReport]);
+
+  const isPending = pendingKey !== null;
+
+  return (
+    <View style={styles.root} pointerEvents="box-none">
+      {expanded ? (
+        <View style={styles.fanOut} pointerEvents="box-none">
+          {CELLS.map((cell) => (
+            <CategoryButton key={cell.category} def={cell} onPress={() => handleCategoryPress(cell)} />
+          ))}
+        </View>
+      ) : null}
+
+      <Pressable
+        onPress={isPending ? handleUndo : () => setExpanded((current) => !current)}
+        style={styles.dial}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isPending
+            ? `Undo ${pendingLabel?.toLowerCase()} report`
+            : expanded
+              ? 'Close report menu'
+              : 'Report an incident'
+        }
+        accessibilityState={{ expanded }}
+      >
+        <GlassView
+          intensity={40}
+          dim={isPending ? 0 : 0.45}
+          style={[styles.dialGlass, expanded && styles.dialExpanded, isPending && styles.dialPending]}
+        >
+          {isPending ? (
+            <Text style={[styles.dialLabel, styles.dialLabelOnAccent]}>UNDO</Text>
+          ) : (
+            <Navigation2
+              size={24}
+              strokeWidth={2.2}
+              color={colors.textPrimary}
+              fill={colors.textPrimary}
+            />
+          )}
+        </GlassView>
+      </Pressable>
+    </View>
+  );
+}
+
+function CategoryButton({ def, onPress }: { def: ReportCellDef; onPress: () => void }) {
+  const { Icon } = def;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={styles.categoryButton}
+      accessibilityRole="button"
+      accessibilityLabel={`Report ${def.label.toLowerCase()}`}
+    >
+      <GlassView intensity={40} dim={0.45} style={styles.categoryButtonGlass}>
+        <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} color={def.stroke} />
+        <Text style={styles.categoryLabel} numberOfLines={1}>
+          {def.label}
+        </Text>
+      </GlassView>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    width: REPORT_DIAL_SIZE,
+    alignItems: 'center',
+  },
+  dial: {
+    width: REPORT_DIAL_SIZE,
+    height: REPORT_DIAL_SIZE,
+  },
+  dialGlass: {
+    flex: 1,
+    borderRadius: REPORT_DIAL_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xxs,
+    // §8 floating chrome: backdrop blur + soft border (see GlassView).
+    // The mockup's FAB ring is a neutral cool-grey ring (sampled
+    // ~#616E7A off Im140.png), not a teal accent - this is painted
+    // chrome, not a selected/focused control.
+    borderWidth: 1,
+    borderColor: alpha(colors.textPrimary, 0.35),
+  },
+  dialExpanded: {
+    borderColor: colors.coolBlue,
+  },
+  dialPending: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  dialLabel: {
+    fontFamily: typography.fontFamily.display,
+    fontSize: typography.fontSize.caption,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
+  },
+  dialLabelOnAccent: {
+    color: colors.charcoal,
+  },
+  fanOut: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  categoryButton: {
+    width: CATEGORY_BUTTON_SIZE,
+    height: CATEGORY_BUTTON_SIZE,
+  },
+  categoryButtonGlass: {
+    flex: 1,
+    borderRadius: CATEGORY_BUTTON_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xxs,
+    borderWidth: 1,
+    borderColor: alpha(colors.accent, 0.4),
+  },
+  categoryLabel: {
+    fontFamily: typography.fontFamily.displayMedium,
+    fontSize: typography.fontSize.eyebrow,
+    letterSpacing: typography.letterSpacing.tight,
+    color: colors.textPrimary,
+  },
+});
