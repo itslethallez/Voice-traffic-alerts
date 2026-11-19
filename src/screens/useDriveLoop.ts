@@ -1,9 +1,15 @@
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import {
   startBackgroundLocationUpdatesAsync,
   stopBackgroundLocationUpdatesAsync,
 } from '../background/locationTask';
+import {
+  noteAppStateChange,
+  startAppStateLog,
+  type AppStateLabel,
+} from '../diagnostics/appState';
 import type { DriverState } from '../engine/types';
 import { FirstFixGate } from '../location/firstFixGate';
 import { BACKGROUND_DENIED_EXPLANATION, ensureLocationPermissions } from '../location/permissions';
@@ -76,6 +82,13 @@ export function useDriveLoop(): void {
     resetTripRuntime();
     phaseRef.current = 'waitingForFirstFix';
     latestPendingLocationRef.current = null;
+    // Feeds diagnostics/appState.ts, which is what lets a [speech] line
+    // say whether the app was on screen when it spoke - the whole point
+    // of a screen-off drive test.
+    startAppStateLog(AppState.currentState as AppStateLabel);
+    const appStateSubscription = AppState.addEventListener('change', (next) => {
+      noteAppStateChange(next as AppStateLabel);
+    });
     configureDuckingAudioSession().catch((error) => {
       console.warn('[speech] failed to configure audio session', error);
     });
@@ -94,6 +107,7 @@ export function useDriveLoop(): void {
     return () => {
       unsubscribeCallState();
       stopCallStateMonitoring();
+      appStateSubscription.remove();
     };
   }, []);
 

@@ -1,5 +1,6 @@
 import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import { env } from '../config/env';
+import { appStateLabel } from '../diagnostics/appState';
 
 /**
  * Google's current flagship "Chirp3 HD" tier - UK English, female, verified
@@ -139,6 +140,7 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
         activePlayer.pause();
       }
       releaseActivePlayer();
+      console.warn(`[speech] google timed out after ${OVERALL_TIMEOUT_MS}ms app=${appStateLabel()}`);
       settleReject(new Error('Google TTS timed out'));
     }, OVERALL_TIMEOUT_MS);
     activeTimeoutId = timeoutId;
@@ -156,12 +158,23 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
       reject(error);
     };
 
+    // Phase timings, all tagged [speech]: the fetch and the playback fail
+    // for completely different reasons (no network vs. a paused/denied
+    // audio session), and with the screen off they're the two halves of
+    // this file most likely to stall. One line each is what tells them
+    // apart in a drive-test logcat without a debugger attached.
+    const startedAtMs = Date.now();
+
     fetchAudioDataUri(text, abortController.signal)
       .then((dataUri) => {
+        const fetchedAtMs = Date.now();
         if (!isCurrent()) {
           settleResolve(); // stopped while the fetch was still in flight
           return;
         }
+        console.log(
+          `[speech] google fetch ok in ${fetchedAtMs - startedAtMs}ms (${Math.round(dataUri.length / 1024)}kB) app=${appStateLabel()}`
+        );
 
         const player = createAudioPlayer({ uri: dataUri });
         activePlayer = player;
@@ -175,6 +188,7 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
           player.setPlaybackRate(options.rate);
         }
 
+        let playStartedAtMs = 0;
         const subscription = player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
           if (!isCurrent()) return;
 
@@ -187,10 +201,15 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
           if (status.didJustFinish) {
             subscription.remove();
             releaseActivePlayer();
+            console.log(
+              `[speech] google playback finished in ${Date.now() - playStartedAtMs}ms app=${appStateLabel()}`
+            );
             settleResolve();
           }
         });
 
+        playStartedAtMs = Date.now();
+        console.log(`[speech] google playback start app=${appStateLabel()}`);
         player.play();
       })
       .catch((error) => {

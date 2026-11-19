@@ -1,4 +1,5 @@
 import * as Speech from 'expo-speech';
+import { appStateLabel } from '../diagnostics/appState';
 import { isPhoneCallActive } from './callState';
 import { GOOGLE_TTS_RETRY_COOLDOWN_MS } from './constants';
 import { speakWithGoogleTtsAsync, stopGoogleTtsSpeech } from './googleTts';
@@ -68,10 +69,16 @@ let googleTtsRetryAtMs = 0;
  */
 export async function speakAsync(text: string, options: SpeakOptions = {}): Promise<void> {
   if (isPhoneCallActive()) {
+    console.log('[speech] skipped - phone call in progress');
     throw new Error('Phone call in progress');
   }
 
   const now = Date.now();
+  // Every branch below is tagged [speech] with the app state at the time,
+  // because "the voice kept going with the screen off" is only provable
+  // from a log line that says both that it spoke AND that the app wasn't
+  // on screen when it did - see diagnostics/appState.ts.
+  const app = appStateLabel();
   if (now < googleTtsRetryAtMs) {
     // Still within the post-failure cooldown - go straight to the device
     // voice rather than retrying Google fresh for every alert, which is
@@ -80,19 +87,30 @@ export async function speakAsync(text: string, options: SpeakOptions = {}): Prom
     // down. lastGoogleTtsError is deliberately left as-is here (not
     // re-set to the same message) - it already reflects why we're in the
     // cooldown.
+    console.log(`[speech] device (google in cooldown) app=${app} "${text}"`);
     await speakWithDeviceAsync(text, options);
+    console.log(`[speech] spoke via device in ${Date.now() - now}ms app=${appStateLabel()}`);
     return;
   }
 
+  console.log(`[speech] google app=${app} "${text}"`);
   try {
     await speakWithGoogleTtsAsync(text, options);
     lastGoogleTtsError = null;
     googleTtsRetryAtMs = 0;
+    console.log(`[speech] spoke via google in ${Date.now() - now}ms app=${appStateLabel()}`);
   } catch (error) {
     lastGoogleTtsError = error instanceof Error ? error.message : String(error);
     googleTtsRetryAtMs = Date.now() + GOOGLE_TTS_RETRY_COOLDOWN_MS;
-    console.warn('[speech] Google TTS failed, falling back to the on-device voice', error);
+    console.warn(
+      `[speech] Google TTS failed after ${Date.now() - now}ms (app=${appStateLabel()}), falling back to the on-device voice`,
+      error
+    );
+    const deviceStartedAtMs = Date.now();
     await speakWithDeviceAsync(text, options);
+    console.log(
+      `[speech] spoke via device in ${Date.now() - deviceStartedAtMs}ms app=${appStateLabel()}`
+    );
   }
 }
 
