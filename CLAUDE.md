@@ -34,11 +34,49 @@ Shotgun is a **co-pilot, not a navigation app**.
 
 | # | Stage | Status |
 |---|-------|--------|
-| 1 | Strip Navigate (PR #6) | in test |
-| 2 | Feed fixes (PRs #7, #8) | |
+| 1 | Strip Navigate (PR #6) | **done, pushed** |
+| 2 | Feed fixes (PRs #7, #8) | merged |
 | 3 | Cruise core | |
 | 4 | Handoff (Waze / Google Maps / Apple Maps) | |
 | 5 | Reroute | |
 | 6 | National data | |
 | 7 | Community pipeline | plan approved; code only after stages 3–5 |
 | 8 | Visual refresh | |
+
+## Current status (as of 20 Nov 2026)
+
+**Stage 1 done and pushed to PR #6** (`devin/1794925532-strip-navigate`):
+background voice now survives screen-off/locked (background-location task
+was requesting `Accuracy.Balanced`, which never powers the GPS chip — fixed
+to `Accuracy.High` at the foreground watch's cadence), and the Cruise
+camera now centres on the driver instead of drifting to the midpoint with
+the nearest alert. 666/666 tests pass.
+
+**Known gap:** the driver puck graphic itself doesn't render in this build
+(isolated to `DriverMark.tsx`'s `SvgXml` usage — the only consumer of that
+react-native-svg API in the codebase; likely a New-Architecture
+incompatibility). Not patched here — **PR #5 deletes `DriverMark.tsx`
+outright** and replaces it with a native puck, so this is left for PR #5
+rather than fixed twice. The camera-centring fix itself is confirmed not
+already covered by PR #5 (checked — same midpoint bug is still there) and
+will need carrying forward when PR #5 lands.
+
+**TTS latency measured, proposal only (not built):** of the ~936ms average
+delay before a driver hears anything, that's Google TTS's network fetch,
+not the spoken sentence itself (which isn't a latency problem). Recommended:
+(1) prefetch TTS audio as soon as an alert becomes a likely candidate,
+mirroring the existing `prefetchSpeedLimit` pattern, **plus** (2) switch the
+fixed-checkpoint speed-camera warning specifically to the on-device voice
+as primary rather than fallback, since it's the one safety-critical,
+split-second case and needs no new caching infra. Pre-caching the small
+fixed speed-camera phrase set is a reasonable alternative to (2) if voice
+consistency matters more than latency there — flagged, not decided.
+
+**Open PRs:**
+
+| PR | What it is | State |
+|----|-----------|-------|
+| #5 | Native nav state — native puck/follow, failed-reroute progress, spoken reroute notices | open |
+| #6 | This Stage 1 work — Navigate behind a flag, background voice fix, puck centring | open |
+| #7 | Feed health watchdog — opens a GitHub issue when a data feed dies silently | merged |
+| #8 | ScraperAPI Australian-IP + retry handling so the SA feeds work on the free plan | merged |
