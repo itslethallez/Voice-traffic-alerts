@@ -20,6 +20,7 @@ import { visibleTypesFromFilters } from '../../store/settingsDefaults';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useRouteOptionsStore } from '../../store/useRouteOptionsStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
+import { maxAlertDistanceMeters } from '../../engine/alertDistance';
 import { useTripStore, type NearbyReport } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import {
@@ -249,7 +250,7 @@ export function RadarMap({
   const confirmNearbyReport = useTripStore((state) => state.confirmNearbyReport);
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
-  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const announceDistanceMeters = useSettingsStore((state) => maxAlertDistanceMeters(state.alertDistance));
   const showRangeOnMap = useSettingsStore((state) => state.showRangeOnMap);
   const toggleRangeOnMap = useSettingsStore((state) => state.toggleRangeOnMap);
   const navigationStatus = useNavigationStore((state) => state.status);

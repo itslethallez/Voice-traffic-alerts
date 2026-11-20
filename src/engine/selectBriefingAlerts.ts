@@ -10,6 +10,8 @@ export interface BriefingSelectSettings {
   /** undefined means every category is enabled. */
   enabledTypes?: ReadonlySet<WazeAlertType>;
   radiusMeters: number;
+  /** Per-type radius (engine/alertDistance.ts); overrides radiusMeters. */
+  radiusForType?: (type: WazeAlertType) => number;
 }
 
 /**
@@ -47,7 +49,8 @@ export function selectBriefingAlerts(
 
     const alertPosition = { latitude: alert.latitude, longitude: alert.longitude };
     const distanceMeters = haversineDistance(position, alertPosition);
-    if (distanceMeters > settings.radiusMeters) continue;
+    const radius = settings.radiusForType ? settings.radiusForType(alert.type) : settings.radiusMeters;
+    if (distanceMeters > radius) continue;
 
     const ageMinutes = (nowMs - Date.parse(alert.publish_datetime_utc)) / 60_000;
     if (!isFreshEnoughToAnnounce(ageMinutes)) continue;

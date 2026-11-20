@@ -124,6 +124,9 @@ export interface SpeakBriefingOptions {
   signal?: AbortSignal;
   /** Called once per item, right after it's added to announcedDistances/recent. */
   onItemSpoken?: (entry: RecentAnnouncement) => void;
+  /** The gap timer. Defaults to a plain setTimeout delay; the app passes
+   * speech/nativeDelay.ts's, which still ends on time with the screen off. */
+  delayFn?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /**
@@ -153,7 +156,7 @@ export async function speakBriefing(
   formatFn: (candidate: AnnounceableAlert) => string,
   options: SpeakBriefingOptions = {}
 ): Promise<AnnouncerState> {
-  const { speakOptions = {}, gapMs = BRIEFING_GAP_MS, signal, onItemSpoken } = options;
+  const { speakOptions = {}, gapMs = BRIEFING_GAP_MS, signal, onItemSpoken, delayFn = delay } = options;
   let current = state;
 
   const onAbort = () => {
@@ -196,7 +199,7 @@ export async function speakBriefing(
 
       if (signal?.aborted) break;
       if (i < candidates.length - 1) {
-        await delay(gapMs, signal);
+        await delayFn(gapMs, signal);
       }
     }
   } finally {

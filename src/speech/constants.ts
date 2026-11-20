@@ -25,9 +25,13 @@ export const GOOGLE_TTS_RETRY_COOLDOWN_MS = 2 * 60 * 1000;
 /**
  * If Google's audio isn't ready this long after an announcement is
  * dispatched, speak it on the on-device voice instead of waiting. A
- * prefetched sentence is ready in well under 100ms; this only bites on a
- * prefetch miss, where the Google round-trip measured 850-1650ms on drive
- * tests. Not a failure: the fetch keeps running into the audio cache, and
- * GOOGLE_TTS_RETRY_COOLDOWN_MS is not started.
+ * prefetched sentence is ready in well under 200ms; this only bites on a
+ * prefetch miss (Google round-trip measured 850-1650ms on drive tests).
+ * 2s is the product call (20 Nov 2026): Google's voice for everything but
+ * the speed-camera warning wherever it can arrive within 2s, the device
+ * voice only as the backstop - so a trip doesn't flip between voices on
+ * every ordinary miss. Not a failure: the fetch is enforced natively
+ * (api/nativeTimeoutRequest.ts) and GOOGLE_TTS_RETRY_COOLDOWN_MS is not
+ * started.
  */
-export const GOOGLE_TTS_READY_DEADLINE_MS = 600;
+export const GOOGLE_TTS_READY_DEADLINE_MS = 2_000;

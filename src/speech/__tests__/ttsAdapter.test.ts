@@ -70,7 +70,7 @@ describe('speakAsync', () => {
 
     expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith(
       'Police reported, 800 metres ahead.',
-      { rate: 1.1, volume: 0.8, readyDeadlineMs: 600 }
+      { rate: 1.1, volume: 0.8, readyDeadlineMs: 2000 }
     );
     expect(speak).not.toHaveBeenCalled();
   });
@@ -272,12 +272,21 @@ describe('warmUpDeviceVoice', () => {
     ({ warmUpDeviceVoice } = require('../ttsAdapter'));
   });
 
-  it('binds the engine once, without speaking', async () => {
+  it('binds the engine once, then loads the voice with one silent utterance', async () => {
+    // The engine loads its voice model on first synthesis, not on bind -
+    // so the warm-up speaks one word at volume 0 (fix 3, 20 Nov 2026).
+    speak.mockImplementation((_text, options) => options?.onDone?.());
     await warmUpDeviceVoice();
     await warmUpDeviceVoice();
 
     expect(getAvailableVoicesAsync).toHaveBeenCalledTimes(1);
-    expect(speak).not.toHaveBeenCalled();
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(speak).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ volume: 0 }));
+  });
+
+  it('still finishes the warm-up if the silent utterance errors', async () => {
+    speak.mockImplementation((_text, options) => options?.onError?.(new Error("tts")));
+    await expect(warmUpDeviceVoice()).resolves.toBeUndefined();
   });
 
   it('retries on the next call after a failed warm-up, and never rejects', async () => {
@@ -294,7 +303,7 @@ describe('speakAsync ready deadline', () => {
   it('asks Google for audio within GOOGLE_TTS_READY_DEADLINE_MS', async () => {
     speakWithGoogleTtsAsync.mockResolvedValue(undefined);
     await speakAsync('hello', { rate: 1.1 });
-    expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith('hello', { rate: 1.1, readyDeadlineMs: 600 });
+    expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith('hello', { rate: 1.1, readyDeadlineMs: 2000 });
   });
 
   it('speaks on the device voice when Google misses the deadline, without starting the failure cooldown', async () => {

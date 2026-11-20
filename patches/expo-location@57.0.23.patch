@@ -1,0 +1,34 @@
+diff --git a/android/src/main/java/expo/modules/location/LocationModule.kt b/android/src/main/java/expo/modules/location/LocationModule.kt
+index b286ea277f3658b62ab9fd9ed1df67359cea46fc..b5602004bed21649b08ba4a83b70a9dd73e67422 100644
+--- a/android/src/main/java/expo/modules/location/LocationModule.kt
++++ b/android/src/main/java/expo/modules/location/LocationModule.kt
+@@ -323,9 +323,11 @@ class LocationModule : Module(), SensorEventListener, ActivityEventListener {
+       if (!shouldUseForegroundService && isMissingBackgroundPermissions()) {
+         throw LocationBackgroundUnauthorizedException()
+       }
+-      if (!AppForegroundedSingleton.isForegrounded && options.foregroundService != null) {
+-        throw ForegroundServiceStartNotAllowedException()
+-      }
++      // Shotgun patch: no pre-emptive refusal while backgrounded. A screen-off
++      // cold start never resumes an activity, so this guard meant no location
++      // at all until the screen came on. Android itself decides whether the
++      // foreground service may start (LocationTaskConsumer catches a
++      // rejection and keeps the location request running without it).
+ 
+       if (shouldUseForegroundService && !hasForegroundServicePermissions()) {
+         throw ForegroundServicePermissionsException()
+diff --git a/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt b/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
+index a0c7bf9b27df2caa0f4e2bd5bfcd1de51d7fd3d7..d3d731d0dc2702a6606b5b124bfff3d2fdf26ead 100644
+--- a/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
++++ b/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
+@@ -187,8 +187,8 @@ class LocationTaskConsumer(context: Context, taskManagerUtils: TaskManagerUtilsI
+       return
+     }
+     if (!AppForegroundedSingleton.isForegrounded) {
+-      Log.w(TAG, "Foreground location task cannot be started while the app is in the background!")
+-      return
++      // Shotgun patch: try anyway - see LocationModule.startLocationUpdatesAsync.
++      Log.w(TAG, "Starting the foreground location task while the app is in the background")
+     }
+     val task = mTask ?: run {
+       Log.w(TAG, "Location task is null")

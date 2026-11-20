@@ -40,47 +40,48 @@ existing references to "stage 4", "stage 7" etc. stay valid.
 |---|-------|--------|
 | 1 | Strip Navigate (PR #6) | **done, pushed** |
 | 2 | Feed fixes (PRs #7, #8) | merged |
-| 3 | Cruise core | |
+| 3 | Cruise core | **built, awaiting check** (local branch `stage-3-cruise-core`) |
 | 8 | Visual refresh | |
 | 4 | Handoff (Waze / Google Maps / Apple Maps) | |
 | 5 | Reroute | |
 | 6 | National data | |
 | 7 | Community pipeline | plan approved; code only after stages 3–5 |
 
-## Current status (as of 20 Nov 2026)
+## Current status (as of 21 Nov 2026)
 
-**Stage 1 done and pushed to PR #6** (`devin/1794925532-strip-navigate`):
-background voice now survives screen-off/locked (background-location task
-was requesting `Accuracy.Balanced`, which never powers the GPS chip — fixed
-to `Accuracy.High` at the foreground watch's cadence), and the Cruise
-camera now centres on the driver instead of drifting to the midpoint with
-the nearest alert. 666/666 tests pass.
+**Stage 1 (PR #6)** pushed, unchanged since 20 Nov.
 
-**Known gap:** the driver puck graphic itself doesn't render in this build
-(isolated to `DriverMark.tsx`'s `SvgXml` usage — the only consumer of that
-react-native-svg API in the codebase; likely a New-Architecture
-incompatibility). Not patched here — **PR #5 deletes `DriverMark.tsx`
-outright** and replaces it with a native puck, so this is left for PR #5
-rather than fixed twice. The camera-centring fix itself is confirmed not
-already covered by PR #5 (checked — same midpoint bug is still there) and
-will need carrying forward when PR #5 lands.
+**Stage 3 Cruise core built, not pushed** - local branch
+`stage-3-cruise-core` (3 commits on top of PR #6). Road matching (`src/road/`,
+`[road]` tag): "ahead on X" only when Mapbox Directions confirms the alert is
+on the driver's road with no turn off it; otherwise "nearby, X away";
+behind / U-turn is silent. Per-type distances behind one Close / Normal / Far
+setting. Speech fixes: call-detection screen-off crash, native timers for
+prefetch / briefing gaps / 20s watchdog, silent device-voice warm-up, 2s
+Google wait, suburb resolved before briefing prefetch. Audit cases A-F (+D)
+are fixtures in `src/road/__tests__/aheadCases.test.ts`. 754/754 tests.
 
-**TTS latency measured, proposal only (not built):** of the ~936ms average
-delay before a driver hears anything, that's Google TTS's network fetch,
-not the spoken sentence itself (which isn't a latency problem). Recommended:
-(1) prefetch TTS audio as soon as an alert becomes a likely candidate,
-mirroring the existing `prefetchSpeedLimit` pattern, **plus** (2) switch the
-fixed-checkpoint speed-camera warning specifically to the on-device voice
-as primary rather than fallback, since it's the one safety-critical,
-split-second case and needs no new caching infra. Pre-caching the small
-fixed speed-camera phrase set is a reasonable alternative to (2) if voice
-consistency matters more than latency there — flagged, not decided.
+**21 Nov follow-up (same branch):** road-match cost cut (route reused
+per road segment, lookups only inside the warn radius, 30s per-target
+spacing, shared server cache `server/api/road/forward-route.ts` - built,
+NOT deployed: needs a backend URL in the app and `MAPBOX_ACCESS_TOKEN` +
+Upstash on the server). Divided-road reports ("on [road], X" with no side),
+2x detour. Screen-off cold start now alerts (background location at
+launch + expo-location patch, built from source via
+`expo.autolinking.android.buildFromSource`). Briefing sentences frozen
+before prefetch; `EXPO_PUBLIC_BRIEFING_FIXTURE=1` forces a 3-item briefing
+in drive-test builds only. 778/778 tests.
+
+**PR #5** now has PR #6 merged in (RadarMap conflict resolved keeping #6's
+driver-centred Cruise camera) and the 30s background silence fixed
+(background fixes are only ignored while the app is on screen). Ready to
+merge after #6; the puck-centring carry-forward is done.
 
 **Open PRs:**
 
 | PR | What it is | State |
 |----|-----------|-------|
-| #5 | Native nav state — native puck/follow, failed-reroute progress, spoken reroute notices | open |
+| #5 | Native nav state — native puck/follow, failed-reroute progress, spoken reroute notices | open, ready after #6 |
 | #6 | This Stage 1 work — Navigate behind a flag, background voice fix, puck centring | open |
 | #7 | Feed health watchdog — opens a GitHub issue when a data feed dies silently | merged |
 | #8 | ScraperAPI Australian-IP + retry handling so the SA feeds work on the free plan | merged |

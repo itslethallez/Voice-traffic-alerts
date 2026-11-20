@@ -4,10 +4,6 @@ import {
   clamp,
   defaultSettingsValues,
   enabledTypesFromSettings,
-  MAX_ANNOUNCE_DISTANCE_METERS,
-  MAX_BRIEFING_RADIUS_METERS,
-  MIN_ANNOUNCE_DISTANCE_METERS,
-  MIN_BRIEFING_RADIUS_METERS,
   speakableTypesFromFilters,
   visibleTypesFromFilters,
   wazeTypeToAlertFilter,
@@ -23,13 +19,8 @@ describe('defaultSettingsValues', () => {
     }
   });
 
-  it('defaults the announcement distance within the slider range', () => {
-    expect(defaultSettingsValues.announceDistanceMeters).toBeGreaterThanOrEqual(
-      MIN_ANNOUNCE_DISTANCE_METERS
-    );
-    expect(defaultSettingsValues.announceDistanceMeters).toBeLessThanOrEqual(
-      MAX_ANNOUNCE_DISTANCE_METERS
-    );
+  it('defaults alert distance to Normal', () => {
+    expect(defaultSettingsValues.alertDistance).toBe('normal');
   });
 
   it('defaults master mute to off', () => {
@@ -38,15 +29,6 @@ describe('defaultSettingsValues', () => {
 
   it('defaults the route type to safest', () => {
     expect(defaultSettingsValues.defaultRouteType).toBe('safest');
-  });
-
-  it('defaults the briefing radius within the slider range, separate from announce distance', () => {
-    expect(defaultSettingsValues.briefingRadiusMeters).toBeGreaterThanOrEqual(
-      MIN_BRIEFING_RADIUS_METERS
-    );
-    expect(defaultSettingsValues.briefingRadiusMeters).toBeLessThanOrEqual(
-      MAX_BRIEFING_RADIUS_METERS
-    );
   });
 });
 
