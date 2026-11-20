@@ -101,6 +101,16 @@ in drive-test builds only. 778/778 tests.
 driver-centred Cruise camera) and the 30s background silence fixed
 (background fixes are only ignored while the app is on screen). Merge order: **#6, then #14, then #5**; the puck-centring carry-forward is done.
 
+**Valhalla (branch `stage-3b-valhalla`, on top of #5 + main):** case C
+(same-named report within 60m of my road is "on [road]" whatever the
+router does) and case F (camera on another road is silent; unknown road
+still warns). Valhalla-first road matching with Mapbox fallback
+(`server/lib/valhalla.ts`), server + weekly OSM update + runbook in
+`infra/valhalla/`, watchdog probe, Settings -> MAP DATA credits. Code
+complete and tested (841/841); **not provisioned yet** - waiting on
+DIGITALOCEAN_TOKEN reaching the session, a Vercel project for `server/`
+(none exists), and the Vercel env vars.
+
 **Open PRs:**
 
 | PR | What it is | State |
