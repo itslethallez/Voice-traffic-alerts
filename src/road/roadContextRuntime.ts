@@ -322,7 +322,7 @@ function startLookup(target: RoadTarget, driver: DriverState, straightLine: numb
       });
       consecutiveFailures = 0;
       console.log(
-        `[road] lookup #${n} ${target.id} in ${Date.now() - startedAtMs}ms${route.shared ? ' (shared)' : ''}: ${describe(context)} ` +
+        `[road] lookup #${n} ${target.id} in ${Date.now() - startedAtMs}ms via ${route.router ?? 'mapbox-direct'}${route.shared ? ' (shared)' : ''}: ${describe(context)} ` +
           `(road ${Math.round(route.distanceMeters - fromOffset)}m vs straight ${Math.round(straightLine)}m, snap ${Math.round(route.destinationSnapMeters)}m, ` +
           `via ${route.steps.map((s) => `${s.maneuverType}${s.modifier ? `/${s.modifier}` : ''}:${s.name || '-'}`).join(' > ')})`
       );

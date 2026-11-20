@@ -20,6 +20,7 @@ import {
   type AlertDistanceSetting,
 } from '../engine/alertDistance';
 import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
+import { AttributionCard } from './AttributionCard';
 import { BuildInfoCard } from './BuildInfoCard';
 import type { FacebookNotificationSourceControls } from '../notifications/useFacebookNotificationSource';
 
@@ -346,6 +347,11 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
                 </Row>
               </Card>
             </Pressable>
+          </Column>
+
+          <Column gap="xs">
+            <SectionLabel>MAP DATA</SectionLabel>
+            <AttributionCard />
           </Column>
 
           <BuildInfoCard />

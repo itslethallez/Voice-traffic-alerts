@@ -1,0 +1,49 @@
+# Shotgun's Valhalla routing server - the one always-on service (approved
+# 21 Nov 2026, CLAUDE.md "Approved exceptions"). DigitalOcean SYD1,
+# 8 GB / 4 vCPU. Runbook: infra/valhalla/README.md.
+#
+# Lives in /opt/valhalla on the server:
+#   /opt/valhalla/live/      tiles being served (valhalla_tiles.tar + config)
+#   /opt/valhalla/staging/   next week's build (refresh.sh)
+#   /opt/valhalla/previous/  last week's, kept for rollback
+# Caddy terminates HTTPS and only lets through requests carrying the
+# shared secret (Caddyfile); Valhalla itself is never published.
+
+services:
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:3.9.3
+    restart: unless-stopped
+    # Serve exactly what refresh.sh built and checked - straight to the
+    # server binary, never the image's rebuild-if-changed entrypoint (an
+    # Australia build takes most of the RAM for the better part of an hour).
+    entrypoint: ['valhalla_service', '/custom_files/valhalla.json', '4']
+    volumes:
+      - ${BASE_DIR:-/opt/valhalla}/live:/custom_files:ro
+    expose:
+      - '8002'
+    mem_limit: 3g
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:8002/status >/dev/null || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2.11.8-alpine
+    restart: unless-stopped
+    depends_on:
+      - valhalla
+    ports:
+      - '80:80'
+      - '443:443'
+    env_file:
+      - ${BASE_DIR:-/opt/valhalla}/caddy.env
+    volumes:
+      - ${BASE_DIR:-/opt/valhalla}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 256m
+
+volumes:
+  caddy_data:
+  caddy_config:

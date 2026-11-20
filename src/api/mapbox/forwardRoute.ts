@@ -51,6 +51,9 @@ export interface ForwardRoute {
   /** Served from the server's shared cache (another driver's request) -
    * starts wherever that driver was, not necessarily here. */
   shared?: boolean;
+  /** Which router the server used (Valhalla first, Mapbox fallback).
+   * Absent for a direct Mapbox call from the app. */
+  router?: 'valhalla' | 'mapbox';
 }
 
 export interface DirectionsBody {
@@ -102,13 +105,13 @@ async function fetchSharedForwardRoute(
     toLat: String(to.latitude),
     toLng: String(to.longitude),
   });
-  const body = await requestJsonWithNativeTimeout<{ directions: DirectionsBody; cache: 'hit' | 'miss' }>({
+  const body = await requestJsonWithNativeTimeout<{ directions: DirectionsBody; cache: 'hit' | 'miss'; router?: 'valhalla' | 'mapbox' }>({
     method: 'GET',
     url: `${env.backendApiBaseUrl}api/road/forward-route?${params.toString()}`,
     timeoutMs: FORWARD_ROUTE_TIMEOUT_MS,
     signal,
   });
-  return { ...parseForwardRoute(body.directions), shared: body.cache === 'hit' };
+  return { ...parseForwardRoute(body.directions), shared: body.cache === 'hit', router: body.router ?? 'mapbox' };
 }
 
 async function fetchDirectForwardRoute(

@@ -1,3 +1,5 @@
 # pnpm patches must stay LF: with core.autocrlf=true a CRLF checkout makes
 # `pnpm install` skip the patch ("Could not apply patch") on Windows.
 *.patch text eol=lf
+*.sh text eol=lf
+infra/** text eol=lf

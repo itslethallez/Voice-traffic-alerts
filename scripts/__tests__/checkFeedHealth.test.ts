@@ -93,3 +93,65 @@ describe('checkFeed', () => {
     expect(client.close).toHaveBeenCalledWith(7);
   });
 });
+
+describe('Valhalla live check', () => {
+  const { probeValhalla, checkLive, LIVE_CHECKS, liveIssueTitle } = require('../checkFeedHealth.js');
+  const ENV = { VALHALLA_URL: 'https://valhalla.example/', VALHALLA_SHARED_SECRET: 'shh' };
+  const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+  const healthyFetch = () =>
+    jest
+      .fn()
+      .mockResolvedValueOnce(ok({ version: '3.9.3' }))
+      .mockResolvedValueOnce(ok({ trip: { legs: [{ shape: 'abc' }] } }))
+      .mockResolvedValueOnce(ok({ edges: [{ names: ['Sir Donald Bradman Drive', 'A6'] }] }));
+
+  beforeEach(() => jest.spyOn(console, 'log').mockImplementation(() => undefined));
+  afterEach(() => jest.restoreAllMocks());
+
+  it('is skipped (not failed) until VALHALLA_URL and the secret are set', async () => {
+    expect(await probeValhalla({}, jest.fn())).toEqual({ configured: false, healthy: true, reasons: [] });
+  });
+
+  it('passes on /status plus a Sir Donald Bradman Drive route that names its road, sending the secret', async () => {
+    const fetchImpl = healthyFetch();
+    expect(await probeValhalla(ENV, fetchImpl)).toEqual({ configured: true, healthy: true, reasons: [] });
+    expect(fetchImpl.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+      'https://valhalla.example/status',
+      'https://valhalla.example/route',
+      'https://valhalla.example/trace_attributes',
+    ]);
+    expect(fetchImpl.mock.calls[0][1].headers['x-shotgun-valhalla-secret']).toBe('shh');
+  });
+
+  it('fails when the server is unreachable, refuses the secret, or loses road names', async () => {
+    const down = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    expect((await probeValhalla(ENV, down)).reasons[0]).toMatch(/unreachable: ECONNREFUSED/);
+
+    const forbidden = jest.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) });
+    expect((await probeValhalla(ENV, forbidden)).reasons[0]).toMatch(/status returned 403/);
+
+    const nameless = jest
+      .fn()
+      .mockResolvedValueOnce(ok({}))
+      .mockResolvedValueOnce(ok({ trip: { legs: [{ shape: 'abc' }] } }))
+      .mockResolvedValueOnce(ok({ edges: [{ names: ['A6'] }] }));
+    expect((await probeValhalla(ENV, nameless)).reasons[0]).toMatch(/without its road name \(got: A6\)/);
+  });
+
+  it('opens a "Service down" issue when the probe fails, and closes it when it passes again', async () => {
+    const check = LIVE_CHECKS[0];
+    const client = {
+      findOpenIssue: jest.fn().mockResolvedValue(null),
+      listCommentBodiesSince: jest.fn().mockResolvedValue([]),
+      createIssue: jest.fn().mockResolvedValue({ number: 11 }),
+      comment: jest.fn().mockResolvedValue(null),
+      close: jest.fn().mockResolvedValue(null),
+    };
+    await checkLive(client, check, 'owner', ENV, NOW, jest.fn().mockRejectedValue(new Error('timeout')));
+    expect(client.createIssue).toHaveBeenCalledWith(liveIssueTitle(check), expect.stringContaining('falls back to Mapbox'), 'owner');
+
+    client.findOpenIssue.mockResolvedValue({ number: 11, created_at: hoursAgo(3) });
+    await checkLive(client, check, 'owner', ENV, NOW, healthyFetch());
+    expect(client.close).toHaveBeenCalledWith(11);
+  });
+});

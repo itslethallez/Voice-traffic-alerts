@@ -1,0 +1,25 @@
+# HTTPS in front of Valhalla. VALHALLA_HOST and VALHALLA_SHARED_SECRET
+# come from /opt/valhalla/caddy.env (never committed). Only the three
+# endpoints road matching and the watchdog use are reachable, and only
+# with the secret header (server/lib/valhalla.ts VALHALLA_SECRET_HEADER).
+# Everything else gets a bare 403 - this is not a public routing API.
+
+{$VALHALLA_HOST} {
+	@allowed {
+		header X-Shotgun-Valhalla-Secret {$VALHALLA_SHARED_SECRET}
+		path /route /trace_attributes /status
+	}
+	handle @allowed {
+		reverse_proxy valhalla:8002
+	}
+	handle {
+		respond 403
+	}
+	request_body {
+		max_size 256KB
+	}
+	log {
+		output stdout
+		format console
+	}
+}

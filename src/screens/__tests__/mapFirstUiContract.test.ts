@@ -89,3 +89,20 @@ describe('simplified map-first UI contract', () => {
     expect(nativeMap).toContain('REPORTED');
   });
 });
+
+describe('map data attribution (Valhalla on OpenStreetMap, 21 Nov 2026)', () => {
+  it('credits OpenStreetMap with a link to its licence, and Mapbox, on the Settings screen', () => {
+    const card = source('src/screens/AttributionCard.tsx');
+    expect(card).toContain("'© OpenStreetMap contributors'");
+    expect(card).toContain('https://www.openstreetmap.org/copyright');
+    expect(card).toContain("'© Mapbox'");
+    // Built from the base set and tokens, no hardcoded colours.
+    expect(card).toContain("from '../components/base/Card'");
+    expect(card).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(card).not.toContain("position: 'absolute'");
+
+    const settings = source('src/screens/SettingsScreen.tsx');
+    expect(settings).toContain('<AttributionCard />');
+    expect(settings).toContain('MAP DATA');
+  });
+});
