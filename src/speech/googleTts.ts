@@ -29,6 +29,9 @@ let activeAbortController: AbortController | null = null;
  * would otherwise be the only thing settling the promise. */
 let activeResolve: (() => void) | null = null;
 let activeTimeoutId: ReturnType<typeof setTimeout> | null = null;
+/** The in-flight utterance's own timeout handler and start time, so
+ * checkGoogleTtsWatchdog() can fire it when the JS timer can't. */
+let activeWatchdog: { startedAtMs: number; expire: () => void } | null = null;
 
 /**
  * Safety net for the whole fetch+playback round trip. A driving-safety
@@ -92,7 +95,7 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
     // activeTimeoutId, which a newer utterance may have already
     // overwritten with its own watchdog by the time a stale settle runs -
     // see the activeTimeoutId-clearing guard below).
-    const timeoutId = setTimeout(() => {
+    const expire = () => {
       if (!isCurrent()) return;
       // Bump the id, same as stopGoogleTtsSpeech - without this, a fetch
       // that was hung but eventually resolves after this timeout has
@@ -107,17 +110,21 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
       releaseActivePlayer();
       console.warn(`[speech] google timed out after ${OVERALL_TIMEOUT_MS}ms app=${appStateLabel()}`);
       settleReject(new Error('Google TTS timed out'));
-    }, OVERALL_TIMEOUT_MS);
+    };
+    const timeoutId = setTimeout(expire, OVERALL_TIMEOUT_MS);
     activeTimeoutId = timeoutId;
+    activeWatchdog = { startedAtMs: Date.now(), expire };
 
     const settleResolve = () => {
       clearTimeout(timeoutId);
+      if (activeWatchdog?.expire === expire) activeWatchdog = null;
       if (activeTimeoutId === timeoutId) activeTimeoutId = null;
       if (activeResolve === resolve) activeResolve = null;
       resolve();
     };
     const settleReject = (error: Error) => {
       clearTimeout(timeoutId);
+      if (activeWatchdog?.expire === expire) activeWatchdog = null;
       if (activeTimeoutId === timeoutId) activeTimeoutId = null;
       if (activeResolve === resolve) activeResolve = null;
       reject(error);
@@ -195,6 +202,23 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
   });
 }
 
+/**
+ * Fires the in-flight utterance's OVERALL_TIMEOUT_MS timeout if it's
+ * overdue. The setTimeout that normally does this is a JS timer, and React
+ * Native pauses those whenever the app isn't in the foreground - with the
+ * screen off a hung playback could hold the announcement queue well past
+ * 20s. The fetch half is already bounded natively (the ready deadline);
+ * this covers playback. Called on every driver update
+ * (trip/tripRuntime.ts), which keeps arriving every 3s in the background
+ * because the location task wakes the JS thread natively.
+ */
+export function checkGoogleTtsWatchdog(nowMs: number): void {
+  if (activeWatchdog && nowMs - activeWatchdog.startedAtMs >= OVERALL_TIMEOUT_MS) {
+    console.warn(`[speech] google watchdog: utterance overdue (${nowMs - activeWatchdog.startedAtMs}ms) app=${appStateLabel()}`);
+    activeWatchdog.expire();
+  }
+}
+
 /** Cuts off whatever speakWithGoogleTtsAsync() call is currently in
  * flight - fetching or playing - resolving its promise directly (tearing
  * down the player doesn't by itself guarantee a final status event) so
@@ -202,6 +226,7 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
  * that does still land afterward is a no-op. */
 export function stopGoogleTtsSpeech(): void {
   currentUtteranceId += 1;
+  activeWatchdog = null;
   clearActiveTimeout();
   activeAbortController?.abort();
   activeAbortController = null;
