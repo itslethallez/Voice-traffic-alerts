@@ -61,10 +61,16 @@ prefetch / briefing gaps / 20s watchdog, silent device-voice warm-up, 2s
 Google wait, suburb resolved before briefing prefetch. Audit cases A-F (+D)
 are fixtures in `src/road/__tests__/aheadCases.test.ts`. 754/754 tests.
 
-**Open questions from the Stage 3 drive test:** Mapbox cost at the 60/hour
-per-device cap; Waze points on a divided road snapping to the opposite
-carriageway (silent, per the U-turn rule); the trip doesn't start until the
-screen comes on after a screen-off cold start.
+**21 Nov follow-up (same branch):** road-match cost cut (route reused
+per road segment, lookups only inside the warn radius, 30s per-target
+spacing, shared server cache `server/api/road/forward-route.ts` - built,
+NOT deployed: needs a backend URL in the app and `MAPBOX_ACCESS_TOKEN` +
+Upstash on the server). Divided-road reports ("on [road], X" with no side),
+2x detour. Screen-off cold start now alerts (background location at
+launch + expo-location patch, built from source via
+`expo.autolinking.android.buildFromSource`). Briefing sentences frozen
+before prefetch; `EXPO_PUBLIC_BRIEFING_FIXTURE=1` forces a 3-item briefing
+in drive-test builds only. 778/778 tests.
 
 **PR #5** now has PR #6 merged in (RadarMap conflict resolved keeping #6's
 driver-centred Cruise camera) and the 30s background silence fixed
