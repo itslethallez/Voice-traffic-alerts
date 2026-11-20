@@ -29,6 +29,8 @@ import { applyRoadContext } from '../applyRoadContext';
 import {
   BEHIND_BEARING_DEG,
   getRoadMatchingStats,
+  isRoadMatchingDegraded,
+  MAX_LOOKUPS_PER_HOUR,
   resetRoadContext,
   roadContextFor,
   setForwardRouteFetcherForTests,
@@ -345,5 +347,70 @@ describe('road matching: cost and fallbacks', () => {
     const target = { id: 'hang', position: at, streets: ['Main North Rd'], kind: 'alert' as const };
     expect(roadContextFor(target, driverAt(START, 0), NOW)).toBe('pending');
     expect(roadContextFor(target, driverAt(START, 0), NOW + 7_000)).toEqual({ kind: 'nearby' });
+  });
+
+  it('never asks about a camera further than the 500m checkpoint (drive test: 60 calls in 4 min on cameras up to 280km away)', () => {
+    const asked: string[] = [];
+    const far: FixedSpeedCamera = { id: 'far', label: 'Far Road, FARVILLE', position: destinationPoint(START, 30_000, 0) };
+    const near: FixedSpeedCamera = { id: 'near', label: 'Main North Road, ELIZABETH', position: destinationPoint(START, 450, 0) };
+    selectSpeedCameraWarning({
+      driver: driverAt(START, 0),
+      speedLimitKmh: null,
+      cameras: [far, near],
+      alerts: [],
+      firedCheckpoints: new Map(),
+      nowMs: NOW,
+      roadFor: (target) => {
+        asked.push(target.id);
+        return 'pending';
+      },
+    });
+    expect(asked).toEqual(['near']);
+  });
+
+  it('discloses the lookup budget running out as degraded, and recovers when it frees up', async () => {
+    routeFor = (to) => directionsBody(START, to, [['depart', null, 'Main North Road', 1_500]]);
+    const driver = driverAt(START, 0);
+    for (let i = 0; i < MAX_LOOKUPS_PER_HOUR; i++) {
+      // Each on its own ray (78m apart at 1.5km), so no cached route covers the next.
+      roadContextFor({ id: `b${i}`, position: destinationPoint(START, 1_500, -88 + i * 3), streets: [], kind: 'alert' }, driver, NOW);
+      await flush();
+    }
+    expect(isRoadMatchingDegraded()).toBe(false);
+    const over = { id: 'over', position: destinationPoint(START, 1_500, 0), streets: ['Main North Rd'], kind: 'alert' as const };
+    expect(roadContextFor(over, driver, NOW)).toEqual({ kind: 'nearby' });
+    expect(isRoadMatchingDegraded()).toBe(true);
+
+    roadContextFor({ ...over, id: 'later' }, driver, NOW + 61 * 60_000);
+    expect(isRoadMatchingDegraded()).toBe(false);
+  });
+
+  it('keeps a "nearby" verdict until the driver has moved 1km, instead of asking again every fix', async () => {
+    const at = destinationPoint(destinationPoint(START, 1_500, 0), 400, 90);
+    routeFor = (to) =>
+      directionsBody(START, to, [
+        ['depart', null, 'Main North Road', 1_500],
+        ['turn', 'right', 'Side Street', 400],
+      ]);
+    const crash = alert('side', 'ACCIDENT', at, 'Side St');
+    await spoken([crash], driverAt(START, 0));
+    for (let m = 100; m <= 900; m += 100) await spoken([crash], driverAt(destinationPoint(START, m, 0), 0));
+    expect(requests).toHaveLength(1);
+    await spoken([crash], driverAt(destinationPoint(START, 1_050, 0), 0));
+    expect(requests).toHaveLength(2);
+  });
+
+  it('treats a target the driver is moving away from as behind, with no request (drive test: 26 calls for one passed report)', async () => {
+    const at = destinationPoint(START, 400, 60);
+    routeFor = (to) => directionsBody(START, to, [['depart', null, 'Main North Road', 2_000], ['continue', 'uturn', 'Main North Road', 600]]);
+    const target = { id: 'passed', position: at, streets: ['Main North Rd'], kind: 'alert' as const };
+    roadContextFor(target, driverAt(START, 0), NOW);
+    await flush();
+    expect(requests).toHaveLength(1);
+    // Turned to head 120deg: the target is back inside the heading cone
+    // (41deg off), but 650m further than the closest approach.
+    const away = driverAt(destinationPoint(START, 1_200, 0), 120);
+    expect(roadContextFor(target, away, NOW + 60_000)).toEqual({ kind: 'behind' });
+    expect(requests).toHaveLength(1);
   });
 });

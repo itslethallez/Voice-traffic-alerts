@@ -40,6 +40,14 @@ const COVERED_METERS = 30;
  * the driver moves this far, or this long. */
 const FIXED_ANSWER_MAX_MOVE_METERS = 1_000;
 const FIXED_ANSWER_MAX_AGE_MS = 90_000;
+/** A real "nearby" / "behind" verdict (not a failure) only goes stale by
+ * the driver moving - sitting at lights doesn't change which road it's on. */
+const VERDICT_MAX_AGE_MS = 5 * 60_000;
+/** Straight-line distance this far beyond the closest the driver has been
+ * to a target: they're driving away from it, so it's behind - no request.
+ * The second Stage 3 drive test re-asked a passed police report 26 times
+ * as it fell back from 337m to 4.3km. */
+export const RECEDING_MARGIN_METERS = 300;
 /** An alert waits at most this long for its first answer before being
  * spoken as "nearby" anyway - never held back indefinitely. */
 export const MAX_PENDING_MS = 6_000;
@@ -64,16 +72,21 @@ interface CachedRoute {
 
 type Entry =
   | { kind: 'route'; route: CachedRoute; targetOffset: number; context: RoadContext }
-  | { kind: 'fixed'; context: RoadContext; decidedAt: GeoPoint; decidedAtMs: number };
+  | { kind: 'fixed'; context: RoadContext; decidedAt: GeoPoint; decidedAtMs: number; maxAgeMs: number };
 
 let fetcher: Fetcher = (from, heading, to) => fetchForwardRoute(from, heading, to);
 const entries = new Map<string, Entry>();
 const inFlight = new Set<string>();
 const firstAskedAtMs = new Map<string, number>();
+/** Closest straight-line distance seen per target this trip. */
+const closestSeen = new Map<string, number>();
+const recedingLogged = new Set<string>();
 let routes: CachedRoute[] = [];
 let lookupTimes: number[] = [];
 let consecutiveFailures = 0;
 let budgetLogged = false;
+/** True while the hourly budget is used up - disclosed like a failure. */
+let budgetExhausted = false;
 let stats = { lookups: 0, covered: 0, failures: 0 };
 
 export type RoadLookup = RoadContext | 'pending';
@@ -85,6 +98,16 @@ export function roadContextFor(target: RoadTarget, driver: DriverState, nowMs: n
   const straightLine = haversineDistance(driver.position, target.position);
   const bearingDiff = bearingDifference(driver.headingDeg, bearingBetween(driver.position, target.position));
   if (bearingDiff > BEHIND_BEARING_DEG) return { kind: 'behind' };
+
+  const closest = Math.min(closestSeen.get(target.id) ?? Infinity, straightLine);
+  closestSeen.set(target.id, closest);
+  if (straightLine > closest + RECEDING_MARGIN_METERS) {
+    if (!recedingLogged.has(target.id)) {
+      recedingLogged.add(target.id);
+      console.log(`[road] ${target.id} receding (${Math.round(straightLine)}m, closest ${Math.round(closest)}m) - behind, no lookup`);
+    }
+    return { kind: 'behind' };
+  }
 
   const existing = entries.get(target.id);
   if (existing) {
@@ -120,7 +143,7 @@ export function roadContextFor(target: RoadTarget, driver: DriverState, nowMs: n
 function reuse(entry: Entry, driver: DriverState, nowMs: number): RoadContext | null {
   if (entry.kind === 'fixed') {
     const moved = haversineDistance(entry.decidedAt, driver.position);
-    if (moved > FIXED_ANSWER_MAX_MOVE_METERS || nowMs - entry.decidedAtMs > FIXED_ANSWER_MAX_AGE_MS) return null;
+    if (moved > FIXED_ANSWER_MAX_MOVE_METERS || nowMs - entry.decidedAtMs > entry.maxAgeMs) return null;
     return entry.context;
   }
   const cached = entry.route;
@@ -178,7 +201,16 @@ function startLookup(target: RoadTarget, driver: DriverState, straightLine: numb
         route.destinationSnapMeters
       );
       routes = [cached, ...routes].slice(0, MAX_CACHED_ROUTES);
-      entries.set(target.id, { kind: 'route', route: cached, targetOffset: route.distanceMeters, context });
+      // "ahead" rides the route: re-measured locally while the driver stays
+      // on it. Anything else is held until the driver has moved on - the
+      // driver isn't going to follow a U-turn or turn-off route, so tying
+      // the verdict to it meant asking again on every fix.
+      entries.set(
+        target.id,
+        context.kind === 'ahead'
+          ? { kind: 'route', route: cached, targetOffset: route.distanceMeters, context }
+          : { kind: 'fixed', context, decidedAt: driver.position, decidedAtMs: nowMs, maxAgeMs: VERDICT_MAX_AGE_MS }
+      );
       consecutiveFailures = 0;
       console.log(
         `[road] lookup #${n} ${target.id} in ${Date.now() - startedAtMs}ms: ${describe(context)} ` +
@@ -193,7 +225,8 @@ function startLookup(target: RoadTarget, driver: DriverState, straightLine: numb
         kind: 'fixed',
         context: { kind: 'nearby' },
         decidedAt: driver.position,
-        decidedAtMs: Date.now(),
+        decidedAtMs: nowMs,
+        maxAgeMs: FIXED_ANSWER_MAX_AGE_MS,
       });
       console.warn(
         `[road] lookup #${n} ${target.id} failed after ${Date.now() - startedAtMs}ms (${consecutiveFailures} in a row): ` +
@@ -209,8 +242,10 @@ function withinBudget(nowMs: number): boolean {
   lookupTimes = lookupTimes.filter((t) => nowMs - t < 60 * 60 * 1000);
   if (lookupTimes.length < MAX_LOOKUPS_PER_HOUR) {
     budgetLogged = false;
+    budgetExhausted = false;
     return true;
   }
+  budgetExhausted = true;
   return false;
 }
 
@@ -220,10 +255,11 @@ function describe(context: RoadContext): string {
     : context.kind;
 }
 
-/** True after DEGRADED_AFTER_FAILURES lookups in a row have failed - the
- * UI discloses that "ahead" can't currently be confirmed. */
+/** True after DEGRADED_AFTER_FAILURES lookups in a row have failed, or
+ * while the hourly lookup budget is used up - either way new alerts can't
+ * be confirmed "ahead", and the UI says so (trip/tripRuntime.ts). */
 export function isRoadMatchingDegraded(): boolean {
-  return consecutiveFailures >= DEGRADED_AFTER_FAILURES;
+  return consecutiveFailures >= DEGRADED_AFTER_FAILURES || budgetExhausted;
 }
 
 export function getRoadMatchingStats(): { lookups: number; covered: number; failures: number } {
@@ -234,10 +270,13 @@ export function resetRoadContext(): void {
   entries.clear();
   inFlight.clear();
   firstAskedAtMs.clear();
+  closestSeen.clear();
+  recedingLogged.clear();
   routes = [];
   lookupTimes = [];
   consecutiveFailures = 0;
   budgetLogged = false;
+  budgetExhausted = false;
   stats = { lookups: 0, covered: 0, failures: 0 };
 }
 

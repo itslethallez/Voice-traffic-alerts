@@ -30,6 +30,26 @@ function warningDistance(driver: DriverState, target: WarningTarget, road: RoadC
   return road?.kind === 'ahead' ? road.alongRoadMeters : haversineDistance(driver.position, target.position);
 }
 
+/**
+ * Road matching's answer for a target - asked only for targets within the
+ * outer checkpoint in a straight line. Road distance is never shorter than
+ * straight-line, so nothing further out can reach a checkpoint; asking
+ * about every camera in the state cost one Mapbox request each (the first
+ * Stage 3 drive test burned the hourly lookup budget in under 4 minutes on
+ * cameras up to 280km away). Lookups further out, to have the answer in
+ * before 500m, are made by trip/tripRuntime.ts within the camera radius.
+ */
+function roadIfInRange(
+  driver: DriverState,
+  target: WarningTarget,
+  roadFor: WarningRoadLookup | undefined
+): RoadContext | null {
+  if (!roadFor) return null;
+  if (haversineDistance(driver.position, target.position) > SPEED_WARNING_CHECKPOINTS_M[0]) return null;
+  const answer = roadFor(target);
+  return answer === 'pending' ? null : answer;
+}
+
 /** Farthest first - see selectSpeedCameraWarning's doc comment for the
  * firing-order rule this ordering drives. */
 export const SPEED_WARNING_CHECKPOINTS_M = [500, 200] as const;
@@ -136,11 +156,9 @@ export function hasNearbyWarningTarget(
   routeCorridor?: RouteCorridor,
   roadFor?: WarningRoadLookup
 ): boolean {
-  return gatherTargets(cameras, alerts).some((target) => {
-    const answer = roadFor?.(target);
-    const road = answer && answer !== 'pending' ? answer : null;
-    return isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor, road);
-  });
+  return gatherTargets(cameras, alerts).some((target) =>
+    isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor, roadIfInRange(driver, target, roadFor))
+  );
 }
 
 export interface SelectSpeedCameraWarningInput {
@@ -197,12 +215,8 @@ export function selectSpeedCameraWarning(input: SelectSpeedCameraWarningInput): 
   if (speedLimitKmh !== null && driver.speedKmh < speedLimitKmh + SPEED_WARNING_BUFFER_KMH) return null;
   const confirmedSpeeding = speedLimitKmh !== null;
 
-  const roadOf = (target: WarningTarget): RoadContext | null => {
-    const answer = roadFor?.(target);
-    return answer && answer !== 'pending' ? answer : null;
-  };
   const targets = gatherTargets(cameras, alerts)
-    .map((target) => ({ target, road: roadOf(target) }))
+    .map((target) => ({ target, road: roadIfInRange(driver, target, roadFor) }))
     .filter(({ target, road }) => isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor, road));
 
   let best: SpeedCameraWarningResult | null = null;
