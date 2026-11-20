@@ -227,6 +227,9 @@ function locationPhrase(
  * - On the driver's road or its continuation ("ahead"), distance along
  *   the road:   "Crash reported, 2 kilometres ahead on Main North Road."
  *               "Mobile camera, 1.2 kilometres ahead on Portrush Road."
+ * - On the driver's divided road, but Mapbox put it on the other side - a
+ *   Waze report has no direction, so no side is claimed:
+ *               "Police reported on Sir Donald Bradman Drive, 1.2 kilometres."
  * - Anywhere else, or not confirmed (road matching unavailable, still in
  *   flight, over budget), straight-line distance and never "ahead":
  *               "Crash reported nearby on Side Street, Adelaide, 1.4 kilometres away."
@@ -251,6 +254,10 @@ export function formatAnnouncement(candidate: AnnounceableAlert): string {
   if (road?.kind === 'ahead') {
     const roadName = spokenStreet(road.roadName) ?? spokenStreet(candidate.alert.street);
     text = roadName ? `${subject}, ${distance} ahead on ${roadName}.` : `${subject}, ${distance} ahead on this road.`;
+  } else if (road?.kind === 'onRoad') {
+    // Other carriageway of the driver's divided road: which side it's on
+    // is unknown, so neither "ahead" nor a side is claimed.
+    text = `${subject} on ${spokenStreet(road.roadName) ?? road.roadName}, ${distance}.`;
   } else {
     const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
     text = location ? `${subject} nearby ${location}, ${distance} away.` : `${subject} nearby, ${distance} away.`;

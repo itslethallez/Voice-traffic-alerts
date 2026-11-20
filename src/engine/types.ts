@@ -12,6 +12,13 @@ export interface DriverState {
   headingReliable?: boolean;
 }
 
+/** ahead or onRoad - the two verdicts that carry an along-road distance. */
+export function isOnDriversRoad(
+  road: RoadContext | null | undefined
+): road is Extract<RoadContext, { kind: 'ahead' | 'onRoad' }> {
+  return road?.kind === 'ahead' || road?.kind === 'onRoad';
+}
+
 /**
  * Where an alert sits relative to the road the driver is on - decided by
  * road/roadContextRuntime.ts from a Mapbox forward route.
@@ -25,6 +32,12 @@ export interface DriverState {
  */
 export type RoadContext =
   | { kind: 'ahead'; roadName: string | null; alongRoadMeters: number }
+  /** On the driver's road, but Mapbox put it on the other carriageway (it
+   * needs a U-turn to reach). Waze reports carry no direction, so which
+   * side it's really on is unknown: spoken as "on {road}, X" with no side
+   * and no "ahead" (21 Nov 2026 decision). Distance is along the driver's
+   * carriageway to the point level with it. */
+  | { kind: 'onRoad'; roadName: string; alongRoadMeters: number }
   | { kind: 'nearby' }
   | { kind: 'behind' };
 

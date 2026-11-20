@@ -1,6 +1,6 @@
 import type { WazeAlert, WazeAlertType } from '../api/waze/types';
 import { ANNOUNCE_MAX_BEARING_DIFF_DEG, isMeaningfullyCloser } from '../geo/announceWindow';
-import type { AnnounceableAlert, ApproachingAlert } from '../engine/types';
+import { isOnDriversRoad, type AnnounceableAlert, type ApproachingAlert, type RoadContext } from '../engine/types';
 import type { RoadTarget } from './classifyRoute';
 import type { RoadLookup } from './roadContextRuntime';
 import { roadNamesIn } from './roadNames';
@@ -24,8 +24,9 @@ export function roadTargetForAlert(alert: WazeAlert): RoadTarget {
  * - still being looked up: held back this pass (roadContextRuntime caps
  *   the wait at MAX_PENDING_MS, then answers "nearby");
  * - behind / needs a U-turn: dropped - silent;
- * - ahead: distance becomes the along-road distance, which must itself be
- *   inside the type's warn radius;
+ * - ahead / onRoad (the other carriageway of the driver's divided road):
+ *   distance becomes the along-road distance, which must itself be inside
+ *   the type's warn radius;
  * - nearby: kept only inside the ordinary 45-degree heading cone, with the
  *   straight-line distance - road matching widens what can be "ahead"
  *   (a road bending away), never what gets mentioned as "nearby".
@@ -51,16 +52,20 @@ export function applyRoadContext(
   return out;
 }
 
-/** Same rules for alerts still outside the warn radius - used to predict
- * their entry sentence for the TTS prefetch, and to get their road lookup
- * in before they're due. */
+/** Same rules for alerts still outside the warn radius, to predict their
+ * entry sentence for the TTS prefetch - from what's already known only
+ * (`peek`, roadContextRuntime's peekRoadContext). No lookup starts until
+ * the alert is inside its radius (21 Nov 2026 cost decision); unknown is
+ * predicted with the "nearby" wording, which is what it'd be spoken as if
+ * the lookup didn't land in time. */
 export function applyRoadContextToApproaching(
   approaching: readonly ApproachingAlert[],
-  lookup: RoadLookupFn
+  peek: (target: RoadTarget) => RoadContext | null
 ): ApproachingAlert[] {
   const out: ApproachingAlert[] = [];
   for (const a of approaching) {
-    const decided = decide(a.candidate, lookup, () => Infinity);
+    const known = peek(roadTargetForAlert(a.candidate.alert));
+    const decided = decide(a.candidate, () => known ?? { kind: 'nearby' }, () => Infinity);
     if (decided) out.push({ ...a, candidate: decided });
   }
   return out;
@@ -73,7 +78,7 @@ function decide(
 ): AnnounceableAlert | null {
   const answer = lookup(roadTargetForAlert(candidate.alert));
   if (answer === 'pending' || answer.kind === 'behind') return null;
-  if (answer.kind === 'ahead') {
+  if (isOnDriversRoad(answer)) {
     if (answer.alongRoadMeters > radiusFor(candidate.alert.type)) return null;
     return { ...candidate, distanceMeters: answer.alongRoadMeters, road: answer };
   }

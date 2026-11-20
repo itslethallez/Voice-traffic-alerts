@@ -6,7 +6,7 @@ import { haversineDistance } from '../geo/distance';
 import { distanceToPolyline } from '../geo/routePolyline';
 import type { GeoPoint } from '../geo/types';
 import type { RouteCorridor } from './selectAlerts';
-import type { DriverState, RoadContext } from './types';
+import { isOnDriversRoad, type DriverState, type RoadContext } from './types';
 import { roadNamesIn } from '../road/roadNames';
 
 export type WarningTargetKind = 'camera' | 'report';
@@ -27,7 +27,7 @@ export type WarningRoadLookup = (target: WarningTarget) => RoadContext | 'pendin
 /** Distance used against the 500m/200m checkpoints: along the road when
  * road matching confirmed the target is ahead on it, else straight-line. */
 function warningDistance(driver: DriverState, target: WarningTarget, road: RoadContext | null): number {
-  return road?.kind === 'ahead' ? road.alongRoadMeters : haversineDistance(driver.position, target.position);
+  return isOnDriversRoad(road) ? road.alongRoadMeters : haversineDistance(driver.position, target.position);
 }
 
 /**
@@ -119,7 +119,7 @@ function isGeometricallyEligible(
   const outerCheckpoint = SPEED_WARNING_CHECKPOINTS_M[0];
   if (distanceMeters > outerCheckpoint) return false;
 
-  if (road?.kind === 'ahead') {
+  if (isOnDriversRoad(road)) {
     // Confirmed on the driver's road: the heading cone doesn't apply (a
     // bend can put a camera on your own road well off your heading).
   } else if (routeCorridor) {

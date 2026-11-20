@@ -31,6 +31,7 @@ import {
   getRoadMatchingStats,
   isRoadMatchingDegraded,
   MAX_LOOKUPS_PER_HOUR,
+  peekRoadContext,
   resetRoadContext,
   roadContextFor,
   setForwardRouteFetcherForTests,
@@ -42,15 +43,21 @@ const START: GeoPoint = { latitude: -34.72, longitude: 138.67 };
 
 type Step = [maneuverType: string, modifier: string | null, name: string, distanceMeters: number];
 
-/** A Mapbox Directions (driving, steps=true, geometries=geojson) body. */
-function directionsBody(from: GeoPoint, to: GeoPoint, steps: Step[], snapMeters = 3) {
+/**
+ * A Mapbox Directions (driving, steps=true, geometries=geojson) body.
+ * Geometry: straight on (north) for the first step, then to the target -
+ * enough for the driver to be "on the route" as they drive up it - unless
+ * `geometry` gives the real shape.
+ */
+function directionsBody(from: GeoPoint, to: GeoPoint, steps: Step[], snapMeters = 3, geometry?: GeoPoint[]) {
   const distance = steps.reduce((sum, s) => sum + s[3], 0);
+  const shape = geometry ?? (steps.length > 1 ? [from, destinationPoint(from, steps[0][3], 0), to] : [from, to]);
   return {
     code: 'Ok',
     routes: [
       {
         distance,
-        geometry: { coordinates: [[from.longitude, from.latitude], [to.longitude, to.latitude]] as [number, number][] },
+        geometry: { coordinates: shape.map((p) => [p.longitude, p.latitude] as [number, number]) },
         legs: [
           {
             steps: [
@@ -69,7 +76,7 @@ function directionsBody(from: GeoPoint, to: GeoPoint, steps: Step[], snapMeters 
   };
 }
 
-let routeFor: (to: GeoPoint) => ReturnType<typeof directionsBody>;
+let routeFor: (to: GeoPoint, from: GeoPoint) => ReturnType<typeof directionsBody>;
 let requests: Array<{ from: GeoPoint; headingDeg: number; to: GeoPoint }>;
 
 beforeEach(() => {
@@ -77,7 +84,7 @@ beforeEach(() => {
   requests = [];
   setForwardRouteFetcherForTests(async (from, headingDeg, to) => {
     requests.push({ from, headingDeg, to });
-    return parseForwardRoute(routeFor(to));
+    return parseForwardRoute(routeFor(to, from));
   });
 });
 
@@ -159,14 +166,44 @@ describe('road matching: audit cases A-F', () => {
     );
   });
 
-  it('C. opposite carriageway of your own road (Mapbox needs a U-turn to reach it) -> silent', async () => {
+  it('C. opposite carriageway of your own road (needs a U-turn; Waze gives no direction) -> "on [road]", no side claimed', async () => {
+    // Was silent (U-turn = behind). 21 Nov 2026: same road name, within 60m
+    // of my carriageway -> announce it, without claiming which side.
     const at = destinationPoint(START, 2_000, 0);
     routeFor = (to) =>
       directionsBody(START, to, [
         ['depart', null, 'Main North Road', 2_300],
         ['continue', 'uturn', 'Main North Road', 300],
       ]);
-    expect(await spoken([alert('C', 'ACCIDENT', at, 'A1 - Main North Rd')], driverAt(START, 0))).toBeNull();
+    expect(await spoken([alert('C', 'ACCIDENT', at, 'A1 - Main North Rd')], driverAt(START, 0))).toBe(
+      'Crash reported on Main North Road, 2 kilometres.'
+    );
+  });
+
+  it('C3. U-turn to a report on another road -> silent', async () => {
+    const at = destinationPoint(START, 2_000, 0);
+    routeFor = (to) =>
+      directionsBody(START, to, [
+        ['depart', null, 'Main North Road', 2_300],
+        ['continue', 'uturn', 'Main North Road', 300],
+      ]);
+    expect(await spoken([alert('C3', 'ACCIDENT', at, 'Service Rd')], driverAt(START, 0))).toBeNull();
+  });
+
+  it('C4. U-turn to a same-named report more than 60m off my carriageway -> silent', async () => {
+    const at = destinationPoint(destinationPoint(START, 2_000, 0), 150, 90);
+    routeFor = (to) =>
+      directionsBody(
+        START,
+        to,
+        [
+          ['depart', null, 'Main North Road', 2_300],
+          ['continue', 'uturn', 'Main North Road', 350],
+        ],
+        3,
+        [START, destinationPoint(START, 2_300, 0), to]
+      );
+    expect(await spoken([alert('C4', 'ACCIDENT', at, 'Main North Rd')], driverAt(START, 0))).toBeNull();
   });
 
   it('C2. opposite carriageway, reached by looping round a block instead of a U-turn -> nearby, not "ahead"', async () => {
@@ -320,7 +357,7 @@ describe('road matching: cost and fallbacks', () => {
       'Crash reported, 1.5 kilometres ahead on Main North Road.'
     );
     expect(requests).toHaveLength(1);
-    expect(getRoadMatchingStats()).toEqual({ lookups: 1, covered: 1, failures: 0 });
+    expect(getRoadMatchingStats()).toMatchObject({ lookups: 1, covered: 1, failures: 0 });
   });
 
   it('re-measures the along-road distance locally as the driver moves along the route', async () => {
@@ -385,19 +422,57 @@ describe('road matching: cost and fallbacks', () => {
     expect(isRoadMatchingDegraded()).toBe(false);
   });
 
-  it('keeps a "nearby" verdict until the driver has moved 1km, instead of asking again every fix', async () => {
+  it('reuses one route per road segment: no new request while the driver stays on it, a new one only after leaving it', async () => {
     const at = destinationPoint(destinationPoint(START, 1_500, 0), 400, 90);
-    routeFor = (to) =>
-      directionsBody(START, to, [
+    routeFor = (to, from) =>
+      directionsBody(from, to, [
         ['depart', null, 'Main North Road', 1_500],
         ['turn', 'right', 'Side Street', 400],
       ]);
     const crash = alert('side', 'ACCIDENT', at, 'Side St');
     await spoken([crash], driverAt(START, 0));
-    for (let m = 100; m <= 900; m += 100) await spoken([crash], driverAt(destinationPoint(START, m, 0), 0));
+    for (let m = 100; m <= 1_400; m += 100) await spoken([crash], driverAt(destinationPoint(START, m, 0), 0));
     expect(requests).toHaveLength(1);
-    await spoken([crash], driverAt(destinationPoint(START, 1_050, 0), 0));
+    // Took a parallel road 200m east instead: off the route - ask again.
+    await spoken([crash], driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 200, 90), 0));
     expect(requests).toHaveLength(2);
+  });
+
+  it('a "nearby" becomes "ahead" once the driver takes the turn onto the alert road - from the same route', async () => {
+    const corner = destinationPoint(START, 1_500, 0);
+    const at = destinationPoint(corner, 400, 90);
+    routeFor = (to) =>
+      directionsBody(START, to, [
+        ['depart', null, 'Main North Road', 1_500],
+        ['turn', 'right', 'Side Street', 400],
+      ]);
+    const crash = alert('turn', 'ACCIDENT', at, 'Side St');
+    expect(await spoken([crash], driverAt(START, 0))).toBe(
+      'Crash reported nearby on Side Street, Elizabeth, 1.6 kilometres away.'
+    );
+    expect(await spoken([crash], driverAt(destinationPoint(corner, 50, 90), 90))).toBe(
+      'Crash reported, 300 metres ahead on Side Street.' // 350m along, rounded
+    );
+    expect(requests).toHaveLength(1);
+  });
+
+  it('detour limit is 2x straight-line: a 2.5x road distance is "nearby", 1.9x is "ahead"', async () => {
+    const at = destinationPoint(START, 1_000, 0);
+    routeFor = (to) => directionsBody(START, to, [['depart', null, 'Main North Road', 2_500]]);
+    expect(await spoken([alert('d25', 'ACCIDENT', at, 'Main North Rd')], driverAt(START, 0))).toBe(
+      'Crash reported nearby on Main North Road, Elizabeth, 1 kilometre away.'
+    );
+    resetRoadContext();
+    routeFor = (to) => directionsBody(START, to, [['depart', null, 'Main North Road', 1_900]]);
+    expect(await spoken([alert('d19', 'ACCIDENT', at, 'Main North Rd')], driverAt(START, 0))).toBe(
+      'Crash reported, 1.9 kilometres ahead on Main North Road.'
+    );
+  });
+
+  it('only looks a target up once it is inside its warn radius - a peek never makes a request', () => {
+    const target = { id: 'peek', position: destinationPoint(START, 4_000, 0), streets: ['Main North Rd'], kind: 'alert' as const };
+    expect(peekRoadContext(target, driverAt(START, 0), NOW)).toBeNull();
+    expect(requests).toHaveLength(0);
   });
 
   it('treats a target the driver is moving away from as behind, with no request (drive test: 26 calls for one passed report)', async () => {
@@ -412,5 +487,69 @@ describe('road matching: cost and fallbacks', () => {
     const away = driverAt(destinationPoint(START, 1_200, 0), 120);
     expect(roadContextFor(target, away, NOW + 60_000)).toEqual({ kind: 'behind' });
     expect(requests).toHaveLength(1);
+  });
+});
+
+describe('road matching: divided road - Sir Donald Bradman Drive (Stage 3 drive test)', () => {
+  // The drive turned off Sir Richard Williams Avenue onto Sir Donald
+  // Bradman Drive eastbound. A police report on SDB Drive (no direction,
+  // like every Waze report) was snapped by Mapbox onto the westbound
+  // carriageway ~25m north, so the route was "turn onto SDB, drive past
+  // it, U-turn, come back" - and the driver heard nothing. Synthetic
+  // geometry, laid out like the real junction.
+  const junction: GeoPoint = { latitude: -34.942, longitude: 138.556 };
+  const approach = destinationPoint(junction, 500, 270); // on Sir Richard Williams Ave
+  const uturnSouth = destinationPoint(junction, 1_600, 90);
+  const uturnNorth = destinationPoint(uturnSouth, 25, 0);
+  const police = destinationPoint(destinationPoint(junction, 1_200, 90), 25, 0);
+  const report = alert('sdb-police', 'POLICE', police, 'Sir Donald Bradman Dr', 'Mile End South');
+
+  beforeEach(() => {
+    routeFor = (to) =>
+      directionsBody(
+        approach,
+        to,
+        [
+          ['depart', null, 'Sir Richard Williams Avenue', 500],
+          ['turn', 'right', 'Sir Donald Bradman Drive', 1_600],
+          ['continue', 'uturn', 'Sir Donald Bradman Drive', 425],
+        ],
+        4,
+        [approach, junction, uturnSouth, uturnNorth, to]
+      );
+  });
+
+  it('before turning onto SDB Drive: silent (a turn off my road, then a U-turn)', async () => {
+    expect(await spoken([report], driverAt(approach, 90))).toBeNull();
+  });
+
+  it('once on SDB Drive: "Police reported on Sir Donald Bradman Drive, X" - no side, no "ahead", no new request', async () => {
+    await spoken([report], driverAt(approach, 90));
+    expect(await spoken([report], driverAt(destinationPoint(junction, 100, 90), 90))).toBe(
+      'Police reported on Sir Donald Bradman Drive, 1.1 kilometres.'
+    );
+    expect(requests).toHaveLength(1);
+  });
+
+  it('a fresh lookup made from SDB Drive gives the same answer', async () => {
+    const onSdb = destinationPoint(junction, 100, 90);
+    routeFor = (to) =>
+      directionsBody(
+        onSdb,
+        to,
+        [
+          ['depart', null, 'Sir Donald Bradman Drive', 1_500],
+          ['continue', 'uturn', 'Sir Donald Bradman Drive', 425],
+        ],
+        4,
+        [onSdb, uturnSouth, uturnNorth, to]
+      );
+    expect(await spoken([report], driverAt(onSdb, 90))).toBe('Police reported on Sir Donald Bradman Drive, 1.1 kilometres.');
+  });
+
+  it('the camera-style checkpoint warning for a corroborated report there claims no side either', () => {
+    expect(
+      formatSpeedCameraWarning('report', 500, true, { kind: 'onRoad', roadName: 'Sir Donald Bradman Drive', alongRoadMeters: 480 })
+    ).toBe("Police reported on Sir Donald Bradman Drive, 500 metres, you're currently over the limit. Reduce speed immediately.");
   });
 });

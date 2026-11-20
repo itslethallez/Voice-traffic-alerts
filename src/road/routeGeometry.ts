@@ -25,7 +25,9 @@ export interface PolylineProjection {
 export function projectOntoPolyline(
   point: GeoPoint,
   polyline: readonly GeoPoint[],
-  cumulative: readonly number[]
+  cumulative: readonly number[],
+  /** Only consider the stretch between these offsets (metres along). */
+  range: { from: number; to: number } = { from: -Infinity, to: Infinity }
 ): PolylineProjection {
   if (polyline.length === 0) return { offsetMeters: Infinity, progressMeters: 0 };
   if (polyline.length === 1) return { offsetMeters: haversineDistance(point, polyline[0]), progressMeters: 0 };
@@ -35,6 +37,7 @@ export function projectOntoPolyline(
 
   let best: PolylineProjection = { offsetMeters: Infinity, progressMeters: 0 };
   for (let i = 0; i < polyline.length - 1; i++) {
+    if (cumulative[i + 1] < range.from || cumulative[i] > range.to) continue;
     const a = polyline[i];
     const b = polyline[i + 1];
     const ax = (a.longitude - point.longitude) * metersPerDegLon;
@@ -44,7 +47,10 @@ export function projectOntoPolyline(
     const dx = bx - ax;
     const dy = by - ay;
     const lengthSq = dx * dx + dy * dy;
-    const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSq));
+    const segLength = cumulative[i + 1] - cumulative[i];
+    const tMin = segLength > 0 ? Math.max(0, (range.from - cumulative[i]) / segLength) : 0;
+    const tMax = segLength > 0 ? Math.min(1, (range.to - cumulative[i]) / segLength) : 1;
+    const t = lengthSq === 0 ? 0 : Math.max(tMin, Math.min(tMax, -(ax * dx + ay * dy) / lengthSq));
     const px = ax + t * dx;
     const py = ay + t * dy;
     const offset = Math.sqrt(px * px + py * py);

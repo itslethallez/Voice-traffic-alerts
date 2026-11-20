@@ -11,17 +11,22 @@ import { cumulativeDistances, projectOntoPolyline } from './routeGeometry';
  * Road matching for Cruise: is this alert on the road I'm driving, how far
  * along it, or is it somewhere else / behind me?
  *
- * One Mapbox Directions request per alert (api/mapbox/forwardRoute.ts),
- * made while the alert is still approaching the warn radius so the answer
- * is in before it's announced - then kept and re-used:
- * - while the driver stays on that route, the along-road distance is
- *   re-measured locally on every fix (no new request);
- * - any other alert lying on a route already fetched is classified from
- *   it for free ("covered");
+ * One forward route per alert (api/mapbox/forwardRoute.ts - from Shotgun's
+ * server, which shares routes across drivers, or straight from Mapbox),
+ * asked for only once the alert is inside its warn radius - then reused
+ * for as long as it can be ("per road segment"):
+ * - while the driver stays on that route, the verdict is re-derived from
+ *   the route's remaining steps on every fix (no request): the distance
+ *   shrinks along the road, and a "nearby" turns into "ahead" once the
+ *   driver takes the turn onto the alert's road;
+ * - any other alert lying ahead on a route already fetched is classified
+ *   from it for free ("covered");
  * - a new request is made only when the driver leaves the route.
- * Requests are rationed (MAX_LOOKUPS_PER_HOUR); past the budget, while a
- * request is still out, or if road matching is down, alerts fall back to
- * the honest "nearby, X away" wording - never "ahead" without a check.
+ * Alerts still outside the radius only get a peek (peekRoadContext) at
+ * what's already known - no request. Requests are rationed
+ * (MAX_LOOKUPS_PER_HOUR); past the budget, while a request is still out,
+ * or if road matching is down, alerts fall back to the honest "nearby, X
+ * away" wording - never "ahead" without a check - and the UI says so.
  *
  * Log tag: [road] - one line per lookup, cover, failure and budget event,
  * so a drive test shows exactly how many Directions calls it cost.
@@ -33,16 +38,13 @@ import { cumulativeDistances, projectOntoPolyline } from './routeGeometry';
  * it; "nearby" alerts keep the 45-degree cone (trip/tripRuntime.ts). */
 export const BEHIND_BEARING_DEG = 100;
 /** Driver further than this from a cached route has left it. */
-const ON_ROUTE_METERS = 50;
+export const ON_ROUTE_METERS = 50;
 /** A target this close to a cached route lies on it. */
 const COVERED_METERS = 30;
-/** A non-route answer (nearby after a failure, budget) is re-asked after
- * the driver moves this far, or this long. */
-const FIXED_ANSWER_MAX_MOVE_METERS = 1_000;
-const FIXED_ANSWER_MAX_AGE_MS = 90_000;
-/** A real "nearby" / "behind" verdict (not a failure) only goes stale by
- * the driver moving - sitting at lights doesn't change which road it's on. */
-const VERDICT_MAX_AGE_MS = 5 * 60_000;
+/** A failed lookup's "nearby" is re-asked after the driver moves this far,
+ * or this long. */
+const FAILED_ANSWER_MAX_MOVE_METERS = 1_000;
+const FAILED_ANSWER_MAX_AGE_MS = 90_000;
 /** Straight-line distance this far beyond the closest the driver has been
  * to a target: they're driving away from it, so it's behind - no request.
  * The second Stage 3 drive test re-asked a passed police report 26 times
@@ -52,10 +54,9 @@ export const RECEDING_MARGIN_METERS = 300;
  * spoken as "nearby" anyway - never held back indefinitely. */
 export const MAX_PENDING_MS = 6_000;
 const MAX_CONCURRENT_LOOKUPS = 2;
-/** Cost cap per device: ~1 request a minute of driving. See the Stage 3
- * PR notes for what that means at 1,000 daily users. */
+/** Cost cap per device. Unchanged on 21 Nov 2026 - cut calls first. */
 export const MAX_LOOKUPS_PER_HOUR = 60;
-const MAX_CACHED_ROUTES = 8;
+const MAX_CACHED_ROUTES = 12;
 /** After this many failures in a row, road matching is "degraded" and the
  * UI says so (trip/tripRuntime.ts's banner). */
 const DEGRADED_AFTER_FAILURES = 3;
@@ -71,8 +72,8 @@ interface CachedRoute {
 }
 
 type Entry =
-  | { kind: 'route'; route: CachedRoute; targetOffset: number; context: RoadContext }
-  | { kind: 'fixed'; context: RoadContext; decidedAt: GeoPoint; decidedAtMs: number; maxAgeMs: number };
+  | { kind: 'route'; route: CachedRoute; targetOffset: number; snapMeters: number }
+  | { kind: 'failed'; decidedAt: GeoPoint; decidedAtMs: number };
 
 let fetcher: Fetcher = (from, heading, to) => fetchForwardRoute(from, heading, to);
 const entries = new Map<string, Entry>();
@@ -87,11 +88,12 @@ let consecutiveFailures = 0;
 let budgetLogged = false;
 /** True while the hourly budget is used up - disclosed like a failure. */
 let budgetExhausted = false;
-let stats = { lookups: 0, covered: 0, failures: 0 };
+let stats = { lookups: 0, covered: 0, failures: 0, reused: 0 };
 
 export type RoadLookup = RoadContext | 'pending';
 
-export function roadContextFor(target: RoadTarget, driver: DriverState, nowMs: number): RoadLookup {
+/** What's known without a request, or null - the checks every path shares. */
+function known(target: RoadTarget, driver: DriverState): RoadContext | null {
   if (!ROAD_MATCHING_ENABLED) return { kind: 'nearby' };
   if (driver.headingReliable === false) return { kind: 'nearby' };
 
@@ -108,21 +110,21 @@ export function roadContextFor(target: RoadTarget, driver: DriverState, nowMs: n
     }
     return { kind: 'behind' };
   }
+  return null;
+}
 
-  const existing = entries.get(target.id);
-  if (existing) {
-    const answer = reuse(existing, driver, nowMs);
-    if (answer) return answer;
-    entries.delete(target.id);
-  }
+/**
+ * Road context for a target inside its warn radius: answers from what's
+ * known, or starts a lookup and returns 'pending' (for at most
+ * MAX_PENDING_MS, then "nearby").
+ */
+export function roadContextFor(target: RoadTarget, driver: DriverState, nowMs: number): RoadLookup {
+  const shortcut = known(target, driver);
+  if (shortcut) return shortcut;
+  const straightLine = haversineDistance(driver.position, target.position);
 
-  const covered = coverFromCachedRoutes(target, driver, straightLine);
-  if (covered) {
-    entries.set(target.id, covered.entry);
-    stats.covered += 1;
-    console.log(`[road] covered ${target.id} from a cached route: ${describe(covered.context)}`);
-    return covered.context;
-  }
+  const cached = fromCache(target, driver, straightLine, nowMs);
+  if (cached) return cached;
 
   if (!firstAskedAtMs.has(target.id)) firstAskedAtMs.set(target.id, nowMs);
   const waited = nowMs - (firstAskedAtMs.get(target.id) ?? nowMs);
@@ -140,20 +142,69 @@ export function roadContextFor(target: RoadTarget, driver: DriverState, nowMs: n
   return waited > MAX_PENDING_MS ? { kind: 'nearby' } : 'pending';
 }
 
-function reuse(entry: Entry, driver: DriverState, nowMs: number): RoadContext | null {
-  if (entry.kind === 'fixed') {
-    const moved = haversineDistance(entry.decidedAt, driver.position);
-    if (moved > FIXED_ANSWER_MAX_MOVE_METERS || nowMs - entry.decidedAtMs > entry.maxAgeMs) return null;
-    return entry.context;
+/**
+ * For targets still outside their warn radius (the TTS prefetch's
+ * prediction): whatever is already known, never a request - lookups wait
+ * until the alert is inside the radius (21 Nov 2026 cost decision).
+ */
+export function peekRoadContext(target: RoadTarget, driver: DriverState, nowMs: number): RoadContext | null {
+  const shortcut = known(target, driver);
+  if (shortcut) return shortcut;
+  return fromCache(target, driver, haversineDistance(driver.position, target.position), nowMs);
+}
+
+function fromCache(target: RoadTarget, driver: DriverState, straightLine: number, nowMs: number): RoadContext | null {
+  const existing = entries.get(target.id);
+  if (existing) {
+    const answer = reuse(existing, target, driver, straightLine, nowMs);
+    if (answer) {
+      stats.reused += 1;
+      return answer;
+    }
+    entries.delete(target.id);
   }
-  const cached = entry.route;
+  const covered = coverFromCachedRoutes(target, driver, straightLine);
+  if (covered) {
+    entries.set(target.id, covered.entry);
+    stats.covered += 1;
+    console.log(`[road] covered ${target.id} from a cached route: ${describe(covered.context)}`);
+    return covered.context;
+  }
+  return null;
+}
+
+/** Where the driver is along a cached route, or null if they've left it. */
+function progressOn(cached: CachedRoute, driver: DriverState): number | null {
   const at = projectOntoPolyline(driver.position, cached.route.polyline, cached.cumulative);
   if (at.offsetMeters > ON_ROUTE_METERS || at.progressMeters < cached.lastProgress - ON_ROUTE_METERS) return null;
-  cached.lastProgress = Math.max(cached.lastProgress, at.progressMeters);
-  if (entry.context.kind !== 'ahead') return entry.context;
-  const along = entry.targetOffset - at.progressMeters;
-  if (along < -COVERED_METERS) return { kind: 'behind' }; // driven past it
-  return { ...entry.context, alongRoadMeters: Math.max(0, along) };
+  return at.progressMeters;
+}
+
+function reuse(
+  entry: Entry,
+  target: RoadTarget,
+  driver: DriverState,
+  straightLine: number,
+  nowMs: number
+): RoadContext | null {
+  if (entry.kind === 'failed') {
+    const moved = haversineDistance(entry.decidedAt, driver.position);
+    if (moved > FAILED_ANSWER_MAX_MOVE_METERS || nowMs - entry.decidedAtMs > FAILED_ANSWER_MAX_AGE_MS) return null;
+    return { kind: 'nearby' };
+  }
+  const cached = entry.route;
+  const progress = progressOn(cached, driver);
+  if (progress === null) return null;
+  cached.lastProgress = Math.max(cached.lastProgress, progress);
+  if (entry.targetOffset - progress < -COVERED_METERS) return { kind: 'behind' }; // driven past it
+  return classifyRouteSegment(
+    cached.route,
+    Math.min(progress, entry.targetOffset - 1),
+    entry.targetOffset,
+    target,
+    straightLine,
+    entry.snapMeters
+  );
 }
 
 function coverFromCachedRoutes(
@@ -162,13 +213,13 @@ function coverFromCachedRoutes(
   straightLine: number
 ): { entry: Entry; context: RoadContext } | null {
   for (const cached of routes) {
-    const at = projectOntoPolyline(driver.position, cached.route.polyline, cached.cumulative);
-    if (at.offsetMeters > ON_ROUTE_METERS) continue;
+    const progress = progressOn(cached, driver);
+    if (progress === null) continue;
     const there = projectOntoPolyline(target.position, cached.route.polyline, cached.cumulative);
-    if (there.offsetMeters > COVERED_METERS || there.progressMeters <= at.progressMeters) continue;
+    if (there.offsetMeters > COVERED_METERS || there.progressMeters <= progress) continue;
     const context = classifyRouteSegment(
       cached.route,
-      at.progressMeters,
+      progress,
       there.progressMeters,
       target,
       straightLine,
@@ -178,7 +229,10 @@ function coverFromCachedRoutes(
     // route that merely passes near the target (a parallel street 25m
     // over) says nothing reliable about it otherwise.
     if (context.kind !== 'ahead') continue;
-    return { entry: { kind: 'route', route: cached, targetOffset: there.progressMeters, context }, context };
+    return {
+      entry: { kind: 'route', route: cached, targetOffset: there.progressMeters, snapMeters: there.offsetMeters },
+      context,
+    };
   }
   return null;
 }
@@ -192,42 +246,37 @@ function startLookup(target: RoadTarget, driver: DriverState, straightLine: numb
   fetcher(driver.position, driver.headingDeg, target.position)
     .then((route) => {
       const cached: CachedRoute = { route, cumulative: cumulativeDistances(route.polyline), lastProgress: 0 };
+      // A shared route (server cache) starts wherever its first driver
+      // was; this driver is somewhere along it.
+      const at = projectOntoPolyline(driver.position, route.polyline, cached.cumulative);
+      const fromOffset = Math.min(at.progressMeters, Math.max(0, route.distanceMeters - 1));
+      cached.lastProgress = fromOffset;
       const context = classifyRouteSegment(
         route,
-        0,
+        fromOffset,
         route.distanceMeters,
         target,
         straightLine,
         route.destinationSnapMeters
       );
       routes = [cached, ...routes].slice(0, MAX_CACHED_ROUTES);
-      // "ahead" rides the route: re-measured locally while the driver stays
-      // on it. Anything else is held until the driver has moved on - the
-      // driver isn't going to follow a U-turn or turn-off route, so tying
-      // the verdict to it meant asking again on every fix.
-      entries.set(
-        target.id,
-        context.kind === 'ahead'
-          ? { kind: 'route', route: cached, targetOffset: route.distanceMeters, context }
-          : { kind: 'fixed', context, decidedAt: driver.position, decidedAtMs: nowMs, maxAgeMs: VERDICT_MAX_AGE_MS }
-      );
+      entries.set(target.id, {
+        kind: 'route',
+        route: cached,
+        targetOffset: route.distanceMeters,
+        snapMeters: route.destinationSnapMeters,
+      });
       consecutiveFailures = 0;
       console.log(
-        `[road] lookup #${n} ${target.id} in ${Date.now() - startedAtMs}ms: ${describe(context)} ` +
-          `(road ${Math.round(route.distanceMeters)}m vs straight ${Math.round(straightLine)}m, snap ${Math.round(route.destinationSnapMeters)}m, ` +
+        `[road] lookup #${n} ${target.id} in ${Date.now() - startedAtMs}ms${route.shared ? ' (shared)' : ''}: ${describe(context)} ` +
+          `(road ${Math.round(route.distanceMeters - fromOffset)}m vs straight ${Math.round(straightLine)}m, snap ${Math.round(route.destinationSnapMeters)}m, ` +
           `via ${route.steps.map((s) => `${s.maneuverType}${s.modifier ? `/${s.modifier}` : ''}:${s.name || '-'}`).join(' > ')})`
       );
     })
     .catch((error: unknown) => {
       stats.failures += 1;
       consecutiveFailures += 1;
-      entries.set(target.id, {
-        kind: 'fixed',
-        context: { kind: 'nearby' },
-        decidedAt: driver.position,
-        decidedAtMs: nowMs,
-        maxAgeMs: FIXED_ANSWER_MAX_AGE_MS,
-      });
+      entries.set(target.id, { kind: 'failed', decidedAt: driver.position, decidedAtMs: nowMs });
       console.warn(
         `[road] lookup #${n} ${target.id} failed after ${Date.now() - startedAtMs}ms (${consecutiveFailures} in a row): ` +
           `${error instanceof Error ? error.message : String(error)}`
@@ -250,9 +299,9 @@ function withinBudget(nowMs: number): boolean {
 }
 
 function describe(context: RoadContext): string {
-  return context.kind === 'ahead'
-    ? `ahead on ${context.roadName ?? '(unnamed road)'} ${Math.round(context.alongRoadMeters)}m`
-    : context.kind;
+  if (context.kind === 'ahead') return `ahead on ${context.roadName ?? '(unnamed road)'} ${Math.round(context.alongRoadMeters)}m`;
+  if (context.kind === 'onRoad') return `on ${context.roadName} (other carriageway) ${Math.round(context.alongRoadMeters)}m`;
+  return context.kind;
 }
 
 /** True after DEGRADED_AFTER_FAILURES lookups in a row have failed, or
@@ -262,7 +311,7 @@ export function isRoadMatchingDegraded(): boolean {
   return consecutiveFailures >= DEGRADED_AFTER_FAILURES || budgetExhausted;
 }
 
-export function getRoadMatchingStats(): { lookups: number; covered: number; failures: number } {
+export function getRoadMatchingStats(): { lookups: number; covered: number; failures: number; reused: number } {
   return { ...stats };
 }
 
@@ -277,7 +326,7 @@ export function resetRoadContext(): void {
   consecutiveFailures = 0;
   budgetLogged = false;
   budgetExhausted = false;
-  stats = { lookups: 0, covered: 0, failures: 0 };
+  stats = { lookups: 0, covered: 0, failures: 0, reused: 0 };
 }
 
 /** Test seam: replace the Directions call. */

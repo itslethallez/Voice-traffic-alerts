@@ -48,9 +48,12 @@ export interface ForwardRoute {
   steps: ForwardRouteStep[];
   /** How far Mapbox had to move the alert to put it on a road. */
   destinationSnapMeters: number;
+  /** Served from the server's shared cache (another driver's request) -
+   * starts wherever that driver was, not necessarily here. */
+  shared?: boolean;
 }
 
-interface DirectionsBody {
+export interface DirectionsBody {
   code: string;
   routes?: Array<{
     distance: number;
@@ -62,7 +65,53 @@ interface DirectionsBody {
   waypoints?: Array<{ distance?: number }>;
 }
 
+/**
+ * Server-first: Shotgun's /api/road/forward-route shares one Mapbox route
+ * per alert among every driver approaching it along the same road (see
+ * server/api/road/forward-route.ts), which is what keeps Directions cost
+ * flat as users grow. When the server isn't configured (no
+ * EXPO_PUBLIC_BACKEND_API_URL - true for every build so far) or fails,
+ * this asks Mapbox directly, so road matching never depends on it.
+ */
 export async function fetchForwardRoute(
+  from: GeoPoint,
+  headingDeg: number,
+  to: GeoPoint,
+  signal?: AbortSignal
+): Promise<ForwardRoute> {
+  if (env.backendApiBaseUrl) {
+    try {
+      return await fetchSharedForwardRoute(from, headingDeg, to, signal);
+    } catch (error) {
+      console.warn(`[road] shared route unavailable, asking Mapbox directly: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return fetchDirectForwardRoute(from, headingDeg, to, signal);
+}
+
+async function fetchSharedForwardRoute(
+  from: GeoPoint,
+  headingDeg: number,
+  to: GeoPoint,
+  signal?: AbortSignal
+): Promise<ForwardRoute> {
+  const params = new URLSearchParams({
+    fromLat: String(from.latitude),
+    fromLng: String(from.longitude),
+    heading: String(Math.round(((headingDeg % 360) + 360) % 360)),
+    toLat: String(to.latitude),
+    toLng: String(to.longitude),
+  });
+  const body = await requestJsonWithNativeTimeout<{ directions: DirectionsBody; cache: 'hit' | 'miss' }>({
+    method: 'GET',
+    url: `${env.backendApiBaseUrl}api/road/forward-route?${params.toString()}`,
+    timeoutMs: FORWARD_ROUTE_TIMEOUT_MS,
+    signal,
+  });
+  return { ...parseForwardRoute(body.directions), shared: body.cache === 'hit' };
+}
+
+async function fetchDirectForwardRoute(
   from: GeoPoint,
   headingDeg: number,
   to: GeoPoint,
