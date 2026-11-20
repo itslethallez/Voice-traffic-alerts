@@ -8,19 +8,28 @@ type DeviceSpeakOptions = {
 
 const speak = jest.fn<void, [string, DeviceSpeakOptions | undefined]>();
 const stop = jest.fn().mockResolvedValue(undefined);
+const getAvailableVoicesAsync = jest.fn().mockResolvedValue([{ identifier: 'v1' }]);
 
 jest.mock('expo-speech', () => ({
   speak: (text: string, options?: DeviceSpeakOptions) => speak(text, options),
   stop: () => stop(),
+  getAvailableVoicesAsync: () => getAvailableVoicesAsync(),
 }));
 
 const speakWithGoogleTtsAsync = jest.fn<Promise<void>, [string, Record<string, unknown>?]>();
 const stopGoogleTtsSpeech = jest.fn();
 
+class MockGoogleTtsNotReadyError extends Error {}
 jest.mock('../googleTts', () => ({
   speakWithGoogleTtsAsync: (...args: [string, Record<string, unknown>?]) =>
     speakWithGoogleTtsAsync(...args),
   stopGoogleTtsSpeech: () => stopGoogleTtsSpeech(),
+  GoogleTtsNotReadyError: MockGoogleTtsNotReadyError,
+}));
+
+const prefetchTtsAudio = jest.fn();
+jest.mock('../ttsAudioCache', () => ({
+  prefetchTtsAudio: (text: string) => prefetchTtsAudio(text),
 }));
 
 let phoneCallActive = false;
@@ -44,7 +53,8 @@ beforeEach(() => {
   speak.mockClear();
   stop.mockClear();
   speakWithGoogleTtsAsync.mockReset();
-  stopGoogleTtsSpeech.mockClear();
+  stopGoogleTtsSpeech.mockReset();
+  stop.mockReset().mockResolvedValue(undefined);
   phoneCallActive = false;
   jest.useRealTimers();
   jest.resetModules();
@@ -60,7 +70,7 @@ describe('speakAsync', () => {
 
     expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith(
       'Police reported, 800 metres ahead.',
-      { rate: 1.1, volume: 0.8 }
+      { rate: 1.1, volume: 0.8, readyDeadlineMs: 2000 }
     );
     expect(speak).not.toHaveBeenCalled();
   });
@@ -174,5 +184,149 @@ describe('stopSpeaking', () => {
 
     expect(stopGoogleTtsSpeech).toHaveBeenCalledTimes(1);
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('speakUrgentAsync', () => {
+  let speakUrgentAsync: typeof import('../ttsAdapter').speakUrgentAsync;
+  beforeEach(() => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ({ speakUrgentAsync } = require('../ttsAdapter'));
+  });
+
+  it('speaks on the device voice first and never waits on Google', async () => {
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+
+    await speakUrgentAsync('Speed camera 200 metres ahead.', { rate: 1.1, volume: 0.8 });
+
+    expect(speak).toHaveBeenCalledWith(
+      'Speed camera 200 metres ahead.',
+      expect.objectContaining({ rate: 1.1, volume: 0.8 })
+    );
+    expect(speakWithGoogleTtsAsync).not.toHaveBeenCalled();
+  });
+
+  it('cuts off anything already speaking on either voice before it starts, instead of talking over it', async () => {
+    const order: string[] = [];
+    stopGoogleTtsSpeech.mockImplementation(() => order.push('stop google'));
+    stop.mockImplementation(async () => {
+      order.push('stop device');
+    });
+    speak.mockImplementation((_text, options) => {
+      order.push('speak');
+      options?.onDone?.();
+    });
+
+    await speakUrgentAsync('Speed camera 500 metres ahead.');
+
+    expect(order).toEqual(['stop google', 'stop device', 'speak']);
+  });
+
+  it('falls back to Google when the device voice errors', async () => {
+    speak.mockImplementation((_text, options) => options?.onError?.(new Error('no tts engine')));
+    speakWithGoogleTtsAsync.mockResolvedValue(undefined);
+
+    await speakUrgentAsync('Speed camera 500 metres ahead.');
+
+    expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith('Speed camera 500 metres ahead.', expect.anything());
+  });
+
+  it('rejects without speaking during a phone call, so the checkpoint stays unfired', async () => {
+    phoneCallActive = true;
+
+    await expect(speakUrgentAsync('Speed camera 500 metres ahead.')).rejects.toThrow('Phone call in progress');
+    expect(speak).not.toHaveBeenCalled();
+    expect(stopGoogleTtsSpeech).not.toHaveBeenCalled();
+  });
+});
+
+describe('prefetchSpeech', () => {
+  let prefetchSpeech: typeof import('../ttsAdapter').prefetchSpeech;
+  beforeEach(() => {
+    prefetchTtsAudio.mockClear();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ({ prefetchSpeech, speakAsync } = require('../ttsAdapter'));
+  });
+
+  it('prefetches each predicted sentence', () => {
+    prefetchSpeech(['a', 'b']);
+    expect(prefetchTtsAudio.mock.calls).toEqual([['a'], ['b']]);
+  });
+
+  it('skips prefetching while Google is in its failure cooldown - it would not be used', async () => {
+    speakWithGoogleTtsAsync.mockRejectedValueOnce(new Error('offline'));
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+    await speakAsync('hello');
+
+    prefetchSpeech(['a']);
+
+    expect(prefetchTtsAudio).not.toHaveBeenCalled();
+  });
+});
+
+describe('warmUpDeviceVoice', () => {
+  let warmUpDeviceVoice: typeof import('../ttsAdapter').warmUpDeviceVoice;
+  beforeEach(() => {
+    getAvailableVoicesAsync.mockReset().mockResolvedValue([{ identifier: 'v1' }]);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ({ warmUpDeviceVoice } = require('../ttsAdapter'));
+  });
+
+  it('binds the engine once, then loads the voice with one silent utterance', async () => {
+    // The engine loads its voice model on first synthesis, not on bind -
+    // so the warm-up speaks one word at volume 0 (fix 3, 20 Nov 2026).
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+    await warmUpDeviceVoice();
+    await warmUpDeviceVoice();
+
+    expect(getAvailableVoicesAsync).toHaveBeenCalledTimes(1);
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(speak).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ volume: 0 }));
+  });
+
+  it('still finishes the warm-up if the silent utterance errors', async () => {
+    speak.mockImplementation((_text, options) => options?.onError?.(new Error("tts")));
+    await expect(warmUpDeviceVoice()).resolves.toBeUndefined();
+  });
+
+  it('retries on the next call after a failed warm-up, and never rejects', async () => {
+    getAvailableVoicesAsync.mockRejectedValueOnce(new Error('no engine'));
+
+    await expect(warmUpDeviceVoice()).resolves.toBeUndefined();
+    await warmUpDeviceVoice();
+
+    expect(getAvailableVoicesAsync).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('speakAsync ready deadline', () => {
+  it('asks Google for audio within GOOGLE_TTS_READY_DEADLINE_MS', async () => {
+    speakWithGoogleTtsAsync.mockResolvedValue(undefined);
+    await speakAsync('hello', { rate: 1.1 });
+    expect(speakWithGoogleTtsAsync).toHaveBeenCalledWith('hello', { rate: 1.1, readyDeadlineMs: 2000 });
+  });
+
+  it('speaks on the device voice when Google misses the deadline, without starting the failure cooldown', async () => {
+    speakWithGoogleTtsAsync.mockRejectedValueOnce(new MockGoogleTtsNotReadyError('slow'));
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+
+    await speakAsync('Hazard reported, 2 kilometres ahead.');
+
+    expect(speak).toHaveBeenCalledWith('Hazard reported, 2 kilometres ahead.', expect.anything());
+    expect(getLastGoogleTtsError()).toBeNull();
+
+    // Next alert goes straight back to Google - no cooldown.
+    speakWithGoogleTtsAsync.mockResolvedValueOnce(undefined);
+    speak.mockClear();
+    await speakAsync('next');
+    expect(speakWithGoogleTtsAsync).toHaveBeenCalledTimes(2);
+    expect(speak).not.toHaveBeenCalled();
+  });
+
+  it('still rejects if the device voice also fails after a missed deadline', async () => {
+    speakWithGoogleTtsAsync.mockRejectedValueOnce(new MockGoogleTtsNotReadyError('slow'));
+    speak.mockImplementation((_text, options) => options?.onError?.(new Error('no engine')));
+
+    await expect(speakAsync('hello')).rejects.toThrow('no engine');
   });
 });

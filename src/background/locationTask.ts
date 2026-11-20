@@ -17,6 +17,21 @@ export const BACKGROUND_LOCATION_TASK_NAME = 'voice-traffic-alerts/background-lo
 let lastKnownDriver: DriverState | null = null;
 
 /**
+ * Until the drive loop has finished its briefing and gone 'live', fixes
+ * from this task go to it (useDriveLoop.ts) instead of the trip runtime:
+ * on a screen-off cold start this task is the ONLY location source - the
+ * foreground watch never delivers without a resumed activity - so it has
+ * to be what starts the briefing. Once live, fixes go straight to
+ * handleDriverUpdate as before.
+ */
+type PreLiveFixListener = (location: Location.LocationObject) => void;
+let preLiveFixListener: PreLiveFixListener | null = null;
+
+export function setPreLiveFixListener(listener: PreLiveFixListener | null): void {
+  preLiveFixListener = listener;
+}
+
+/**
  * Must run in the JS bundle's module scope, not inside a component or
  * effect - TaskManager spins up the JS app, runs this, and tears it back
  * down when the OS wakes it in the background, with no views mounted.
@@ -42,6 +57,21 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
       console.log(`[drive] background batch of ${data.locations.length} fixes - using latest only`);
     }
     const location = data.locations[data.locations.length - 1];
+    if (preLiveFixListener) {
+      console.log(
+        `[background-location] pre-live fix lat=${location.coords.latitude.toFixed(5)} lon=${location.coords.longitude.toFixed(5)} age=${Math.round((Date.now() - location.timestamp) / 1000)}s -> drive loop`
+      );
+      preLiveFixListener(location);
+      return;
+    }
+    // One line per delivery. With the screen off this task is the only
+    // thing still feeding the engine, so its absence from a drive-test
+    // logcat is the difference between "nothing worth announcing" and
+    // "the app went deaf" - exactly the ambiguity that let the silent
+    // Balanced/15s request above go unnoticed.
+    console.log(
+      `[background-location] fix lat=${location.coords.latitude.toFixed(5)} lon=${location.coords.longitude.toFixed(5)} speed=${location.coords.speed === null ? 'null' : `${(location.coords.speed * 3.6).toFixed(0)}km/h`}`
+    );
     const driver = toDriverState(
       {
         latitude: location.coords.latitude,
@@ -56,17 +86,46 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
   }
 );
 
+/**
+ * Deliberately NOT guarded by hasStartedLocationUpdatesAsync(): the task
+ * registration (options included) is persisted by expo-task-manager and
+ * survives app restarts and app *updates*, so an early return on
+ * "already started" would leave an existing install running whatever
+ * options it was first registered with - forever. That's how the
+ * Balanced/15s request below outlived the code that set it. Re-calling
+ * start on a live task is the supported way to change options:
+ * TaskService.registerTask() sees the task already exists and routes to
+ * LocationTaskConsumer.setOptions(), which restarts the location request
+ * with the new ones.
+ */
 export async function startBackgroundLocationUpdatesAsync(): Promise<void> {
-  const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
-    BACKGROUND_LOCATION_TASK_NAME
-  );
-  if (alreadyStarted) return;
-
   await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK_NAME, {
-    accuracy: Location.Accuracy.Balanced,
+    // Must stay HIGH accuracy, and must match the foreground watch's
+    // cadence (useDriveLoop.ts's FOREGROUND_LOCATION_OPTIONS) - this is
+    // the ONLY location request alive once the screen goes off, not a
+    // low-power supplement to the foreground one.
+    //
+    // expo-location tears down every watchPositionAsync subscription the
+    // moment the activity is backgrounded (LocationModule's
+    // OnActivityEntersBackground -> stopWatching() -> removeLocationUpdates),
+    // which is a screen-off, a lock, or Waze coming to the front. The
+    // old Balanced/15s request here maps to GMS
+    // PRIORITY_BALANCED_POWER_ACCURACY, which deliberately does NOT turn
+    // the GPS chip on - it is happy to be served by network/wifi
+    // positioning. So the instant the foreground watch went away, the
+    // GPS provider dropped to ProviderRequest[OFF] and the app stopped
+    // receiving fixes at all: no driver updates, no announcements, a
+    // silent co-pilot with the screen off.
+    //
+    // 15s was also far too coarse to drive on: at 100 km/h that is 420m
+    // between fixes, which steps straight over the 500m/200m speed-camera
+    // warning checkpoints (engine/selectSpeedCameraWarning.ts). Cruising
+    // already holds a location foreground service for the whole trip, so
+    // there is no battery to save by under-requesting here.
+    accuracy: Location.Accuracy.High,
     activityType: Location.ActivityType.AutomotiveNavigation,
-    timeInterval: 15_000,
-    distanceInterval: 25,
+    timeInterval: 3_000,
+    distanceInterval: 10,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: 'Voice Traffic Alerts',

@@ -51,7 +51,8 @@
   },
   "pnpm": {
     "patchedDependencies": {
-      "react-native-call-detection": "patches/react-native-call-detection.patch"
+      "react-native-call-detection": "patches/react-native-call-detection.patch",
+      "expo-location@57.0.23": "patches/expo-location@57.0.23.patch"
     }
   },
   "scripts": {
@@ -62,5 +63,14 @@
     "typecheck": "node --stack-size=16384 node_modules/typescript/bin/tsc --noEmit",
     "test": "jest"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-location"
+        ]
+      }
+    }
+  }
 }

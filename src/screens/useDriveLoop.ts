@@ -1,9 +1,16 @@
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import {
+  setPreLiveFixListener,
   startBackgroundLocationUpdatesAsync,
   stopBackgroundLocationUpdatesAsync,
 } from '../background/locationTask';
+import {
+  noteAppStateChange,
+  startAppStateLog,
+  type AppStateLabel,
+} from '../diagnostics/appState';
 import type { DriverState } from '../engine/types';
 import { FirstFixGate } from '../location/firstFixGate';
 import { BACKGROUND_DENIED_EXPLANATION, ensureLocationPermissions } from '../location/permissions';
@@ -76,6 +83,13 @@ export function useDriveLoop(): void {
     resetTripRuntime();
     phaseRef.current = 'waitingForFirstFix';
     latestPendingLocationRef.current = null;
+    // Feeds diagnostics/appState.ts, which is what lets a [speech] line
+    // say whether the app was on screen when it spoke - the whole point
+    // of a screen-off drive test.
+    startAppStateLog(AppState.currentState as AppStateLabel);
+    const appStateSubscription = AppState.addEventListener('change', (next) => {
+      noteAppStateChange(next as AppStateLabel);
+    });
     configureDuckingAudioSession().catch((error) => {
       console.warn('[speech] failed to configure audio session', error);
     });
@@ -94,6 +108,7 @@ export function useDriveLoop(): void {
     return () => {
       unsubscribeCallState();
       stopCallStateMonitoring();
+      appStateSubscription.remove();
     };
   }, []);
 
@@ -101,6 +116,7 @@ export function useDriveLoop(): void {
     let cancelled = false;
     let subscription: Location.LocationSubscription | null = null;
     let backgroundGranted = false;
+    let appStateForBackground: { remove: () => void } | null = null;
     const briefingAbortController = new AbortController();
     const firstFixGate = new FirstFixGate(
       BRIEFING_FIX_ACCURACY_THRESHOLD_M,
@@ -127,14 +143,65 @@ export function useDriveLoop(): void {
 
       void handleDriverUpdate(handoffDriver, Date.now());
 
-      // Background delivery is deferred until we're safely in 'live' -
-      // starting it any earlier would let a background fix race
-      // runBriefing() for the shared announcer/cache state.
-      if (backgroundGranted) {
-        startBackgroundLocationUpdatesAsync().catch((error) => {
-          console.warn('[location] failed to start background updates', error);
-        });
+      // From here the background task feeds the trip runtime directly. It
+      // was already running (started at launch, below) but routed its
+      // fixes through onFix, so it couldn't race runBriefing() for the
+      // shared announcer/cache state.
+      setPreLiveFixListener(null);
+    }
+
+    /** Every fix before 'live', from either source: the foreground watch,
+     * or the background task (the only one that delivers on a screen-off
+     * cold start). */
+    function onFix(location: Location.LocationObject, source: 'foreground' | 'background') {
+      if (cancelled) return;
+      const nowMs = Date.now();
+
+      if (phaseRef.current === 'briefing') {
+        latestPendingLocationRef.current = location;
+        return;
       }
+
+      if (phaseRef.current === 'waitingForFirstFix') {
+        if (firstFixGate.isStale(nowMs, location.timestamp)) {
+          console.log(`[drive] ignoring a cached ${Math.round((nowMs - location.timestamp) / 1000)}s-old first fix from ${source}`);
+          return;
+        }
+        if (!firstFixGate.isUsable(location.coords, nowMs, location.timestamp)) return;
+
+        phaseRef.current = 'briefing';
+        console.log(`[drive] first fix from ${source} (app=${AppState.currentState}) - starting briefing`);
+        const driver = toDriverState(toRawLocationSample(location), driverRef.current);
+        driverRef.current = driver;
+
+        void runBriefing(driver, nowMs, { signal: briefingAbortController.signal })
+          .catch((error) => {
+            console.warn('[briefing] failed', error);
+          })
+          .finally(() => {
+            handOffToLive(driver);
+          });
+        return;
+      }
+
+      // phase === 'live': only the foreground watch gets here.
+      const driver = toDriverState(toRawLocationSample(location), driverRef.current);
+      driverRef.current = driver;
+      void handleDriverUpdate(driver, nowMs, 'foreground');
+    }
+
+    /** Starts (or, once the app is on screen, upgrades) the background
+     * task. Android may refuse the foreground service while the app is in
+     * the background - expo-location is patched to try anyway and keep a
+     * plain background location request when it's refused - so this is
+     * re-run whenever the app comes to the foreground. */
+    function startBackground(reason: string) {
+      if (!backgroundGranted || cancelled) return;
+      startBackgroundLocationUpdatesAsync()
+        .then(() => console.log(`[drive] background location started (${reason}, app=${AppState.currentState})`))
+        .catch((error) => {
+          console.warn(`[location] failed to start background updates (${reason})`, error);
+        });
     }
 
     (async () => {
@@ -152,41 +219,27 @@ export function useDriveLoop(): void {
         setBannerMessage(BACKGROUND_DENIED_EXPLANATION);
       }
 
+      // Background location starts now, not after the briefing: with the
+      // screen off at launch it's the only thing that will ever deliver a
+      // fix (expo-location stops foreground watches without a resumed
+      // activity). Its fixes come to onFix until we're live.
+      if (backgroundGranted) {
+        setPreLiveFixListener((location) => onFix(location, 'background'));
+        startBackground('launch');
+        appStateForBackground = AppState.addEventListener('change', (next) => {
+          if (next === 'active') startBackground('app came to the foreground');
+        });
+      }
+
       subscription = await Location.watchPositionAsync(FOREGROUND_LOCATION_OPTIONS, (location) => {
-        if (cancelled) return;
-        const nowMs = Date.now();
-
-        if (phaseRef.current === 'briefing') {
-          latestPendingLocationRef.current = location;
-          return;
-        }
-
-        if (phaseRef.current === 'waitingForFirstFix') {
-          if (!firstFixGate.isUsable(location.coords, nowMs)) return;
-
-          phaseRef.current = 'briefing';
-          const driver = toDriverState(toRawLocationSample(location), driverRef.current);
-          driverRef.current = driver;
-
-          void runBriefing(driver, nowMs, { signal: briefingAbortController.signal })
-            .catch((error) => {
-              console.warn('[briefing] failed', error);
-            })
-            .finally(() => {
-              handOffToLive(driver);
-            });
-          return;
-        }
-
-        // phase === 'live'
-        const driver = toDriverState(toRawLocationSample(location), driverRef.current);
-        driverRef.current = driver;
-        void handleDriverUpdate(driver, nowMs, 'foreground');
+        onFix(location, 'foreground');
       });
     })();
 
     return () => {
       cancelled = true;
+      setPreLiveFixListener(null);
+      appStateForBackground?.remove();
       briefingAbortController.abort();
       subscription?.remove();
       stopBackgroundLocationUpdatesAsync().catch(() => {});

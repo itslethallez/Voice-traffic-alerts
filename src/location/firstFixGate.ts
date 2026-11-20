@@ -28,16 +28,31 @@ export function isAccurateEnough(accuracy: number | null | undefined, thresholdM
  * waiting - but never blocks indefinitely: once the budget elapses, the
  * next fix is accepted regardless of its accuracy.
  */
+/** A first fix older than this is a cached position, not where the car
+ * is: the screen-off cold-start drive tests were handed the previous
+ * position (19s old and 3.3km away on the second run) and briefed the
+ * wrong suburbs. 10s is ~220m at 80km/h - close enough to brief from.
+ * Never accepted, however long the accuracy wait has run. */
+export const FIRST_FIX_MAX_AGE_MS = 10_000;
+
 export class FirstFixGate {
   private waitDeadlineMs: number | null = null;
 
   constructor(
     private readonly thresholdM: number,
-    private readonly waitBudgetMs: number
+    private readonly waitBudgetMs: number,
+    private readonly maxAgeMs: number = FIRST_FIX_MAX_AGE_MS
   ) {}
 
-  isUsable(fix: RawFix, nowMs: number): boolean {
+  /** `fixTimeMs` is when the fix was taken (expo-location's timestamp);
+   * omitted means "now". */
+  isStale(nowMs: number, fixTimeMs?: number): boolean {
+    return fixTimeMs !== undefined && nowMs - fixTimeMs > this.maxAgeMs;
+  }
+
+  isUsable(fix: RawFix, nowMs: number, fixTimeMs?: number): boolean {
     if (!hasValidCoordinates(fix)) return false;
+    if (this.isStale(nowMs, fixTimeMs)) return false;
     if (isAccurateEnough(fix.accuracy, this.thresholdM)) return true;
 
     if (this.waitDeadlineMs === null) {

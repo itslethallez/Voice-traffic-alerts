@@ -27,6 +27,7 @@ import { nearestPointOnPolyline } from '../../geo/routePolyline';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useRouteOptionsStore } from '../../store/useRouteOptionsStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
+import { maxAlertDistanceMeters } from '../../engine/alertDistance';
 import { useTripStore } from '../../store/useTripStore';
 import { alertTypeMeta } from '../../theme/alertTypeMeta';
 import { alpha, colors, map3d, radii, spacing, typography } from '../../theme/tokens';
@@ -97,7 +98,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
   const nearbyReports = useTripStore((state) => state.nearbyReports);
   const fixedCameras = useTripStore((state) => state.fixedCameras);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
-  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const announceDistanceMeters = useSettingsStore((state) => maxAlertDistanceMeters(state.alertDistance));
   const showRangeOnMap = useSettingsStore((state) => state.showRangeOnMap);
   /** Flips once the mapbox-gl instance exists - the SHOW RANGE ON MAP
    * effect depends on it so a persisted ON still frames the camera on
@@ -582,7 +583,7 @@ export function RadarMap({ focusedAlert = null, now = Date.now(), topOverlayBott
     markersRef.current = [];
 
     if (displayDriverPosition) {
-      // §7's vehicle marker: the same DRIVER_CAR_SVG the native DriverMark
+      // §7's vehicle marker: the same DRIVER_CAR_SVG the native puck PNG
       // renders - top-down car in an accent halo. Still points up: the
       // camera is heading-up, so up = direction of travel.
       const driver = document.createElement('div');

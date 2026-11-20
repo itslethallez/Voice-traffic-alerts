@@ -76,11 +76,64 @@ jest.mock('../../config/deviceId', () => ({
 }));
 
 const speakAsync = jest.fn().mockResolvedValue(undefined);
+const speakUrgentAsync = jest.fn().mockResolvedValue(undefined);
+const prefetchSpeech = jest.fn();
 const stopSpeaking = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../speech/ttsAdapter', () => ({
   speakAsync: (...args: [string, Record<string, unknown>?]) => speakAsync(...args),
+  speakUrgentAsync: (...args: [string, Record<string, unknown>?]) => speakUrgentAsync(...args),
+  prefetchSpeech: (texts: string[]) => prefetchSpeech(texts),
+  warmUpDeviceVoice: () => Promise.resolve(),
   stopSpeaking: () => stopSpeaking(),
 }));
+
+let mockAppState = 'active';
+jest.mock('../../diagnostics/appState', () => ({
+  appStateLabel: () => mockAppState,
+}));
+
+// nativeDelay plays a silent clip so the gap survives screen-off; under
+// fake timers the plain JS delay is the same thing.
+jest.mock('../../speech/nativeDelay', () => ({
+  nativeDelay: (ms: number, signal?: AbortSignal) => jest.requireActual('../../speech/delay').delay(ms, signal),
+}));
+jest.mock('../../speech/googleTts', () => ({
+  checkGoogleTtsWatchdog: () => {},
+}));
+
+// Road matching is exercised for real in road/__tests__ (aheadCases etc.).
+// Here it answers synchronously so each test is about the trip runtime:
+// 'ahead' puts every target in the 45-degree cone ahead on 'Test Rd' at its straight-line
+// distance; 'nearby' is the unconfirmed answer. Reset to 'ahead' per test.
+let mockRoadAnswer: 'ahead' | 'nearby' | 'behind' | 'pending' = 'ahead';
+const mockRoadDegraded = { value: false };
+jest.mock('../../road/roadContextRuntime', () => {
+  const { haversineDistance } = jest.requireActual('../../geo/distance');
+  const { bearingBetween, bearingDifference } = jest.requireActual('../../geo/bearing');
+  return {
+    BEHIND_BEARING_DEG: 100,
+    roadContextFor: (
+      target: { position: { latitude: number; longitude: number } },
+      driver: { position: { latitude: number; longitude: number }; headingDeg: number }
+    ) => {
+      if (mockRoadAnswer === 'pending') return 'pending';
+      if (mockRoadAnswer !== 'ahead') return { kind: mockRoadAnswer };
+      // Only what's inside the old 45-degree cone is "on this road" - a
+      // side street at 90 degrees stays "nearby" (and so unannounced).
+      if (bearingDifference(driver.headingDeg, bearingBetween(driver.position, target.position)) > 45) {
+        return { kind: 'nearby' };
+      }
+      return { kind: 'ahead', roadName: 'Test Rd', alongRoadMeters: haversineDistance(driver.position, target.position) };
+    },
+    peekRoadContext: () => null,
+    isRoadMatchingDegraded: () => mockRoadDegraded.value,
+    getRoadMatchingStats: () => ({ lookups: 0, covered: 0, failures: 0 }),
+    resetRoadContext: () => {
+      mockRoadAnswer = 'ahead';
+      mockRoadDegraded.value = false;
+    },
+  };
+});
 
 const fetchAlertsForBoundingBox = jest.fn();
 /** Wraps a plain alerts array as the { alerts, quadrantRateLimited } shape fetchAlertsForBoundingBox actually returns. */
@@ -139,6 +192,8 @@ describe('handleDriverUpdate', () => {
     setVisibleAlerts.mockClear();
     setTripStartedAtMs.mockClear();
     speakAsync.mockClear();
+    speakUrgentAsync.mockClear();
+    prefetchSpeech.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();
     prefetchSpeedLimit.mockClear();
@@ -149,6 +204,52 @@ describe('handleDriverUpdate', () => {
       ...defaultSettingsValues,
       categoriesEnabled: { ...defaultSettingsValues.categoriesEnabled },
     };
+  });
+
+  it('ignores background fixes while on screen with the foreground watch live, and uses them once it goes quiet', async () => {
+    mockAppState = 'active';
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate(driver, now, 'foreground');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    await handleDriverUpdate(driver, now + 5_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    await handleDriverUpdate(driver, now + 45_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses background fixes straight away once the screen goes off or another app takes over - no 30s silence', async () => {
+    mockAppState = 'active';
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate(driver, now, 'foreground');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    mockAppState = 'background'; // screen off, or Waze / Google Maps in front
+    await handleDriverUpdate(driver, now + 3_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it('discloses a location gap while moving (banner + one spoken notice), and clears it once fixes are regular again', async () => {
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate(driver, now);
+    await handleDriverUpdate(driver, now + 25_000); // 25s with no fix at 60km/h
+    expect(setBannerMessage).toHaveBeenCalledWith('Location updates are being delayed by the phone - alerts may be late.');
+    expect(speakAsync).toHaveBeenCalledWith('Location updates are being delayed. Alerts may be late.', expect.anything());
+    for (let i = 1; i <= 5; i++) await handleDriverUpdate(driver, now + 25_000 + i * 3_000);
+    expect(setBannerMessage).toHaveBeenLastCalledWith(null);
+    expect(speakAsync.mock.calls.filter((c) => /Location updates/.test(c[0]))).toHaveLength(1);
+  });
+
+  it('does not call a gap at lights a location problem (no fixes while stopped is the 10m filter working)', async () => {
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate({ ...driver, speedKmh: 0 }, now);
+    await handleDriverUpdate(driver, now + 60_000);
+    expect(setBannerMessage).not.toHaveBeenCalledWith('Location updates are being delayed by the phone - alerts may be late.');
   });
 
   it('polls immediately on the first update', async () => {
@@ -443,6 +544,7 @@ describe('speed camera warning', () => {
   beforeEach(() => {
     resetTripRuntime();
     speakAsync.mockClear();
+    speakUrgentAsync.mockClear();
     fetchAlertsForBoundingBox.mockReset();
     fetchAlertsForBoundingBox.mockResolvedValue(ok([])); // no Waze alerts - isolates the camera/report targets these tests set up directly
     prefetchSpeedLimit.mockClear();
@@ -478,10 +580,20 @@ describe('speed camera warning', () => {
 
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
-    expect(speakAsync).toHaveBeenCalledWith(
-      expect.stringContaining('Speed camera 500 metres ahead'),
+    expect(speakUrgentAsync).toHaveBeenCalledWith(
+      expect.stringContaining('Speed camera, 500 metres ahead on Test Rd'),
       expect.anything()
     );
+  });
+
+  it('speaks the warning on the urgent (device-first) path, never the Google-first announcement path', async () => {
+    mockCameras = [TEST_CAMERA];
+    mockSpeedLimitKmh = 60;
+
+    await handleDriverUpdate(approachingDriver(450, 100), Date.now());
+
+    expect(speakUrgentAsync).toHaveBeenCalledTimes(1);
+    expect(speakAsync).not.toHaveBeenCalled();
   });
 
   it('does not warn when under the speeding buffer', async () => {
@@ -490,7 +602,7 @@ describe('speed camera warning', () => {
 
     await handleDriverUpdate(approachingDriver(450, 63), Date.now()); // 3 km/h over - under the 6 km/h buffer
 
-    expect(speakAsync).not.toHaveBeenCalled();
+    expect(speakUrgentAsync).not.toHaveBeenCalled();
   });
 
   it('does not warn when the fixed_camera pill is hidden', async () => {
@@ -500,7 +612,7 @@ describe('speed camera warning', () => {
 
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
-    expect(speakAsync).not.toHaveBeenCalled();
+    expect(speakUrgentAsync).not.toHaveBeenCalled();
     expect(prefetchSpeedLimit).not.toHaveBeenCalled(); // shouldn't even bother resolving the limit
   });
 
@@ -510,8 +622,8 @@ describe('speed camera warning', () => {
 
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
-    expect(speakAsync).toHaveBeenCalledWith(
-      'Speed camera 500 metres ahead.',
+    expect(speakUrgentAsync).toHaveBeenCalledWith(
+      'Speed camera, 500 metres ahead on Test Rd.',
       expect.anything()
     );
     expect(prefetchSpeedLimit).toHaveBeenCalledTimes(1);
@@ -524,7 +636,7 @@ describe('speed camera warning', () => {
 
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
-    expect(speakAsync).not.toHaveBeenCalled();
+    expect(speakUrgentAsync).not.toHaveBeenCalled();
   });
 
   it('fires the 500m call, then the 200m call as the driver gets closer, without ever re-firing either', async () => {
@@ -533,36 +645,36 @@ describe('speed camera warning', () => {
     const now = Date.now();
 
     await handleDriverUpdate(approachingDriver(450, 100), now);
-    expect(speakAsync).toHaveBeenCalledTimes(1);
-    speakAsync.mockClear();
+    expect(speakUrgentAsync).toHaveBeenCalledTimes(1);
+    speakUrgentAsync.mockClear();
 
     await handleDriverUpdate(approachingDriver(150, 100), now + 5000);
-    expect(speakAsync).toHaveBeenCalledTimes(1);
-    speakAsync.mockClear();
+    expect(speakUrgentAsync).toHaveBeenCalledTimes(1);
+    speakUrgentAsync.mockClear();
 
     // Still inside 200m on a later update - already fired, must stay silent.
     await handleDriverUpdate(approachingDriver(150, 100), now + 10000);
-    expect(speakAsync).not.toHaveBeenCalled();
+    expect(speakUrgentAsync).not.toHaveBeenCalled();
   });
 
   it('retries on the next update after a TTS failure instead of permanently consuming the checkpoint', async () => {
     // Regression test: the checkpoint used to be marked fired before
-    // speakAsync was even attempted, so a TTS failure (network hiccup,
+    // speakUrgentAsync was even attempted, so a TTS failure (network hiccup,
     // on-device speech error) would silence this safety-critical warning
     // for the rest of the trip. It must now only be consumed on success.
     mockCameras = [TEST_CAMERA];
     mockSpeedLimitKmh = 60;
     const now = Date.now();
 
-    speakAsync.mockRejectedValueOnce(new Error('tts failed'));
+    speakUrgentAsync.mockRejectedValueOnce(new Error('tts failed'));
     await handleDriverUpdate(approachingDriver(450, 100), now);
-    expect(speakAsync).toHaveBeenCalledTimes(1);
-    speakAsync.mockClear();
+    expect(speakUrgentAsync).toHaveBeenCalledTimes(1);
+    speakUrgentAsync.mockClear();
 
     // Still within the same 500m checkpoint - since the first attempt
     // failed, this must retry rather than treat it as already fired.
     await handleDriverUpdate(approachingDriver(440, 100), now + 3000);
-    expect(speakAsync).toHaveBeenCalledTimes(1);
+    expect(speakUrgentAsync).toHaveBeenCalledTimes(1);
   });
 
   it('speaks the report variant (not the camera variant) for a corroborated police report with no camera involved', async () => {
@@ -592,8 +704,8 @@ describe('speed camera warning', () => {
 
     await handleDriverUpdate({ position: destinationPoint(MOCK_DRIVER_POSITION, 480, 180), headingDeg: 0, speedKmh: 100 }, Date.now());
 
-    expect(speakAsync).toHaveBeenCalledWith(
-      expect.stringContaining('Police reported 500 metres ahead'),
+    expect(speakUrgentAsync).toHaveBeenCalledWith(
+      expect.stringContaining('Police reported, 500 metres ahead'),
       expect.anything()
     );
   });
@@ -609,6 +721,8 @@ describe('runBriefing', () => {
     setVisibleAlerts.mockClear();
     setTripStartedAtMs.mockClear();
     speakAsync.mockClear();
+    speakUrgentAsync.mockClear();
+    prefetchSpeech.mockClear();
     stopSpeaking.mockClear();
     fetchAlertsForBoundingBox.mockReset();
     prefetchSpeedLimit.mockClear();
@@ -721,7 +835,7 @@ describe('runBriefing', () => {
 
   it('is filtered by the configured briefing radius and capped at MAX_BRIEFING_ALERTS', async () => {
     fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
-    settingsState.briefingRadiusMeters = 2000;
+    settingsState.alertDistance = 'close';
 
     const promise = runBriefing(driver, Date.now());
     await jest.advanceTimersByTimeAsync(GAP_ADVANCE_MS);
@@ -743,7 +857,7 @@ describe('runBriefing', () => {
   it('marks briefed alerts as announced so live driving does not repeat them', async () => {
     const now = Date.now();
     fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(now)));
-    settingsState.briefingRadiusMeters = 5000; // wide enough to cover the whole fixture
+    settingsState.alertDistance = 'far'; // wide enough to cover the whole fixture
 
     const briefingPromise = runBriefing(driver, now);
     await jest.advanceTimersByTimeAsync(GAP_ADVANCE_MS);

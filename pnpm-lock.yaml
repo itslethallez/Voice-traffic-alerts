@@ -15,8 +15,11 @@ overrides:
   shell-quote@<1.11.0: ^1.11.0
 
 patchedDependencies:
+  expo-location@57.0.23:
+    hash: 61cc6775a7bd230bcad61616edcbd2af393bd77cf8b5a558b08f55eccb12ff1a
+    path: patches/expo-location@57.0.23.patch
   react-native-call-detection:
-    hash: 6fa972ad3011e42d946115d43b581ef5e29c2513f68c788ca7b80f2954aa6d82
+    hash: 164f088cee305dbab7c70f5e1aa660e471bad745be458660c8710a2bdee48db3
     path: patches/react-native-call-detection.patch
 
 importers:
@@ -70,7 +73,7 @@ importers:
         version: 57.0.2(expo@57.0.32)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
       expo-location:
         specifier: ~57.0.23
-        version: 57.0.23(expo@57.0.32)(typescript@6.0.3)
+        version: 57.0.23(patch_hash=61cc6775a7bd230bcad61616edcbd2af393bd77cf8b5a558b08f55eccb12ff1a)(expo@57.0.32)(typescript@6.0.3)
       expo-speech:
         specifier: ~57.0.3
         version: 57.0.3(expo@57.0.32)
@@ -103,7 +106,7 @@ importers:
         version: 0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)
       react-native-call-detection:
         specifier: ^1.9.0
-        version: 1.9.0(patch_hash=6fa972ad3011e42d946115d43b581ef5e29c2513f68c788ca7b80f2954aa6d82)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))
+        version: 1.9.0(patch_hash=164f088cee305dbab7c70f5e1aa660e471bad745be458660c8710a2bdee48db3)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))
       react-native-reanimated:
         specifier: 4.5.1
         version: 4.5.1(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
@@ -4817,9 +4820,7 @@ snapshots:
       metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
@@ -5788,7 +5789,7 @@ snapshots:
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)
 
-  expo-location@57.0.23(expo@57.0.32)(typescript@6.0.3):
+  expo-location@57.0.23(patch_hash=61cc6775a7bd230bcad61616edcbd2af393bd77cf8b5a558b08f55eccb12ff1a)(expo@57.0.32)(typescript@6.0.3):
     dependencies:
       '@expo/image-utils': 0.11.7(typescript@6.0.3)
       expo: 57.0.32(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
@@ -7104,7 +7105,7 @@ snapshots:
 
   react-is@18.3.1: {}
 
-  react-native-call-detection@1.9.0(patch_hash=6fa972ad3011e42d946115d43b581ef5e29c2513f68c788ca7b80f2954aa6d82)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)):
+  react-native-call-detection@1.9.0(patch_hash=164f088cee305dbab7c70f5e1aa660e471bad745be458660c8710a2bdee48db3)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)):
     dependencies:
       react-native: 0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)
 
