@@ -149,8 +149,24 @@ function expandRoadName(street: string): string {
 function spokenStreet(street: string | null | undefined): string | null {
   const trimmed = street?.trim();
   if (!trimmed || ROUTE_NUMBER_PATTERN.test(trimmed)) return null;
-  return expandRoadName(trimmed);
+  // Waze prefixes the route number ("A1 - Main North Rd") and sometimes a
+  // parenthetical ("Fitzroy Tce (City Ring Route)"); police notices are
+  // ALL CAPS ("PORTRUSH RD"). Neither should reach the voice as-is - the
+  // A-F road-matching fixtures caught "on A1 - Main North Road" and
+  // "on PORTRUSH Road" being spoken.
+  const cleaned = trimmed
+    .replace(WAZE_ROUTE_PREFIX, '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .split(/\s+/)
+    .map((word) => (/^[A-Z]{2,}$/.test(word) ? word[0] + word.slice(1).toLowerCase() : word))
+    .join(' ')
+    .trim();
+  if (!cleaned || ROUTE_NUMBER_PATTERN.test(cleaned)) return null;
+  return expandRoadName(cleaned);
 }
+
+/** "A1 - ", "M2 - ", "R1 - " at the start of a Waze street. */
+const WAZE_ROUTE_PREFIX = /^[A-Z]\d{1,3}\s*-\s*/;
 
 function normalizeCity(city: string | null | undefined): string | null {
   const trimmed = city?.trim();
@@ -204,31 +220,40 @@ function locationPhrase(
 }
 
 /**
- * "{type} reported on {street}, {suburb}, {direction}bound, {distance}
- * ahead." (falling back through locationPhrase's other tiers - near_by
- * instead of suburb, just the street, just an area name, or the bare
- * distance-only wording when none of those are usable) plus, if the
- * report is over 10 minutes old, an appended "Reported {n} minutes ago."
- * - stale data pretending to be live is the main way this app loses
- * trust. The road/route number itself is never spoken - see spokenStreet.
+ * The live announcement. Two shapes, decided by road matching
+ * (candidate.road, from road/roadContextRuntime.ts) - "ahead" is only ever
+ * said when it's been confirmed:
+ *
+ * - On the driver's road or its continuation ("ahead"), distance along
+ *   the road:   "Crash reported, 2 kilometres ahead on Main North Road."
+ *               "Mobile camera, 1.2 kilometres ahead on Portrush Road."
+ * - Anywhere else, or not confirmed (road matching unavailable, still in
+ *   flight, over budget), straight-line distance and never "ahead":
+ *               "Crash reported nearby on Side Street, Adelaide, 1.4 kilometres away."
+ *               "Mobile camera nearby in Kidman Park, 2.5 kilometres away."
+ *
+ * Alerts behind the driver never reach here (silent). No "northbound":
+ * that was the driver's own heading, not anything about the alert's road.
+ * A live report over 10 minutes old gets " Reported {n} minutes ago." -
+ * stale data pretending to be live is the main way this app loses trust.
+ * A road/route number is never spoken (spokenStreet).
  */
 export function formatAnnouncement(candidate: AnnounceableAlert): string {
   const label = spokenLabel(candidate.alert);
   const distance = formatDistance(candidate.distanceMeters);
-  const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
   const staticNotice = STATIC_NOTICE_TYPES.has(candidate.alert.type);
+  // A camera window is spoken as a fact ("Mobile camera, ..."), a live
+  // alert as a report ("Police reported, ...") - STATIC_NOTICE_TYPES above.
+  const subject = staticNotice ? label : `${label} reported`;
+  const road = candidate.road;
 
   let text: string;
-  if (location) {
-    const direction = compassDirection(candidate.driverHeadingDeg);
-    // A camera window is spoken as a fact ("Mobile camera on Main Rd,
-    // northbound, 1.4 kilometres ahead"), a live alert as a report
-    // ("Police reported on Main Rd, ...") - STATIC_NOTICE_TYPES above.
-    text = staticNotice
-      ? `${label} ${location}, ${direction}bound, ${distance} ahead.`
-      : `${label} reported ${location}, ${direction}bound, ${distance} ahead.`;
+  if (road?.kind === 'ahead') {
+    const roadName = spokenStreet(road.roadName) ?? spokenStreet(candidate.alert.street);
+    text = roadName ? `${subject}, ${distance} ahead on ${roadName}.` : `${subject}, ${distance} ahead on this road.`;
   } else {
-    text = staticNotice ? `${label}, ${distance} ahead.` : `${label} reported, ${distance} ahead.`;
+    const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
+    text = location ? `${subject} nearby ${location}, ${distance} away.` : `${subject} nearby, ${distance} away.`;
   }
 
   if (!staticNotice && candidate.ageMinutes > STALE_ANNOUNCEMENT_AGE_MINUTES) {

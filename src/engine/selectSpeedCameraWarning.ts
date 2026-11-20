@@ -6,7 +6,8 @@ import { haversineDistance } from '../geo/distance';
 import { distanceToPolyline } from '../geo/routePolyline';
 import type { GeoPoint } from '../geo/types';
 import type { RouteCorridor } from './selectAlerts';
-import type { DriverState } from './types';
+import type { DriverState, RoadContext } from './types';
+import { roadNamesIn } from '../road/roadNames';
 
 export type WarningTargetKind = 'camera' | 'report';
 
@@ -14,6 +15,19 @@ export interface WarningTarget {
   id: string;
   kind: WarningTargetKind;
   position: GeoPoint;
+  /** Road name(s) for road matching: both roads of a SAPOL camera
+   * intersection label, or the police report's street. */
+  streets: string[];
+}
+
+/** Road matching's answer for a target (road/roadContextRuntime.ts), or
+ * 'pending' while it's still being looked up. */
+export type WarningRoadLookup = (target: WarningTarget) => RoadContext | 'pending';
+
+/** Distance used against the 500m/200m checkpoints: along the road when
+ * road matching confirmed the target is ahead on it, else straight-line. */
+function warningDistance(driver: DriverState, target: WarningTarget, road: RoadContext | null): number {
+  return road?.kind === 'ahead' ? road.alongRoadMeters : haversineDistance(driver.position, target.position);
 }
 
 /** Farthest first - see selectSpeedCameraWarning's doc comment for the
@@ -41,16 +55,18 @@ function isCorroboratedPoliceReport(alert: WazeAlert): boolean {
   );
 }
 
-function gatherTargets(cameras: FixedSpeedCamera[], alerts: WazeAlert[]): WarningTarget[] {
+export function gatherTargets(cameras: FixedSpeedCamera[], alerts: WazeAlert[]): WarningTarget[] {
   const cameraTargets: WarningTarget[] = cameras.map((camera) => ({
     id: camera.id,
     kind: 'camera',
     position: camera.position,
+    streets: roadNamesIn(camera.label),
   }));
   const reportTargets: WarningTarget[] = alerts.filter(isCorroboratedPoliceReport).map((alert) => ({
     id: alert.alert_id,
     kind: 'report',
     position: { latitude: alert.latitude, longitude: alert.longitude },
+    streets: alert.street ? [alert.street] : [],
   }));
   return [...cameraTargets, ...reportTargets];
 }
@@ -75,13 +91,18 @@ function isGeometricallyEligible(
   target: WarningTarget,
   alerts: WazeAlert[],
   nowMs: number,
-  routeCorridor: RouteCorridor | undefined
+  routeCorridor: RouteCorridor | undefined,
+  road: RoadContext | null = null
 ): boolean {
-  const distanceMeters = haversineDistance(driver.position, target.position);
+  if (road?.kind === 'behind') return false;
+  const distanceMeters = warningDistance(driver, target, road);
   const outerCheckpoint = SPEED_WARNING_CHECKPOINTS_M[0];
   if (distanceMeters > outerCheckpoint) return false;
 
-  if (routeCorridor) {
+  if (road?.kind === 'ahead') {
+    // Confirmed on the driver's road: the heading cone doesn't apply (a
+    // bend can put a camera on your own road well off your heading).
+  } else if (routeCorridor) {
     if (distanceToPolyline(target.position, routeCorridor.polyline) > routeCorridor.corridorMeters) {
       return false;
     }
@@ -112,11 +133,14 @@ export function hasNearbyWarningTarget(
   cameras: FixedSpeedCamera[],
   alerts: WazeAlert[],
   nowMs: number,
-  routeCorridor?: RouteCorridor
+  routeCorridor?: RouteCorridor,
+  roadFor?: WarningRoadLookup
 ): boolean {
-  return gatherTargets(cameras, alerts).some((target) =>
-    isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor)
-  );
+  return gatherTargets(cameras, alerts).some((target) => {
+    const answer = roadFor?.(target);
+    const road = answer && answer !== 'pending' ? answer : null;
+    return isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor, road);
+  });
 }
 
 export interface SelectSpeedCameraWarningInput {
@@ -132,6 +156,9 @@ export interface SelectSpeedCameraWarningInput {
   /** Nav mode only: proximity to the remaining route replaces the
    * bearing-of-travel cone - see isGeometricallyEligible. */
   routeCorridor?: RouteCorridor;
+  /** Road matching. Omitted: every target is treated as unconfirmed
+   * ("nearby" wording, straight-line distance). */
+  roadFor?: WarningRoadLookup;
 }
 
 export interface SpeedCameraWarningResult {
@@ -145,6 +172,9 @@ export interface SpeedCameraWarningResult {
    * failed, but formatSpeedCameraWarning must not claim the driver is
    * confirmed speeding. */
   confirmedSpeeding: boolean;
+  /** Road matching's answer - null when unconfirmed (pending / not asked).
+   * Only "ahead" may be worded as ahead, or claim the driver is speeding. */
+  road: RoadContext | null;
 }
 
 /**
@@ -163,17 +193,21 @@ export interface SpeedCameraWarningResult {
  * rather than staying silent because a lookup happened to fail.
  */
 export function selectSpeedCameraWarning(input: SelectSpeedCameraWarningInput): SpeedCameraWarningResult | null {
-  const { driver, speedLimitKmh, cameras, alerts, firedCheckpoints, nowMs, routeCorridor } = input;
+  const { driver, speedLimitKmh, cameras, alerts, firedCheckpoints, nowMs, routeCorridor, roadFor } = input;
   if (speedLimitKmh !== null && driver.speedKmh < speedLimitKmh + SPEED_WARNING_BUFFER_KMH) return null;
   const confirmedSpeeding = speedLimitKmh !== null;
 
-  const targets = gatherTargets(cameras, alerts).filter((target) =>
-    isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor)
-  );
+  const roadOf = (target: WarningTarget): RoadContext | null => {
+    const answer = roadFor?.(target);
+    return answer && answer !== 'pending' ? answer : null;
+  };
+  const targets = gatherTargets(cameras, alerts)
+    .map((target) => ({ target, road: roadOf(target) }))
+    .filter(({ target, road }) => isGeometricallyEligible(driver, target, alerts, nowMs, routeCorridor, road));
 
   let best: SpeedCameraWarningResult | null = null;
-  for (const target of targets) {
-    const distanceMeters = haversineDistance(driver.position, target.position);
+  for (const { target, road } of targets) {
+    const distanceMeters = warningDistance(driver, target, road);
     const fired = firedCheckpoints.get(target.id) ?? new Set<SpeedWarningCheckpoint>();
 
     for (const checkpoint of SPEED_WARNING_CHECKPOINTS_M) {
@@ -181,7 +215,7 @@ export function selectSpeedCameraWarning(input: SelectSpeedCameraWarningInput): 
       if (distanceMeters > checkpoint) continue;
 
       if (!best || distanceMeters < best.distanceMeters) {
-        best = { target, checkpoint, distanceMeters, confirmedSpeeding };
+        best = { target, checkpoint, distanceMeters, confirmedSpeeding, road };
       }
       break; // farthest-first: this is the checkpoint to fire for this target
     }

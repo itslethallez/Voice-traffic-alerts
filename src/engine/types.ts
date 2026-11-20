@@ -5,7 +5,28 @@ export interface DriverState {
   position: GeoPoint;
   headingDeg: number;
   speedKmh: number;
+  /** false when headingDeg is a placeholder - the first fix of a trip with
+   * no GPS course and nothing to derive one from (location/toDriverState.ts
+   * falls back to 0 = north). Nothing may be called "ahead" off a
+   * placeholder heading. Omitted means reliable (older callers, tests). */
+  headingReliable?: boolean;
 }
+
+/**
+ * Where an alert sits relative to the road the driver is on - decided by
+ * road/roadContextRuntime.ts from a Mapbox forward route.
+ *
+ * - ahead: on the driver's road or its continuation, with no turn off it
+ *   in between - the only case Shotgun may say "ahead". Distance is along
+ *   the road.
+ * - nearby: reachable, but not on this road (or not confidently): "nearby,
+ *   X away", straight-line distance, never "ahead".
+ * - behind: behind the driver or only reachable with a U-turn - silent.
+ */
+export type RoadContext =
+  | { kind: 'ahead'; roadName: string | null; alongRoadMeters: number }
+  | { kind: 'nearby' }
+  | { kind: 'behind' };
 
 export interface AnnounceableAlert {
   alert: WazeAlert;
@@ -15,6 +36,9 @@ export interface AnnounceableAlert {
   ageMinutes: number;
   /** Driver's heading at selection time - used for "northbound"/"eastbound" wording. 0 (meaningless) for briefing candidates, which have no driver heading. */
   driverHeadingDeg: number;
+  /** Set for live announcements (trip/tripRuntime.ts). Undefined is
+   * spoken as "nearby" - never "ahead" without a road check. */
+  road?: RoadContext;
 }
 
 /**

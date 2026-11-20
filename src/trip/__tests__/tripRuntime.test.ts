@@ -87,6 +87,48 @@ jest.mock('../../speech/ttsAdapter', () => ({
   stopSpeaking: () => stopSpeaking(),
 }));
 
+// nativeDelay plays a silent clip so the gap survives screen-off; under
+// fake timers the plain JS delay is the same thing.
+jest.mock('../../speech/nativeDelay', () => ({
+  nativeDelay: (ms: number, signal?: AbortSignal) => jest.requireActual('../../speech/delay').delay(ms, signal),
+}));
+jest.mock('../../speech/googleTts', () => ({
+  checkGoogleTtsWatchdog: () => {},
+}));
+
+// Road matching is exercised for real in road/__tests__ (aheadCases etc.).
+// Here it answers synchronously so each test is about the trip runtime:
+// 'ahead' puts every target in the 45-degree cone ahead on 'Test Rd' at its straight-line
+// distance; 'nearby' is the unconfirmed answer. Reset to 'ahead' per test.
+let mockRoadAnswer: 'ahead' | 'nearby' | 'behind' | 'pending' = 'ahead';
+const mockRoadDegraded = { value: false };
+jest.mock('../../road/roadContextRuntime', () => {
+  const { haversineDistance } = jest.requireActual('../../geo/distance');
+  const { bearingBetween, bearingDifference } = jest.requireActual('../../geo/bearing');
+  return {
+    BEHIND_BEARING_DEG: 100,
+    roadContextFor: (
+      target: { position: { latitude: number; longitude: number } },
+      driver: { position: { latitude: number; longitude: number }; headingDeg: number }
+    ) => {
+      if (mockRoadAnswer === 'pending') return 'pending';
+      if (mockRoadAnswer !== 'ahead') return { kind: mockRoadAnswer };
+      // Only what's inside the old 45-degree cone is "on this road" - a
+      // side street at 90 degrees stays "nearby" (and so unannounced).
+      if (bearingDifference(driver.headingDeg, bearingBetween(driver.position, target.position)) > 45) {
+        return { kind: 'nearby' };
+      }
+      return { kind: 'ahead', roadName: 'Test Rd', alongRoadMeters: haversineDistance(driver.position, target.position) };
+    },
+    isRoadMatchingDegraded: () => mockRoadDegraded.value,
+    getRoadMatchingStats: () => ({ lookups: 0, covered: 0, failures: 0 }),
+    resetRoadContext: () => {
+      mockRoadAnswer = 'ahead';
+      mockRoadDegraded.value = false;
+    },
+  };
+});
+
 const fetchAlertsForBoundingBox = jest.fn();
 /** Wraps a plain alerts array as the { alerts, quadrantRateLimited } shape fetchAlertsForBoundingBox actually returns. */
 function ok(alerts: unknown[]): { alerts: unknown[]; quadrantRateLimited: boolean } {
@@ -487,7 +529,7 @@ describe('speed camera warning', () => {
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
     expect(speakUrgentAsync).toHaveBeenCalledWith(
-      expect.stringContaining('Speed camera 500 metres ahead'),
+      expect.stringContaining('Speed camera, 500 metres ahead on Test Rd'),
       expect.anything()
     );
   });
@@ -529,7 +571,7 @@ describe('speed camera warning', () => {
     await handleDriverUpdate(approachingDriver(450, 100), Date.now());
 
     expect(speakUrgentAsync).toHaveBeenCalledWith(
-      'Speed camera 500 metres ahead.',
+      'Speed camera, 500 metres ahead on Test Rd.',
       expect.anything()
     );
     expect(prefetchSpeedLimit).toHaveBeenCalledTimes(1);
@@ -611,7 +653,7 @@ describe('speed camera warning', () => {
     await handleDriverUpdate({ position: destinationPoint(MOCK_DRIVER_POSITION, 480, 180), headingDeg: 0, speedKmh: 100 }, Date.now());
 
     expect(speakUrgentAsync).toHaveBeenCalledWith(
-      expect.stringContaining('Police reported 500 metres ahead'),
+      expect.stringContaining('Police reported, 500 metres ahead'),
       expect.anything()
     );
   });
@@ -741,7 +783,7 @@ describe('runBriefing', () => {
 
   it('is filtered by the configured briefing radius and capped at MAX_BRIEFING_ALERTS', async () => {
     fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(Date.now())));
-    settingsState.briefingRadiusMeters = 2000;
+    settingsState.alertDistance = 'close';
 
     const promise = runBriefing(driver, Date.now());
     await jest.advanceTimersByTimeAsync(GAP_ADVANCE_MS);
@@ -763,7 +805,7 @@ describe('runBriefing', () => {
   it('marks briefed alerts as announced so live driving does not repeat them', async () => {
     const now = Date.now();
     fetchAlertsForBoundingBox.mockResolvedValue(ok(buildMockAlerts(now)));
-    settingsState.briefingRadiusMeters = 5000; // wide enough to cover the whole fixture
+    settingsState.alertDistance = 'far'; // wide enough to cover the whole fixture
 
     const briefingPromise = runBriefing(driver, now);
     await jest.advanceTimersByTimeAsync(GAP_ADVANCE_MS);

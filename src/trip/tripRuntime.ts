@@ -22,12 +22,26 @@ import { applyFetchResult, initialAlertsCache } from '../engine/cache';
 import { initialMovementState, updateMovementState } from '../engine/movement';
 import { planPoll } from '../engine/pollPlanner';
 import { selectAnnounceableAlerts, type RouteCorridor } from '../engine/selectAlerts';
+import { alertDistanceFor, alertDistanceMeters, maxAlertDistanceMeters } from '../engine/alertDistance';
 import { selectApproachingAlerts } from '../engine/selectApproachingAlerts';
+import { applyRoadContext, applyRoadContextToApproaching } from '../road/applyRoadContext';
+import {
+  BEHIND_BEARING_DEG,
+  getRoadMatchingStats,
+  isRoadMatchingDegraded,
+  resetRoadContext,
+  roadContextFor,
+} from '../road/roadContextRuntime';
+import { haversineDistance } from '../geo/distance';
+import { bearingBetween, bearingDifference } from '../geo/bearing';
+import { checkGoogleTtsWatchdog } from '../speech/googleTts';
 import { selectBriefingAlerts } from '../engine/selectBriefingAlerts';
 import {
+  gatherTargets,
   hasNearbyWarningTarget,
   selectSpeedCameraWarning,
   type SpeedWarningCheckpoint,
+  type WarningTarget,
 } from '../engine/selectSpeedCameraWarning';
 import { initialSpeedState, isSustainedLowSpeed, updateSpeedState } from '../engine/speedGate';
 import { STATIONARY_SPEED_THRESHOLD_KMH } from '../engine/constants';
@@ -45,6 +59,7 @@ import {
   type AnnouncerState,
 } from '../speech/announcer';
 import { delay } from '../speech/delay';
+import { nativeDelay } from '../speech/nativeDelay';
 import { formatBriefingAlert, NO_BRIEFING_ALERTS_MESSAGE } from '../speech/formatAnnouncement';
 import { formatSpeedCameraWarning } from '../speech/formatSpeedCameraWarning';
 import { PREFETCH_HORIZON_MS, predictUpcomingAnnouncementTexts } from '../speech/predictAnnouncement';
@@ -241,7 +256,7 @@ async function refreshCorridorAlerts(driver: DriverState): Promise<void> {
     const remote = await fetchCorridorAlerts({
       position: driver.position,
       headingDeg: driver.speedKmh >= STATIONARY_SPEED_THRESHOLD_KMH ? driver.headingDeg : null,
-      radiusMeters: settings.announceDistanceMeters,
+      radiusMeters: maxAlertDistanceMeters(settings.alertDistance),
       types,
     });
     corridorAlerts = remote
@@ -267,6 +282,8 @@ export function resetTripRuntime(): void {
   rateLimitBannerShown = false;
   speedWarningFiredCheckpoints = new Map();
   corridorAlerts = [];
+  resetRoadContext();
+  roadDegradedNoticeSpoken = false;
   // Also start a fresh serialization chain - otherwise a call already
   // queued behind the old chain (from before this reset) would still run
   // afterwards and write into the just-reset state. Clearing the queued
@@ -436,6 +453,9 @@ export function handleDriverUpdate(
   // Read-only for every decision below (they all take `driver` directly),
   // so writing it here carries no ordering hazard.
   useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg, driver.speedKmh);
+  // A hung Google playback can't be timed out by a JS timer with the
+  // screen off; every fix (which keeps arriving in the background) checks.
+  checkGoogleTtsWatchdog(Date.now());
 
   const generation = chainGeneration;
   const queuedWhileBusy = passInFlight;
@@ -482,6 +502,10 @@ export function handleDriverUpdate(
  * '[trip] dropped stale driver update' lines). */
 const SLOW_UPDATE_PASS_MS = 1500;
 
+/** How long the briefing waits for its items' suburb names before speaking
+ * - see runBriefing. Reverse geocodes land in ~300-800ms. */
+const BRIEFING_SUBURB_WAIT_MS = 1500;
+
 /**
  * Speed-camera / corroborated-police-report warning (Step 12 Part 4): fires
  * while the driver is confirmed speedLimitKmh + SPEED_WARNING_BUFFER_KMH or
@@ -515,7 +539,30 @@ async function checkSpeedCameraWarning(
 ): Promise<void> {
   if (!settings.alertTypeFilters.fixed_camera) return;
   const cameras = getActiveFixedCameras();
-  if (!hasNearbyWarningTarget(driver, cameras, alertsCache.alerts, nowMs, routeCorridor)) return;
+
+  // Road lookups for cameras/reports inside the camera warn radius, so the
+  // answer is in well before the 500m checkpoint (it can't wait then).
+  const roadFor = (target: WarningTarget) =>
+    roadContextFor(
+      {
+        id: target.id,
+        position: target.position,
+        streets: target.streets,
+        kind: target.kind === 'camera' ? 'fixedCamera' : 'policeReport',
+      },
+      driver,
+      nowMs
+    );
+  const cameraRadius = alertDistanceMeters('FIXED_CAMERA', settings.alertDistance);
+  if (!routeCorridor) {
+    for (const target of gatherTargets(cameras, alertsCache.alerts)) {
+      if (haversineDistance(driver.position, target.position) > cameraRadius) continue;
+      if (bearingDifference(driver.headingDeg, bearingBetween(driver.position, target.position)) > BEHIND_BEARING_DEG) continue;
+      roadFor(target);
+    }
+  }
+
+  if (!hasNearbyWarningTarget(driver, cameras, alertsCache.alerts, nowMs, routeCorridor, routeCorridor ? undefined : roadFor)) return;
 
   prefetchSpeedLimit(driver.position).catch(() => {});
   // Backstop for runBriefing's warm-up: a no-op once the engine is up.
@@ -530,13 +577,14 @@ async function checkSpeedCameraWarning(
     firedCheckpoints: speedWarningFiredCheckpoints,
     nowMs,
     routeCorridor,
+    roadFor: routeCorridor ? undefined : roadFor,
   });
   if (!warning) return;
 
   try {
     // speakUrgentAsync, not speakAsync: on-device voice first, so the
     // 500m/200m checkpoint isn't spent waiting on a Google round-trip.
-    await speakUrgentAsync(formatSpeedCameraWarning(warning.target.kind, warning.checkpoint, warning.confirmedSpeeding), {
+    await speakUrgentAsync(formatSpeedCameraWarning(warning.target.kind, warning.checkpoint, warning.confirmedSpeeding, warning.road), {
       rate: settings.voiceRate,
       volume: settings.voiceVolume,
     });
@@ -565,7 +613,7 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   // The position mirror was already written synchronously by
   // handleDriverUpdate() before this fix queued - nothing to redo here.
   const settings = useSettingsStore.getState();
-  await pollIfDue(driver, nowMs, settings.announceDistanceMeters);
+  await pollIfDue(driver, nowMs, maxAlertDistanceMeters(settings.alertDistance));
 
   // Navigation's own position/step/ETA tracking and reroute detection run
   // unconditionally (a driver who muted audio still wants a live map and
@@ -593,18 +641,29 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     : undefined;
 
   const announceableSource = [...alertsCache.alerts, ...corridorAlerts];
+  const radiusFor = alertDistanceFor(settings.alertDistance);
+  // Road matching (road/roadContextRuntime.ts) decides ahead / nearby /
+  // behind. Pre-select with its wider cone, so an alert on your own road
+  // past a bend can still be confirmed "ahead"; applyRoadContext narrows
+  // "nearby" back to the usual 45 degrees and applies the 1km-closer
+  // reminder rule on the final (along-road where known) distance. Nav mode
+  // keeps its route-corridor selection and the unconfirmed wording.
+  const roadLookup = (target: Parameters<typeof roadContextFor>[0]) => roadContextFor(target, driver, nowMs);
   const announceSettings = {
     enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
-    maxDistanceMeters: settings.announceDistanceMeters,
+    maxDistanceMeters: maxAlertDistanceMeters(settings.alertDistance),
+    maxDistanceForType: radiusFor,
+    maxBearingDiffDeg: routeCorridor ? undefined : BEHIND_BEARING_DEG,
     routeCorridor,
   };
-  const candidates = selectAnnounceableAlerts(
-    announceableSource,
-    driver,
-    announcerState.announcedDistances,
-    nowMs,
-    announceSettings
-  );
+  const candidates = routeCorridor
+    ? selectAnnounceableAlerts(announceableSource, driver, announcerState.announcedDistances, nowMs, announceSettings)
+    : applyRoadContext(
+        selectAnnounceableAlerts(announceableSource, driver, new Map(), nowMs, announceSettings),
+        roadLookup,
+        radiusFor,
+        announcerState.announcedDistances
+      );
   announcerState = submitCandidates(announcerState, candidates);
 
   const result = await tick(
@@ -621,7 +680,9 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   // Fetch Google audio for what's about to be spoken - the queue, and
   // alerts about to cross into the warn radius - before tick() reaches it,
   // so it plays with no network wait (speech/ttsAudioCache.ts).
-  const approaching = selectApproachingAlerts(
+  // Approaching alerts also get their road lookup here - ~45s before
+  // they're due - so the answer is in by the time they're announced.
+  const approachingRaw = selectApproachingAlerts(
     announceableSource,
     driver,
     announcerState.announcedDistances,
@@ -629,11 +690,42 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     announceSettings,
     (Math.max(0, driver.speedKmh) / 3.6) * (PREFETCH_HORIZON_MS / 1000)
   );
+  const approaching = routeCorridor ? approachingRaw : applyRoadContextToApproaching(approachingRaw, roadLookup);
   prefetchSpeech(
     predictUpcomingAnnouncementTexts(announcerState.queue, approaching, driver, nowMs, Date.now())
   );
 
   await checkSpeedCameraWarning(driver, nowMs, settings, routeCorridor);
+  await discloseRoadMatchingState(settings);
+}
+
+const ROAD_DEGRADED_BANNER_MESSAGE = "Road matching unavailable - alerts can't confirm what's ahead.";
+const ROAD_DEGRADED_SPOKEN_NOTICE = 'Road matching is unavailable. Alerts will say nearby, not ahead.';
+let roadDegradedNoticeSpoken = false;
+
+/**
+ * Degraded confidence is always disclosed (CLAUDE.md): when road matching
+ * keeps failing, every alert falls back to "nearby" wording - say why, on
+ * screen and once out loud, instead of letting the change pass silently.
+ */
+async function discloseRoadMatchingState(settings: ReturnType<typeof useSettingsStore.getState>): Promise<void> {
+  const store = useTripStore.getState();
+  if (isRoadMatchingDegraded()) {
+    if (store.bannerMessage === null) store.setBannerMessage(ROAD_DEGRADED_BANNER_MESSAGE);
+    if (!roadDegradedNoticeSpoken && !settings.masterMute) {
+      roadDegradedNoticeSpoken = true;
+      console.warn(`[road] degraded - disclosing (${JSON.stringify(getRoadMatchingStats())})`);
+      try {
+        await speakAsync(ROAD_DEGRADED_SPOKEN_NOTICE, { rate: settings.voiceRate, volume: settings.voiceVolume });
+      } catch (error) {
+        console.warn('[road] failed to speak the degraded notice', error);
+      }
+    }
+  } else {
+    if (store.bannerMessage === ROAD_DEGRADED_BANNER_MESSAGE) store.setBannerMessage(null);
+    if (roadDegradedNoticeSpoken) console.log('[road] recovered');
+    roadDegradedNoticeSpoken = false;
+  }
 }
 
 /**
@@ -716,7 +808,7 @@ export async function runBriefing(
 ): Promise<void> {
   const { signal } = options;
   const settings = useSettingsStore.getState();
-  const boundingBox = radiusBoundingBox(driver.position, settings.briefingRadiusMeters);
+  const boundingBox = radiusBoundingBox(driver.position, maxAlertDistanceMeters(settings.alertDistance));
 
   // The speed-camera warning speaks on the device voice; get its engine
   // out of cold start now rather than at the first 500m checkpoint.
@@ -735,7 +827,8 @@ export async function runBriefing(
   const candidates = hasUsableAlerts
     ? selectBriefingAlerts([...alertsCache.alerts, ...corridorAlerts], driver.position, Date.now(), {
         enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
-        radiusMeters: settings.briefingRadiusMeters,
+        radiusMeters: maxAlertDistanceMeters(settings.alertDistance),
+        radiusForType: alertDistanceFor(settings.alertDistance),
       })
     : [];
 
@@ -751,6 +844,22 @@ export async function runBriefing(
     return;
   }
 
+  // Resolve each item's suburb before formatting anything: the sentence
+  // names the suburb, and a lookup landing after the prefetch changed the
+  // spoken text out from under it on a drive test ("Henley Beach Road,
+  // Underdale" prefetched, "..., Torrensville" spoken). Bounded - a slow
+  // lookup just means that item names Waze's own area instead.
+  await Promise.race([
+    Promise.all(
+      candidates.map((c) =>
+        prefetchSuburb({ latitude: c.alert.latitude, longitude: c.alert.longitude }).catch(() => {})
+      )
+    ),
+    // nativeDelay: a JS timer would stall here on a screen-off cold start.
+    nativeDelay(BRIEFING_SUBURB_WAIT_MS, signal),
+  ]);
+  if (signal?.aborted) return;
+
   // The whole briefing list is known up front: fetch every item now, so
   // each one after the first is ready by the time its turn comes.
   prefetchSpeech(candidates.map(formatBriefingAlert));
@@ -759,5 +868,6 @@ export async function runBriefing(
     speakOptions,
     signal,
     onItemSpoken: (entry) => useTripStore.getState().pushAnnouncement(entry),
+    delayFn: nativeDelay,
   });
 }

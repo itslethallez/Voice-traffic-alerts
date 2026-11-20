@@ -28,15 +28,21 @@ export function toDriverState(sample: RawLocationSample, previous: DriverState |
   const speedKmh = Math.max(0, (sample.speed ?? 0) * METERS_PER_SECOND_TO_KMH);
 
   let headingDeg = sample.heading;
+  let headingReliable = true;
   if (headingDeg === null || headingDeg < 0) {
     if (previous) {
       const moved = position.latitude !== previous.position.latitude ||
         position.longitude !== previous.position.longitude;
       headingDeg = moved ? bearingBetween(previous.position, position) : previous.headingDeg;
+      headingReliable = moved || previous.headingReliable !== false;
     } else {
+      // No course and nothing to derive one from: 0 is a placeholder, not
+      // "north". Flagged so road matching never calls anything "ahead" off
+      // it (case E in road/__tests__/aheadCases.test.ts).
       headingDeg = 0;
+      headingReliable = false;
     }
   }
 
-  return { position, headingDeg, speedKmh };
+  return { position, headingDeg, speedKmh, headingReliable };
 }
