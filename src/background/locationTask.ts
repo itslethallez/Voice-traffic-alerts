@@ -17,6 +17,21 @@ export const BACKGROUND_LOCATION_TASK_NAME = 'voice-traffic-alerts/background-lo
 let lastKnownDriver: DriverState | null = null;
 
 /**
+ * Until the drive loop has finished its briefing and gone 'live', fixes
+ * from this task go to it (useDriveLoop.ts) instead of the trip runtime:
+ * on a screen-off cold start this task is the ONLY location source - the
+ * foreground watch never delivers without a resumed activity - so it has
+ * to be what starts the briefing. Once live, fixes go straight to
+ * handleDriverUpdate as before.
+ */
+type PreLiveFixListener = (location: Location.LocationObject) => void;
+let preLiveFixListener: PreLiveFixListener | null = null;
+
+export function setPreLiveFixListener(listener: PreLiveFixListener | null): void {
+  preLiveFixListener = listener;
+}
+
+/**
  * Must run in the JS bundle's module scope, not inside a component or
  * effect - TaskManager spins up the JS app, runs this, and tears it back
  * down when the OS wakes it in the background, with no views mounted.
@@ -42,6 +57,13 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
       console.log(`[drive] background batch of ${data.locations.length} fixes - using latest only`);
     }
     const location = data.locations[data.locations.length - 1];
+    if (preLiveFixListener) {
+      console.log(
+        `[background-location] pre-live fix lat=${location.coords.latitude.toFixed(5)} lon=${location.coords.longitude.toFixed(5)} age=${Math.round((Date.now() - location.timestamp) / 1000)}s -> drive loop`
+      );
+      preLiveFixListener(location);
+      return;
+    }
     // One line per delivery. With the screen off this task is the only
     // thing still feeding the engine, so its absence from a drive-test
     // logcat is the difference between "nothing worth announcing" and

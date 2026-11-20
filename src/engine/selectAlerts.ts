@@ -38,6 +38,13 @@ export interface AnnounceSettings {
    * top of this. undefined (cruising mode, or navigation with no route yet)
    * leaves the existing radius+bearing behaviour untouched. */
   routeCorridor?: RouteCorridor;
+  /** Per-type warn radius (engine/alertDistance.ts); overrides
+   * maxDistanceMeters when set. */
+  maxDistanceForType?: (type: WazeAlertType) => number;
+  /** Heading cone, degrees either side. Defaults to the 45-degree
+   * ANNOUNCE_MAX_BEARING_DIFF_DEG; road matching pre-selects with a wider
+   * cone and narrows "nearby" alerts back to 45 itself (tripRuntime.ts). */
+  maxBearingDiffDeg?: number;
 }
 
 export const defaultAnnounceSettings: AnnounceSettings = {
@@ -97,13 +104,24 @@ export function selectAnnounceableAlerts(
       if (distanceMeters < ANNOUNCE_MIN_DISTANCE_M) continue;
       const corridorDistanceM = distanceToPolyline(alertPosition, settings.routeCorridor.polyline);
       if (corridorDistanceM > settings.routeCorridor.corridorMeters) continue;
-    } else if (!isDistanceAnnounceable(distanceMeters, settings.maxDistanceMeters)) {
+    } else if (
+      !isDistanceAnnounceable(
+        distanceMeters,
+        settings.maxDistanceForType ? settings.maxDistanceForType(alert.type) : settings.maxDistanceMeters
+      )
+    ) {
       continue;
     }
 
     const bearingDeg = bearingBetween(driver.position, alertPosition);
     const bearingDiffDeg = bearingDifference(driver.headingDeg, bearingDeg);
-    if (!settings.routeCorridor && !isBearingAnnounceable(bearingDiffDeg)) continue;
+    if (!settings.routeCorridor) {
+      const withinCone =
+        settings.maxBearingDiffDeg === undefined
+          ? isBearingAnnounceable(bearingDiffDeg)
+          : bearingDiffDeg <= settings.maxBearingDiffDeg;
+      if (!withinCone) continue;
+    }
 
     const ageMinutes = (nowMs - Date.parse(alert.publish_datetime_utc)) / 60_000;
     if (!isFreshEnoughToAnnounce(ageMinutes)) continue;

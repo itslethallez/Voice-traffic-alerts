@@ -56,6 +56,7 @@ function makeCandidate(
     bearingDiffDeg: overrides.bearingDiffDeg ?? 0,
     ageMinutes: overrides.ageMinutes ?? 3,
     driverHeadingDeg: overrides.driverHeadingDeg ?? 0,
+    road: overrides.road,
   };
 }
 
@@ -77,7 +78,7 @@ describe('formatDistance', () => {
 });
 
 describe('formatAnnouncement', () => {
-  it('speaks the street, suburb and direction of travel for a fresh police report', () => {
+  it('speaks an unconfirmed report as nearby, with its street and suburb, and no heading', () => {
     const candidate = makeCandidate({
       type: 'POLICE',
       street: 'North Terrace',
@@ -87,7 +88,7 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported on North Terrace, Adelaide, northbound, 800 metres ahead.'
+      'Police reported nearby on North Terrace, Adelaide, 800 metres away.'
     );
   });
 
@@ -102,7 +103,7 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police Visible reported on North Terrace, Adelaide, northbound, 800 metres ahead.'
+      'Police Visible reported nearby on North Terrace, Adelaide, 800 metres away.'
     );
   });
 
@@ -126,14 +127,14 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Crash reported on North Terrace, Adelaide, northbound, 1.4 kilometres ahead.'
+      'Crash reported nearby on North Terrace, Adelaide, 1.4 kilometres away.'
     );
   });
 
   it('never speaks a bare route/highway number as the street', () => {
     const candidate = makeCandidate({ street: 'US-101 N', city: 'Oakland' });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported in Oakland, northbound, 800 metres ahead.'
+      'Police reported nearby in Oakland, 800 metres away.'
     );
   });
 
@@ -153,22 +154,63 @@ describe('formatAnnouncement', () => {
   it('falls back to just the suburb when there is no usable street', () => {
     const candidate = makeCandidate({ street: null, city: 'Adelaide', driverHeadingDeg: 90 });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported in Adelaide, eastbound, 800 metres ahead.'
+      'Police reported nearby in Adelaide, 800 metres away.'
     );
   });
 
   it('falls back to the bare distance wording when there is neither street nor suburb', () => {
     const candidate = makeCandidate({ street: null, city: null, distanceMeters: 800 });
-    expect(formatAnnouncement(candidate)).toBe('Police reported, 800 metres ahead.');
+    expect(formatAnnouncement(candidate)).toBe('Police reported nearby, 800 metres away.');
   });
 
-  it('quantizes the driver heading to the nearest of 4 cardinal directions', () => {
-    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 0 }))).toContain('northbound');
-    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 90 }))).toContain('eastbound');
-    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 180 }))).toContain('southbound');
-    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 270 }))).toContain('westbound');
-    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 40 }))).toContain('northbound');
-    expect(formatAnnouncement(makeCandidate({ driverHeadingDeg: 50 }))).toContain('eastbound');
+  it('never says a compass direction - that was the driver heading, not the alert road', () => {
+    for (const driverHeadingDeg of [0, 90, 180, 270]) {
+      expect(formatAnnouncement(makeCandidate({ driverHeadingDeg }))).not.toMatch(/bound/);
+    }
+  });
+
+  it('never says "ahead" without a road check (road undefined)', () => {
+    expect(formatAnnouncement(makeCandidate())).not.toContain('ahead');
+  });
+
+  it('says "ahead on {road}" with the along-road distance when road matching confirmed it', () => {
+    const candidate = makeCandidate({
+      type: 'ACCIDENT',
+      street: 'A1 - Main North Rd',
+      distanceMeters: 2_000,
+      road: { kind: 'ahead', roadName: 'Main North Road', alongRoadMeters: 2_000 },
+    });
+    expect(formatAnnouncement(candidate)).toBe('Crash reported, 2 kilometres ahead on Main North Road.');
+  });
+
+  it('speaks a confirmed camera window as a fact, ahead on its road', () => {
+    const candidate = makeCandidate({
+      type: 'MOBILE_CAMERA',
+      street: 'PORTRUSH RD',
+      distanceMeters: 1_200,
+      road: { kind: 'ahead', roadName: 'Portrush Road', alongRoadMeters: 1_200 },
+    });
+    expect(formatAnnouncement(candidate)).toBe('Mobile camera, 1.2 kilometres ahead on Portrush Road.');
+  });
+
+  it('falls back to the alert street, then "this road", when Mapbox has no road name', () => {
+    const ahead = { kind: 'ahead' as const, roadName: null, alongRoadMeters: 800 };
+    expect(formatAnnouncement(makeCandidate({ street: 'North Tce', road: ahead }))).toBe(
+      'Police reported, 800 metres ahead on North Terrace.'
+    );
+    expect(formatAnnouncement(makeCandidate({ street: null, road: ahead }))).toBe(
+      'Police reported, 800 metres ahead on this road.'
+    );
+  });
+
+  it('keeps the stale-report note on a confirmed-ahead alert', () => {
+    const candidate = makeCandidate({
+      ageMinutes: 15,
+      road: { kind: 'ahead', roadName: 'Main North Road', alongRoadMeters: 800 },
+    });
+    expect(formatAnnouncement(candidate)).toBe(
+      'Police reported, 800 metres ahead on Main North Road. Reported 15 minutes ago.'
+    );
   });
 
   it('expands a road-type abbreviation at the end of the street name', () => {
@@ -183,6 +225,21 @@ describe('formatAnnouncement', () => {
     );
   });
 
+  it('drops a Waze route-number prefix and parenthetical from the spoken street', () => {
+    expect(formatAnnouncement(makeCandidate({ street: 'A1 - Main North Rd', city: 'Elizabeth' }))).toContain(
+      'on Main North Road, Elizabeth'
+    );
+    expect(formatAnnouncement(makeCandidate({ street: 'R1 - Fitzroy Tce (City Ring Route)', city: 'Adelaide' }))).toContain(
+      'on Fitzroy Terrace, Adelaide'
+    );
+  });
+
+  it('speaks an ALL-CAPS police notice street in normal case', () => {
+    expect(formatAnnouncement(makeCandidate({ street: 'PORTRUSH RD', city: 'Maylands' }))).toContain(
+      'on Portrush Road, Maylands'
+    );
+  });
+
   it('expands a leading "St" to "Saint" rather than "Street"', () => {
     expect(formatAnnouncement(makeCandidate({ street: 'St Kilda Rd', city: 'Melbourne' }))).toContain(
       'on Saint Kilda Road, Melbourne'
@@ -191,20 +248,20 @@ describe('formatAnnouncement', () => {
 
   it('does not append an age note at exactly 10 minutes old (exclusive boundary)', () => {
     const candidate = makeCandidate({ street: null, city: null, ageMinutes: 10 });
-    expect(formatAnnouncement(candidate)).toBe('Police reported, 800 metres ahead.');
+    expect(formatAnnouncement(candidate)).toBe('Police reported nearby, 800 metres away.');
   });
 
   it('appends the age note just past 10 minutes old', () => {
     const candidate = makeCandidate({ street: null, city: null, ageMinutes: 12 });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported, 800 metres ahead. Reported 12 minutes ago.'
+      'Police reported nearby, 800 metres away. Reported 12 minutes ago.'
     );
   });
 
   it('rounds the appended age to the nearest whole minute', () => {
     const candidate = makeCandidate({ street: null, city: null, ageMinutes: 10.6 });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported, 800 metres ahead. Reported 11 minutes ago.'
+      'Police reported nearby, 800 metres away. Reported 11 minutes ago.'
     );
   });
 
@@ -239,7 +296,7 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Mobile camera on Main South Road, Normanville, northbound, 1.4 kilometres ahead.'
+      'Mobile camera nearby on Main South Road, Normanville, 1.4 kilometres away.'
     );
   });
 
@@ -251,14 +308,14 @@ describe('formatAnnouncement', () => {
       distanceMeters: 800,
       driverHeadingDeg: 90,
     });
-    expect(formatAnnouncement(candidate)).toBe('Fixed camera in Adelaide, eastbound, 800 metres ahead.');
+    expect(formatAnnouncement(candidate)).toBe('Fixed camera nearby in Adelaide, 800 metres away.');
   });
 
   it('never appends a "Reported n minutes ago" note to a camera window', () => {
     // first_seen is the notice's start date - age describes the
     // publication schedule, not the camera's currency.
     const candidate = makeCandidate({ type: 'MOBILE_CAMERA', street: null, city: null, ageMinutes: 4320 });
-    expect(formatAnnouncement(candidate)).toBe('Mobile camera, 800 metres ahead.');
+    expect(formatAnnouncement(candidate)).toBe('Mobile camera nearby, 800 metres away.');
   });
 });
 

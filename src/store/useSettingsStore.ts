@@ -1,3 +1,4 @@
+import { isAlertDistanceSetting, type AlertDistanceSetting } from '../engine/alertDistance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
@@ -6,12 +7,8 @@ import {
   type AlertFilterCategory,
   clamp,
   defaultSettingsValues,
-  MAX_ANNOUNCE_DISTANCE_METERS,
-  MAX_BRIEFING_RADIUS_METERS,
   MAX_VOICE_RATE,
   MAX_VOICE_VOLUME,
-  MIN_ANNOUNCE_DISTANCE_METERS,
-  MIN_BRIEFING_RADIUS_METERS,
   MIN_VOICE_RATE,
   MIN_VOICE_VOLUME,
   type RouteType,
@@ -27,9 +24,15 @@ export function mergePersistedSettings<T extends SettingsValues>(
   persisted: Partial<SettingsValues> | undefined,
   current: T
 ): T {
+  // Settings from before the Close/Normal/Far control: drop the old
+  // slider values instead of carrying them around, and fall back to the
+  // default for anything that isn't a valid setting.
+  const { announceDistanceMeters: _legacyAnnounce, briefingRadiusMeters: _legacyBriefing, ...rest } =
+    (persisted ?? {}) as Partial<SettingsValues> & { announceDistanceMeters?: unknown; briefingRadiusMeters?: unknown };
   return {
     ...current,
-    ...persisted,
+    ...rest,
+    alertDistance: isAlertDistanceSetting(rest.alertDistance) ? rest.alertDistance : current.alertDistance,
     categoriesEnabled: {
       ...defaultSettingsValues.categoriesEnabled,
       ...persisted?.categoriesEnabled,
@@ -44,8 +47,7 @@ export function mergePersistedSettings<T extends SettingsValues>(
 interface SettingsStore extends SettingsValues {
   toggleCategory: (category: AlertCategory) => void;
   toggleAlertTypeFilter: (category: AlertFilterCategory) => void;
-  setAnnounceDistanceMeters: (meters: number) => void;
-  setBriefingRadiusMeters: (meters: number) => void;
+  setAlertDistance: (setting: AlertDistanceSetting) => void;
   setVoiceVolume: (volume: number) => void;
   setVoiceRate: (rate: number) => void;
   toggleMasterMute: () => void;
@@ -71,18 +73,7 @@ export const useSettingsStore = create<SettingsStore>()(
             [category]: !state.alertTypeFilters[category],
           },
         })),
-      setAnnounceDistanceMeters: (meters) =>
-        set({
-          announceDistanceMeters: clamp(
-            meters,
-            MIN_ANNOUNCE_DISTANCE_METERS,
-            MAX_ANNOUNCE_DISTANCE_METERS
-          ),
-        }),
-      setBriefingRadiusMeters: (meters) =>
-        set({
-          briefingRadiusMeters: clamp(meters, MIN_BRIEFING_RADIUS_METERS, MAX_BRIEFING_RADIUS_METERS),
-        }),
+      setAlertDistance: (setting) => set({ alertDistance: setting }),
       setVoiceVolume: (volume) =>
         set({ voiceVolume: clamp(volume, MIN_VOICE_VOLUME, MAX_VOICE_VOLUME) }),
       setVoiceRate: (rate) => set({ voiceRate: clamp(rate, MIN_VOICE_RATE, MAX_VOICE_RATE) }),

@@ -21,6 +21,7 @@ jest.mock('../../trip/tripRuntime', () => ({
 
 import {
   BACKGROUND_LOCATION_TASK_NAME,
+  setPreLiveFixListener,
   startBackgroundLocationUpdatesAsync,
   stopBackgroundLocationUpdatesAsync,
 } from '../locationTask';
@@ -70,5 +71,31 @@ describe('locationTask', () => {
     hasStartedLocationUpdatesAsync.mockResolvedValue(false);
     await stopBackgroundLocationUpdatesAsync();
     expect(stopLocationUpdatesAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('locationTask: screen-off cold start', () => {
+  type TaskBody = { data?: { locations: unknown[] }; error?: unknown };
+  const taskHandler = () => defineTask.mock.calls[0][1] as (body: TaskBody) => Promise<void>;
+  const fix = (lat: number) => ({ coords: { latitude: lat, longitude: 138.5, heading: 90, speed: 20 }, timestamp: 0 });
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const tripRuntime = require('../../trip/tripRuntime') as { handleDriverUpdate: jest.Mock };
+
+  beforeEach(() => {
+    tripRuntime.handleDriverUpdate.mockClear();
+    setPreLiveFixListener(null);
+  });
+
+  it('hands fixes to the drive loop until it is live - so it can start the briefing with the screen off', async () => {
+    const seen: number[] = [];
+    setPreLiveFixListener((location) => seen.push(location.coords.latitude));
+    await taskHandler()({ data: { locations: [fix(-34.9), fix(-34.91)] } });
+    expect(seen).toEqual([-34.91]); // latest of the batch
+    expect(tripRuntime.handleDriverUpdate).not.toHaveBeenCalled();
+  });
+
+  it('feeds the trip runtime directly once live', async () => {
+    await taskHandler()({ data: { locations: [fix(-34.92)] } });
+    expect(tripRuntime.handleDriverUpdate).toHaveBeenCalledWith(expect.anything(), expect.any(Number), 'background');
   });
 });

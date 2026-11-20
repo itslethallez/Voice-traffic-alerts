@@ -24,6 +24,7 @@ import {
   type AlertFilterCategory,
 } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { maxAlertDistanceMeters } from '../engine/alertDistance';
 import { useTripStore } from '../store/useTripStore';
 import { useCommunityReportStore } from '../store/useCommunityReportStore';
 import { useNavigationStore } from '../store/useNavigationStore';
@@ -119,7 +120,7 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
   const latestAnnouncement = useTripStore((state) => state.recentAnnouncements[0] ?? null);
   const alertTypeFilters = useSettingsStore((state) => state.alertTypeFilters);
   const toggleAlertTypeFilter = useSettingsStore((state) => state.toggleAlertTypeFilter);
-  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
+  const announceDistanceMeters = useSettingsStore((state) => maxAlertDistanceMeters(state.alertDistance));
   const communityCandidates = useCommunityReportStore((state) => state.candidates);
   const dismissCommunityCandidate = useCommunityReportStore((state) => state.dismissCandidate);
   /** Stage B route-planning state - anything but 'idle' means the map is

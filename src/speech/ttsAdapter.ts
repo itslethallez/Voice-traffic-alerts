@@ -182,12 +182,34 @@ export async function speakUrgentAsync(text: string, options: SpeakOptions = {})
  */
 let deviceVoiceWarmUp: Promise<void> | null = null;
 
+/**
+ * Binding the engine isn't enough: the drive test after the first warm-up
+ * still measured 4598ms to first sound on the first device-voice alert of
+ * the trip, because Android's engine loads the voice model on its first
+ * synthesis, not on bind. So the warm-up also speaks one word at volume 0.
+ * Resolves (never rejects) once it's done or errored; ~1s of silent audio.
+ */
+function speakSilently(): Promise<void> {
+  return new Promise((resolve) => {
+    Speech.speak('Ready.', {
+      volume: 0,
+      onDone: () => resolve(),
+      onStopped: () => resolve(),
+      onError: () => resolve(),
+    });
+  });
+}
+
 export function warmUpDeviceVoice(): Promise<void> {
   if (deviceVoiceWarmUp) return deviceVoiceWarmUp;
   const startedAtMs = Date.now();
   deviceVoiceWarmUp = Speech.getAvailableVoicesAsync()
     .then((voices) => {
-      console.log(`[speech] device voice warm in ${Date.now() - startedAtMs}ms (${voices.length} voices)`);
+      console.log(`[speech] device voice bound in ${Date.now() - startedAtMs}ms (${voices.length} voices)`);
+      return speakSilently();
+    })
+    .then(() => {
+      console.log(`[speech] device voice warm in ${Date.now() - startedAtMs}ms`);
     })
     .catch((error: unknown) => {
       deviceVoiceWarmUp = null;
