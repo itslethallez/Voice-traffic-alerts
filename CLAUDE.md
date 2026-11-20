@@ -32,16 +32,20 @@ Shotgun is a **co-pilot, not a navigation app**.
 
 ## Stages
 
+Rows are in **build order** (reordered 20 Nov 2026: visual refresh moved
+up to run straight after Cruise core). Stage numbers are kept as labels so
+existing references to "stage 4", "stage 7" etc. stay valid.
+
 | # | Stage | Status |
 |---|-------|--------|
 | 1 | Strip Navigate (PR #6) | **done, pushed** |
 | 2 | Feed fixes (PRs #7, #8) | merged |
 | 3 | Cruise core | |
+| 8 | Visual refresh | |
 | 4 | Handoff (Waze / Google Maps / Apple Maps) | |
 | 5 | Reroute | |
 | 6 | National data | |
 | 7 | Community pipeline | plan approved; code only after stages 3–5 |
-| 8 | Visual refresh | |
 
 ## Current status (as of 20 Nov 2026)
 
