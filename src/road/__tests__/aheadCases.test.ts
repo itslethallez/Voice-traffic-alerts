@@ -124,13 +124,13 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
  * second once the road lookup has landed (as the trip runtime would on
  * the next 3s fix). null = silent.
  */
-async function spoken(alerts: WazeAlert[], driver: DriverState): Promise<string | null> {
+async function spoken(alerts: WazeAlert[], driver: DriverState, nowMs = NOW): Promise<string | null> {
   const radiusFor = alertDistanceFor('normal');
   const settings = { maxDistanceMeters: 5_000, maxDistanceForType: radiusFor, maxBearingDiffDeg: BEHIND_BEARING_DEG };
   const pass = () =>
     applyRoadContext(
-      selectAnnounceableAlerts(alerts, driver, new Map(), NOW, settings),
-      (target) => roadContextFor(target, driver, NOW),
+      selectAnnounceableAlerts(alerts, driver, new Map(), nowMs, settings),
+      (target) => roadContextFor(target, driver, nowMs),
       radiusFor,
       new Map()
     );
@@ -433,8 +433,12 @@ describe('road matching: cost and fallbacks', () => {
     await spoken([crash], driverAt(START, 0));
     for (let m = 100; m <= 1_400; m += 100) await spoken([crash], driverAt(destinationPoint(START, m, 0), 0));
     expect(requests).toHaveLength(1);
-    // Took a parallel road 200m east instead: off the route - ask again.
-    await spoken([crash], driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 200, 90), 0));
+    // Took a parallel road 200m east instead: off the route. Within 30s of
+    // the last lookup it's "nearby" without asking; after that, ask again.
+    const parallel = driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 200, 90), 0);
+    expect(await spoken([crash], parallel, NOW + 20_000)).toBe('Crash reported nearby on Side Street, Elizabeth, 500 metres away.');
+    expect(requests).toHaveLength(1);
+    await spoken([crash], parallel, NOW + 31_000);
     expect(requests).toHaveLength(2);
   });
 

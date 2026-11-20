@@ -53,6 +53,12 @@ export const RECEDING_MARGIN_METERS = 300;
 /** An alert waits at most this long for its first answer before being
  * spoken as "nearby" anyway - never held back indefinitely. */
 export const MAX_PENDING_MS = 6_000;
+/** The same target is asked about at most this often. A route that turns
+ * off the driver's road early is left within seconds when they carry on
+ * straight; the cold-start drive test re-asked one camera 6s later. In
+ * between, the last verdict stands - "behind" stays behind, anything else
+ * is "nearby" (never "ahead" without a route under the driver). */
+export const MIN_RELOOKUP_MS = 30_000;
 const MAX_CONCURRENT_LOOKUPS = 2;
 /** Cost cap per device. Unchanged on 21 Nov 2026 - cut calls first. */
 export const MAX_LOOKUPS_PER_HOUR = 60;
@@ -79,6 +85,7 @@ let fetcher: Fetcher = (from, heading, to) => fetchForwardRoute(from, heading, t
 const entries = new Map<string, Entry>();
 const inFlight = new Set<string>();
 const firstAskedAtMs = new Map<string, number>();
+const lastLookup = new Map<string, { atMs: number; context: RoadContext }>();
 /** Closest straight-line distance seen per target this trip. */
 const closestSeen = new Map<string, number>();
 const recedingLogged = new Set<string>();
@@ -125,6 +132,11 @@ export function roadContextFor(target: RoadTarget, driver: DriverState, nowMs: n
 
   const cached = fromCache(target, driver, straightLine, nowMs);
   if (cached) return cached;
+
+  const previous = lastLookup.get(target.id);
+  if (previous && nowMs - previous.atMs < MIN_RELOOKUP_MS && !inFlight.has(target.id)) {
+    return previous.context.kind === 'behind' ? previous.context : { kind: 'nearby' };
+  }
 
   if (!firstAskedAtMs.has(target.id)) firstAskedAtMs.set(target.id, nowMs);
   const waited = nowMs - (firstAskedAtMs.get(target.id) ?? nowMs);
@@ -260,6 +272,7 @@ function startLookup(target: RoadTarget, driver: DriverState, straightLine: numb
         route.destinationSnapMeters
       );
       routes = [cached, ...routes].slice(0, MAX_CACHED_ROUTES);
+      lastLookup.set(target.id, { atMs: nowMs, context });
       entries.set(target.id, {
         kind: 'route',
         route: cached,
@@ -277,6 +290,7 @@ function startLookup(target: RoadTarget, driver: DriverState, straightLine: numb
       stats.failures += 1;
       consecutiveFailures += 1;
       entries.set(target.id, { kind: 'failed', decidedAt: driver.position, decidedAtMs: nowMs });
+      lastLookup.set(target.id, { atMs: nowMs, context: { kind: 'nearby' } });
       console.warn(
         `[road] lookup #${n} ${target.id} failed after ${Date.now() - startedAtMs}ms (${consecutiveFailures} in a row): ` +
           `${error instanceof Error ? error.message : String(error)}`
@@ -319,6 +333,7 @@ export function resetRoadContext(): void {
   entries.clear();
   inFlight.clear();
   firstAskedAtMs.clear();
+  lastLookup.clear();
   closestSeen.clear();
   recedingLogged.clear();
   routes = [];
