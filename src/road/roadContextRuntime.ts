@@ -59,6 +59,14 @@ export const MAX_PENDING_MS = 6_000;
  * between, the last verdict stands - "behind" stays behind, anything else
  * is "nearby" (never "ahead" without a route under the driver). */
 export const MIN_RELOOKUP_MS = 30_000;
+/** Left a route without turning (heading within this of when it was
+ * decided): still on the same road, so a "nearby" / "behind" verdict
+ * still holds - the turn-off it needed is now behind you. Kept until the
+ * driver turns or has covered SAME_ROAD_MAX_METERS. This is what "per road
+ * segment" means for alerts off your road: the standard drive test was
+ * re-asking side-road cameras every 30s as it drove past their turns. */
+const SAME_ROAD_HEADING_DEG = 30;
+const SAME_ROAD_MAX_METERS = 2_000;
 const MAX_CONCURRENT_LOOKUPS = 2;
 /** Cost cap per device. Unchanged on 21 Nov 2026 - cut calls first. */
 export const MAX_LOOKUPS_PER_HOUR = 60;
@@ -78,7 +86,17 @@ interface CachedRoute {
 }
 
 type Entry =
-  | { kind: 'route'; route: CachedRoute; targetOffset: number; snapMeters: number }
+  | {
+      kind: 'route';
+      route: CachedRoute;
+      targetOffset: number;
+      snapMeters: number;
+      /** Where / which way the driver was when this was decided - see
+       * SAME_ROAD_HEADING_DEG. */
+      decidedAt: GeoPoint;
+      decidedHeadingDeg: number;
+      lastContext: RoadContext | null;
+    }
   | { kind: 'failed'; decidedAt: GeoPoint; decidedAtMs: number };
 
 let fetcher: Fetcher = (from, heading, to) => fetchForwardRoute(from, heading, to);
@@ -206,10 +224,18 @@ function reuse(
   }
   const cached = entry.route;
   const progress = progressOn(cached, driver);
-  if (progress === null) return null;
+  if (progress === null) {
+    const verdict = entry.lastContext;
+    const sameRoad =
+      verdict !== null &&
+      (verdict.kind === 'nearby' || verdict.kind === 'behind') &&
+      bearingDifference(driver.headingDeg, entry.decidedHeadingDeg) <= SAME_ROAD_HEADING_DEG &&
+      haversineDistance(entry.decidedAt, driver.position) <= SAME_ROAD_MAX_METERS;
+    return sameRoad ? verdict : null;
+  }
   cached.lastProgress = Math.max(cached.lastProgress, progress);
   if (entry.targetOffset - progress < -COVERED_METERS) return { kind: 'behind' }; // driven past it
-  return classifyRouteSegment(
+  const context = classifyRouteSegment(
     cached.route,
     Math.min(progress, entry.targetOffset - 1),
     entry.targetOffset,
@@ -217,6 +243,10 @@ function reuse(
     straightLine,
     entry.snapMeters
   );
+  entry.lastContext = context;
+  entry.decidedHeadingDeg = driver.headingDeg;
+  entry.decidedAt = driver.position;
+  return context;
 }
 
 function coverFromCachedRoutes(
@@ -242,7 +272,15 @@ function coverFromCachedRoutes(
     // over) says nothing reliable about it otherwise.
     if (context.kind !== 'ahead') continue;
     return {
-      entry: { kind: 'route', route: cached, targetOffset: there.progressMeters, snapMeters: there.offsetMeters },
+      entry: {
+        kind: 'route',
+        route: cached,
+        targetOffset: there.progressMeters,
+        snapMeters: there.offsetMeters,
+        decidedAt: driver.position,
+        decidedHeadingDeg: driver.headingDeg,
+        lastContext: context,
+      },
       context,
     };
   }
@@ -278,6 +316,9 @@ function startLookup(target: RoadTarget, driver: DriverState, straightLine: numb
         route: cached,
         targetOffset: route.distanceMeters,
         snapMeters: route.destinationSnapMeters,
+        decidedAt: driver.position,
+        decidedHeadingDeg: driver.headingDeg,
+        lastContext: context,
       });
       consecutiveFailures = 0;
       console.log(

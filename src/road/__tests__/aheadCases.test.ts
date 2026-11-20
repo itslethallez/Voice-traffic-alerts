@@ -433,12 +433,17 @@ describe('road matching: cost and fallbacks', () => {
     await spoken([crash], driverAt(START, 0));
     for (let m = 100; m <= 1_400; m += 100) await spoken([crash], driverAt(destinationPoint(START, m, 0), 0));
     expect(requests).toHaveLength(1);
-    // Took a parallel road 200m east instead: off the route. Within 30s of
-    // the last lookup it's "nearby" without asking; after that, ask again.
-    const parallel = driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 200, 90), 0);
-    expect(await spoken([crash], parallel, NOW + 20_000)).toBe('Crash reported nearby on Side Street, Elizabeth, 500 metres away.');
+    // Off the route but still heading the same way (GPS 60m out, or the
+    // far side of a wide road): the same road, so still "nearby" - no request.
+    const sameWay = driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 60, 90), 0);
+    expect(await spoken([crash], sameWay, NOW + 60_000)).toBe('Crash reported nearby on Side Street, Elizabeth, 600 metres away.');
     expect(requests).toHaveLength(1);
-    await spoken([crash], parallel, NOW + 31_000);
+    // Turned off instead (heading 90, off the route): a different road, so
+    // ask again - once 30s have passed since the last lookup.
+    const turnedOff = driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 200, 90), 45);
+    expect(await spoken([crash], turnedOff, NOW + 20_000)).toBe('Crash reported nearby on Side Street, Elizabeth, 500 metres away.');
+    expect(requests).toHaveLength(1);
+    await spoken([crash], turnedOff, NOW + 61_000);
     expect(requests).toHaveLength(2);
   });
 
