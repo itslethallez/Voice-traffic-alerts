@@ -1,4 +1,5 @@
 import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
+import { appStateLabel } from '../diagnostics/appState';
 
 /**
  * A delay that still ends on time with the screen off.
@@ -26,11 +27,15 @@ export function nativeDelay(ms: number, signal?: AbortSignal): Promise<void> {
 
     let player: AudioPlayer | null = null;
     let settled = false;
-    const finish = () => {
+    const startedAtMs = Date.now();
+    const finish = (via: 'clip' | 'timer' | 'abort') => {
       if (settled) return;
       settled = true;
+      // [speech] tag: a screen-off drive test reads gap lengths back from
+      // this line - "via clip" is the native clock doing its job.
+      console.log(`[speech] native delay ${ms}ms ended after ${Date.now() - startedAtMs}ms via ${via} app=${appStateLabel()}`);
       clearTimeout(timer);
-      signal?.removeEventListener('abort', finish);
+      signal?.removeEventListener('abort', onAbort);
       if (player) {
         try {
           player.pause();
@@ -43,14 +48,15 @@ export function nativeDelay(ms: number, signal?: AbortSignal): Promise<void> {
       resolve();
     };
 
-    const timer = setTimeout(finish, ms);
-    signal?.addEventListener('abort', finish);
+    const onAbort = () => finish('abort');
+    const timer = setTimeout(() => finish('timer'), ms);
+    signal?.addEventListener('abort', onAbort);
 
     try {
       player = createAudioPlayer({ uri: silentWavDataUri(ms) });
       player.volume = 0;
       player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
-        if (status.didJustFinish || status.error) finish();
+        if (status.didJustFinish || status.error) finish('clip');
       });
       player.play();
     } catch (error) {

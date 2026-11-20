@@ -120,6 +120,7 @@ jest.mock('../../road/roadContextRuntime', () => {
       }
       return { kind: 'ahead', roadName: 'Test Rd', alongRoadMeters: haversineDistance(driver.position, target.position) };
     },
+    peekRoadContext: () => null,
     isRoadMatchingDegraded: () => mockRoadDegraded.value,
     getRoadMatchingStats: () => ({ lookups: 0, covered: 0, failures: 0 }),
     resetRoadContext: () => {
@@ -198,6 +199,26 @@ describe('handleDriverUpdate', () => {
       ...defaultSettingsValues,
       categoriesEnabled: { ...defaultSettingsValues.categoriesEnabled },
     };
+  });
+
+  it('discloses a location gap while moving (banner + one spoken notice), and clears it once fixes are regular again', async () => {
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate(driver, now);
+    await handleDriverUpdate(driver, now + 25_000); // 25s with no fix at 60km/h
+    expect(setBannerMessage).toHaveBeenCalledWith('Location updates are being delayed by the phone - alerts may be late.');
+    expect(speakAsync).toHaveBeenCalledWith('Location updates are being delayed. Alerts may be late.', expect.anything());
+    for (let i = 1; i <= 5; i++) await handleDriverUpdate(driver, now + 25_000 + i * 3_000);
+    expect(setBannerMessage).toHaveBeenLastCalledWith(null);
+    expect(speakAsync.mock.calls.filter((c) => /Location updates/.test(c[0]))).toHaveLength(1);
+  });
+
+  it('does not call a gap at lights a location problem (no fixes while stopped is the 10m filter working)', async () => {
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate({ ...driver, speedKmh: 0 }, now);
+    await handleDriverUpdate(driver, now + 60_000);
+    expect(setBannerMessage).not.toHaveBeenCalledWith('Location updates are being delayed by the phone - alerts may be late.');
   });
 
   it('polls immediately on the first update', async () => {

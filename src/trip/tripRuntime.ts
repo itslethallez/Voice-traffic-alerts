@@ -30,6 +30,7 @@ import {
   getRoadMatchingStats,
   isRoadMatchingDegraded,
   resetRoadContext,
+  peekRoadContext,
   roadContextFor,
 } from '../road/roadContextRuntime';
 import { haversineDistance } from '../geo/distance';
@@ -45,7 +46,7 @@ import {
 } from '../engine/selectSpeedCameraWarning';
 import { initialSpeedState, isSustainedLowSpeed, updateSpeedState } from '../engine/speedGate';
 import { STATIONARY_SPEED_THRESHOLD_KMH } from '../engine/constants';
-import type { AlertsCache, DriverState, MovementState, SpeedState } from '../engine/types';
+import type { AlertsCache, AnnounceableAlert, DriverState, MovementState, SpeedState } from '../engine/types';
 import type { WazeAlert } from '../api/waze/types';
 import type { WazeBoundingBoxParams } from '../geo/boundingBox';
 import { radiusBoundingBox } from '../geo/radiusBoundingBox';
@@ -60,6 +61,9 @@ import {
 } from '../speech/announcer';
 import { delay } from '../speech/delay';
 import { nativeDelay } from '../speech/nativeDelay';
+import { BRIEFING_FIXTURE_ENABLED } from '../config/featureFlags';
+import { briefingFixtureAlerts } from '../dev/briefingFixture';
+import { appStateLabel } from '../diagnostics/appState';
 import { formatBriefingAlert, NO_BRIEFING_ALERTS_MESSAGE } from '../speech/formatAnnouncement';
 import { formatSpeedCameraWarning } from '../speech/formatSpeedCameraWarning';
 import { PREFETCH_HORIZON_MS, predictUpcomingAnnouncementTexts } from '../speech/predictAnnouncement';
@@ -284,6 +288,11 @@ export function resetTripRuntime(): void {
   corridorAlerts = [];
   resetRoadContext();
   roadDegradedNoticeSpoken = false;
+  lastFixAtMs = null;
+  lastFixSpeedKmh = 0;
+  locationGapActive = false;
+  locationGapNoticeSpoken = false;
+  fixesSinceGap = 0;
   // Also start a fresh serialization chain - otherwise a call already
   // queued behind the old chain (from before this reset) would still run
   // afterwards and write into the just-reset state. Clearing the queued
@@ -456,6 +465,7 @@ export function handleDriverUpdate(
   // A hung Google playback can't be timed out by a JS timer with the
   // screen off; every fix (which keeps arriving in the background) checks.
   checkGoogleTtsWatchdog(Date.now());
+  noteFixTiming(driver, nowMs);
 
   const generation = chainGeneration;
   const queuedWhileBusy = passInFlight;
@@ -680,8 +690,8 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   // Fetch Google audio for what's about to be spoken - the queue, and
   // alerts about to cross into the warn radius - before tick() reaches it,
   // so it plays with no network wait (speech/ttsAudioCache.ts).
-  // Approaching alerts also get their road lookup here - ~45s before
-  // they're due - so the answer is in by the time they're announced.
+  // Approaching alerts only peek at what road matching already knows (a
+  // cached route they lie on) - no request until they're inside the radius.
   const approachingRaw = selectApproachingAlerts(
     announceableSource,
     driver,
@@ -690,13 +700,64 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     announceSettings,
     (Math.max(0, driver.speedKmh) / 3.6) * (PREFETCH_HORIZON_MS / 1000)
   );
-  const approaching = routeCorridor ? approachingRaw : applyRoadContextToApproaching(approachingRaw, roadLookup);
+  const approaching = routeCorridor
+    ? approachingRaw
+    : applyRoadContextToApproaching(approachingRaw, (target) => peekRoadContext(target, driver, nowMs));
   prefetchSpeech(
     predictUpcomingAnnouncementTexts(announcerState.queue, approaching, driver, nowMs, Date.now())
   );
 
   await checkSpeedCameraWarning(driver, nowMs, settings, routeCorridor);
   await discloseRoadMatchingState(settings);
+  await discloseLocationGaps(settings);
+}
+
+/** Moving, and no fix for this long: the phone is holding location back
+ * (Android refused the foreground service on a screen-off cold start and
+ * is throttling the plain background request, or battery saver). Fixes
+ * normally come every 3s; stopped at lights there are none by design
+ * (10m distance filter), hence "moving" = the last fix was at speed. */
+const LOCATION_GAP_MS = 20_000;
+const LOCATION_GAP_MIN_SPEED_KMH = 20;
+const LOCATION_GAP_RECOVERED_FIXES = 5;
+const LOCATION_GAP_BANNER_MESSAGE = 'Location updates are being delayed by the phone - alerts may be late.';
+const LOCATION_GAP_SPOKEN_NOTICE = 'Location updates are being delayed. Alerts may be late.';
+let lastFixAtMs: number | null = null;
+let lastFixSpeedKmh = 0;
+let locationGapActive = false;
+let locationGapNoticeSpoken = false;
+let fixesSinceGap = 0;
+
+function noteFixTiming(driver: DriverState, nowMs: number): void {
+  if (lastFixAtMs !== null && nowMs - lastFixAtMs > LOCATION_GAP_MS && lastFixSpeedKmh >= LOCATION_GAP_MIN_SPEED_KMH) {
+    console.warn(`[drive] location gap: ${Math.round((nowMs - lastFixAtMs) / 1000)}s without a fix while moving (${Math.round(lastFixSpeedKmh)}km/h)`);
+    locationGapActive = true;
+    fixesSinceGap = 0;
+  } else if (locationGapActive && ++fixesSinceGap >= LOCATION_GAP_RECOVERED_FIXES) {
+    console.log('[drive] location updates back to normal');
+    locationGapActive = false;
+  }
+  lastFixAtMs = nowMs;
+  lastFixSpeedKmh = driver.speedKmh;
+}
+
+/** Degraded confidence is always disclosed: say it on screen and once out
+ * loud when location is being held back. */
+async function discloseLocationGaps(settings: ReturnType<typeof useSettingsStore.getState>): Promise<void> {
+  const store = useTripStore.getState();
+  if (locationGapActive) {
+    if (store.bannerMessage === null) store.setBannerMessage(LOCATION_GAP_BANNER_MESSAGE);
+    if (!locationGapNoticeSpoken && !settings.masterMute) {
+      locationGapNoticeSpoken = true;
+      try {
+        await speakAsync(LOCATION_GAP_SPOKEN_NOTICE, { rate: settings.voiceRate, volume: settings.voiceVolume });
+      } catch (error) {
+        console.warn('[drive] failed to speak the location-gap notice', error);
+      }
+    }
+  } else if (store.bannerMessage === LOCATION_GAP_BANNER_MESSAGE) {
+    store.setBannerMessage(null);
+  }
 }
 
 const ROAD_DEGRADED_BANNER_MESSAGE = "Road matching unavailable - alerts can't confirm what's ahead.";
@@ -824,8 +885,10 @@ export async function runBriefing(
   if (signal?.aborted) return;
   if (settings.masterMute) return;
 
-  const candidates = hasUsableAlerts
-    ? selectBriefingAlerts([...alertsCache.alerts, ...corridorAlerts], driver.position, Date.now(), {
+  const fixture = BRIEFING_FIXTURE_ENABLED ? briefingFixtureAlerts(driver.position, Date.now()) : [];
+  if (fixture.length > 0) console.log(`[briefing] fixture injected: ${fixture.length} synthetic alerts (drive-test build)`);
+  const candidates = hasUsableAlerts || fixture.length > 0
+    ? selectBriefingAlerts([...alertsCache.alerts, ...corridorAlerts, ...fixture], driver.position, Date.now(), {
         enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
         radiusMeters: maxAlertDistanceMeters(settings.alertDistance),
         radiusForType: alertDistanceFor(settings.alertDistance),
@@ -849,22 +912,43 @@ export async function runBriefing(
   // spoken text out from under it on a drive test ("Henley Beach Road,
   // Underdale" prefetched, "..., Torrensville" spoken). Bounded - a slow
   // lookup just means that item names Waze's own area instead.
+  const suburbsStartedAtMs = Date.now();
+  let suburbsResolved = 0;
+  const waitCut = new AbortController();
+  const onOuterAbort = () => waitCut.abort();
+  signal?.addEventListener('abort', onOuterAbort);
   await Promise.race([
     Promise.all(
       candidates.map((c) =>
-        prefetchSuburb({ latitude: c.alert.latitude, longitude: c.alert.longitude }).catch(() => {})
+        prefetchSuburb({ latitude: c.alert.latitude, longitude: c.alert.longitude })
+          .catch(() => {})
+          .then(() => {
+            suburbsResolved += 1;
+          })
       )
     ),
     // nativeDelay: a JS timer would stall here on a screen-off cold start.
-    nativeDelay(BRIEFING_SUBURB_WAIT_MS, signal),
+    nativeDelay(BRIEFING_SUBURB_WAIT_MS, waitCut.signal),
   ]);
+  waitCut.abort(); // stop the silent clip if the suburbs won
+  signal?.removeEventListener('abort', onOuterAbort);
   if (signal?.aborted) return;
+
+  // Freeze every sentence now. A suburb that lands after the wait (above)
+  // would otherwise change an item's text between the prefetch and the
+  // moment it's spoken - the exact mismatch this wait exists to prevent.
+  const texts = new Map(candidates.map((c) => [c.alert.alert_id, formatBriefingAlert(c)]));
+  console.log(
+    `[briefing] ${candidates.length} items, suburbs ${suburbsResolved}/${candidates.length} resolved in ${Date.now() - suburbsStartedAtMs}ms app=${appStateLabel()}: ` +
+      [...texts.values()].map((t) => `"${t}"`).join(' | ')
+  );
 
   // The whole briefing list is known up front: fetch every item now, so
   // each one after the first is ready by the time its turn comes.
-  prefetchSpeech(candidates.map(formatBriefingAlert));
+  prefetchSpeech([...texts.values()]);
 
-  announcerState = await speakBriefing(announcerState, candidates, formatBriefingAlert, {
+  const frozenText = (c: AnnounceableAlert) => texts.get(c.alert.alert_id) ?? formatBriefingAlert(c);
+  announcerState = await speakBriefing(announcerState, candidates, frozenText, {
     speakOptions,
     signal,
     onItemSpoken: (entry) => useTripStore.getState().pushAnnouncement(entry),
