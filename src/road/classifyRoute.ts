@@ -46,41 +46,50 @@ function continuesOn(step: ForwardRouteStep, previousRoad: string): boolean {
 }
 
 /**
- * A route that needs a U-turn usually means "behind". The exception is a
- * divided road: Waze reports carry no direction, and Mapbox snaps one that
- * sits in or across the median onto the far carriageway - so a report on
- * the road being driven comes back as "drive on, U-turn, come back". When
- * the report names the road the driver stays on up to the U-turn, and sits
- * within OTHER_CARRIAGEWAY_MAX_METERS of the driver's own carriageway, it's
- * "on {road}" with no side claimed. Found on the Stage 3 drive test (Sir
- * Donald Bradman Drive); fixture in road/__tests__/aheadCases.test.ts.
+ * A report naming the driver's own road, within OTHER_CARRIAGEWAY_MAX_METERS
+ * of it (either carriageway), is "on {road}" with no side claimed - whatever
+ * the router does to reach it. Waze reports carry no direction, and a
+ * router snaps one in or across the median onto the far carriageway, then
+ * reaches it by a U-turn (Sir Donald Bradman Drive, Stage 3 drive test) or,
+ * where there's nowhere to turn, by looping round a side street (Main North
+ * Road, Elizabeth - Valhalla/Mapbox trial, 21 Nov 2026). Either way it's on
+ * the road being driven.
+ *
+ * "The driver's road" is the stretch of the route from the driver up to
+ * the first turn off it or U-turn; the report has to project onto that
+ * stretch, ahead of the driver, and name the road at that point.
+ * Decision 21 Nov 2026 (case C). Fixtures: road/__tests__/aheadCases.test.ts.
  */
-function otherCarriageway(
+function onDriversRoadAnyCarriageway(
   route: ForwardRoute,
   starts: readonly number[],
   fromIndex: number,
   fromOffset: number,
-  uturnIndex: number,
   target: RoadTarget,
   usableStreets: readonly string[]
 ): RoadContext | null {
   if (target.kind !== 'alert' && target.kind !== 'policeReport') return null;
+  if (usableStreets.length === 0) return null;
   const steps = route.steps;
-  const roadBefore = steps[uturnIndex - 1]?.name ?? '';
-  if (!anySameRoad(usableStreets, roadBefore) || !sameRoad(steps[uturnIndex].name || roadBefore, roadBefore)) return null;
   let previousRoad = steps[fromIndex].name;
-  for (let i = fromIndex + 1; i < uturnIndex; i++) {
-    if (!continuesOn(steps[i], previousRoad)) return null;
+  let i = fromIndex + 1;
+  for (; i < steps.length; i++) {
+    if (steps[i].modifier === 'uturn' || !continuesOn(steps[i], previousRoad)) break;
     if (steps[i].name) previousRoad = steps[i].name;
   }
+  const stretchEnd = i < steps.length ? starts[i] : route.distanceMeters;
+  if (stretchEnd <= fromOffset) return null;
   const level = projectOntoPolyline(target.position, route.polyline, cumulativeFor(route), {
     from: fromOffset,
-    to: starts[uturnIndex],
+    to: stretchEnd,
   });
   if (level.offsetMeters > OTHER_CARRIAGEWAY_MAX_METERS) return null;
   const along = level.progressMeters - fromOffset;
-  if (along <= 0) return null;
-  return { kind: 'onRoad', roadName: roadBefore, alongRoadMeters: along };
+  // Level with the driver (or clamped to the stretch's start): not ahead.
+  if (along <= 1) return null;
+  const roadThere = steps[stepIndexAt(starts, level.progressMeters)].name || steps[fromIndex].name;
+  if (!roadThere || !anySameRoad(usableStreets, roadThere)) return null;
+  return { kind: 'onRoad', roadName: roadThere, alongRoadMeters: along };
 }
 
 /** Maneuvers that keep you on the same road (or its continuation). */
@@ -118,9 +127,10 @@ function stepIndexAt(starts: readonly number[], offset: number): number {
  *   street already,
  * - the target actually sits on the road (snap distance), and the road
  *   distance isn't a detour.
- * A U-turn means "behind" (silent) - unless it's the far carriageway of
- * the driver's own divided road ("onRoad", see otherCarriageway). Anything
- * else short of "ahead" is "nearby".
+ * A U-turn means "behind" (silent). A report naming the driver's road
+ * within 60m of it is "onRoad" whatever the route does (see
+ * onDriversRoadAnyCarriageway). Anything else short of "ahead" is
+ * "nearby" - with offRoad set when the route shows it's on another road.
  */
 export function classifyRouteSegment(
   route: ForwardRoute,
@@ -141,28 +151,37 @@ export function classifyRouteSegment(
   // Maneuvers strictly between the driver and the target.
   for (let i = fromIndex + 1; i <= toIndex; i++) {
     if (steps[i].modifier === 'uturn') {
-      return otherCarriageway(route, starts, fromIndex, fromOffset, i, target, usableStreets) ?? { kind: 'behind' };
+      return onDriversRoadAnyCarriageway(route, starts, fromIndex, fromOffset, target, usableStreets) ?? { kind: 'behind' };
     }
   }
 
   const snapLimit = usableStreets.length > 0 ? MAX_SNAP_METERS : MAX_SNAP_METERS_UNNAMED;
-  if (snapMeters > snapLimit) return { kind: 'nearby' };
+  // Not on a road we can vouch for - unknown, not confirmed off-road.
+  if (snapMeters > snapLimit) {
+    return onDriversRoadAnyCarriageway(route, starts, fromIndex, fromOffset, target, usableStreets) ?? { kind: 'nearby' };
+  }
+
+  // Short of "ahead" from here on, the route itself shows the target is
+  // off the driver's road (offRoad) - unless it's a same-road report on
+  // the other carriageway.
+  const offRoad = (): RoadContext =>
+    onDriversRoadAnyCarriageway(route, starts, fromIndex, fromOffset, target, usableStreets) ?? { kind: 'nearby', offRoad: true };
 
   const alongMeters = toOffset - fromOffset;
-  if (straightLineMeters > 0 && alongMeters > straightLineMeters * MAX_DETOUR_RATIO) return { kind: 'nearby' };
+  if (straightLineMeters > 0 && alongMeters > straightLineMeters * MAX_DETOUR_RATIO) return offRoad();
 
   const driverRoad = steps[fromIndex].name;
   let previousRoad = driverRoad;
   for (let i = fromIndex + 1; i <= toIndex; i++) {
     const step = steps[i];
-    if (!continuesOn(step, previousRoad)) return { kind: 'nearby' };
-    if (target.kind === 'mobileCamera' && !sameRoad(step.name, driverRoad)) return { kind: 'nearby' };
+    if (!continuesOn(step, previousRoad)) return offRoad();
+    if (target.kind === 'mobileCamera' && !sameRoad(step.name, driverRoad)) return offRoad();
     if (step.name) previousRoad = step.name;
   }
 
   const arrivalRoad = steps[toIndex].name;
-  if (usableStreets.length > 0 && !anySameRoad(usableStreets, arrivalRoad)) return { kind: 'nearby' };
-  if (target.kind === 'mobileCamera' && !anySameRoad(usableStreets, driverRoad)) return { kind: 'nearby' };
+  if (usableStreets.length > 0 && !anySameRoad(usableStreets, arrivalRoad)) return offRoad();
+  if (target.kind === 'mobileCamera' && !anySameRoad(usableStreets, driverRoad)) return offRoad();
 
   return { kind: 'ahead', roadName: arrivalRoad || null, alongRoadMeters: alongMeters };
 }

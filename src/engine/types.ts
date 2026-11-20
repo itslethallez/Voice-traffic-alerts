@@ -38,7 +38,12 @@ export type RoadContext =
    * and no "ahead" (21 Nov 2026 decision). Distance is along the driver's
    * carriageway to the point level with it. */
   | { kind: 'onRoad'; roadName: string; alongRoadMeters: number }
-  | { kind: 'nearby' }
+  /** Not confirmed on the driver's road. offRoad: the route showed it's
+   * on another road (a turn off, a different street name) - as opposed to
+   * not knowing (lookup failed, timed out, over budget, no heading). A
+   * fixed camera that's offRoad is silent (21 Nov 2026, case F); an
+   * unknown one still warns "nearby". */
+  | { kind: 'nearby'; offRoad?: boolean }
   | { kind: 'behind' };
 
 export interface AnnounceableAlert {

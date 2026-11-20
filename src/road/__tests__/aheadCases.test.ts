@@ -206,7 +206,44 @@ describe('road matching: audit cases A-F', () => {
     expect(await spoken([alert('C4', 'ACCIDENT', at, 'Main North Rd')], driverAt(START, 0))).toBeNull();
   });
 
-  it('C2. opposite carriageway, reached by looping round a block instead of a U-turn -> nearby, not "ahead"', async () => {
+  it('C5. real Main North Road shape: router drives past, turns off and U-turns on a side street -> "on Main North Road"', async () => {
+    // Valhalla/Mapbox trial, 21 Nov 2026: report on the southbound
+    // carriageway ~22m across; both routers go on to Philip Hwy / Yorktown
+    // Rd, U-turn there and come back. The report sits on my road's stretch.
+    const at = destinationPoint(destinationPoint(START, 2_000, 0), 22, 90);
+    routeFor = (to) =>
+      directionsBody(
+        START,
+        to,
+        [
+          ['depart', null, 'Main North Road', 2_150],
+          ['turn', 'right', 'Yorktown Road', 120],
+          ['continue', 'uturn', 'Yorktown Road', 120],
+          ['turn', 'left', 'Main North Road', 150],
+        ],
+        3,
+        [START, destinationPoint(START, 2_150, 0), destinationPoint(destinationPoint(START, 2_150, 0), 120, 90), destinationPoint(START, 2_150, 0), to]
+      );
+    expect(await spoken([alert('C5', 'ACCIDENT', at, 'A1 - Main North Rd')], driverAt(START, 0))).toBe(
+      'Crash reported on Main North Road, 2 kilometres.'
+    );
+  });
+
+  it('C6. same-named report on my road but level with / behind me -> not announced as ahead', async () => {
+    const at = destinationPoint(START, 40, 180);
+    routeFor = (to) =>
+      directionsBody(START, to, [
+        ['depart', null, 'Main North Road', 600],
+        ['continue', 'uturn', 'Main North Road', 640],
+      ]);
+    expect(await spoken([alert('C6', 'ACCIDENT', at, 'Main North Rd')], driverAt(START, 0))).toBeNull();
+  });
+
+  it('C2. opposite carriageway, reached by looping round a block instead of a U-turn -> "on [road]", no side claimed', async () => {
+    // Was "nearby". 21 Nov 2026: a same-named report within 60m of my road is
+    // "on [road]" whatever the router does to reach it - this is the real
+    // Main North Road, Elizabeth case (both Mapbox and Valhalla loop round
+    // via Yorktown Road; there is no U-turn on that stretch).
     const at = destinationPoint(START, 2_000, 0);
     routeFor = (to) =>
       directionsBody(START, to, [
@@ -216,7 +253,7 @@ describe('road matching: audit cases A-F', () => {
         ['turn', 'right', 'Main North Road', 450],
       ]);
     expect(await spoken([alert('C2', 'ACCIDENT', at, 'A1 - Main North Rd')], driverAt(START, 0))).toBe(
-      'Crash reported nearby on Main North Road, Elizabeth, 2 kilometres away.'
+      'Crash reported on Main North Road, 2 kilometres.'
     );
   });
 
@@ -288,13 +325,20 @@ describe('road matching: audit cases A-F', () => {
         : null;
     }
 
-    it('-> "nearby", no "ahead", no speeding claim (the limit was for the wrong road)', async () => {
+    it('-> silent: a camera on a road I am not on (21 Nov 2026 decision; was "nearby")', async () => {
       routeFor = (to) =>
         directionsBody(START, to, [
           ['depart', null, 'Main North Road', 300],
           ['turn', 'right', 'Cross Street', 150],
           ['turn', 'left', 'Parallel Street', 150],
         ]);
+      expect(await warning(driverAt(START, 0))).toBeNull();
+    });
+
+    it('F-unknown. the same camera when the road lookup fails -> still warns "nearby" (unknown is not "other road")', async () => {
+      routeFor = () => {
+        throw new Error('Directions down');
+      };
       expect(await warning(driverAt(START, 0))).toBe('Speed camera nearby, 500 metres away.');
     });
 
@@ -467,9 +511,16 @@ describe('road matching: cost and fallbacks', () => {
 
   it('detour limit is 2x straight-line: a 2.5x road distance is "nearby", 1.9x is "ahead"', async () => {
     const at = destinationPoint(START, 1_000, 0);
-    routeFor = (to) => directionsBody(START, to, [['depart', null, 'Main North Road', 2_500]]);
-    expect(await spoken([alert('d25', 'ACCIDENT', at, 'Main North Rd')], driverAt(START, 0))).toBe(
-      'Crash reported nearby on Main North Road, Elizabeth, 1 kilometre away.'
+    // The road carries on under a new name (no turn off), but 2.5km of road
+    // for 1km straight-line is a detour. (A same-named report sitting on the
+    // driver's own road would be "on Main North Road" - case C's rule.)
+    routeFor = (to) =>
+      directionsBody(START, to, [
+        ['depart', null, 'Main North Road', 2_400],
+        ['new name', 'straight', 'Side Road', 100],
+      ]);
+    expect(await spoken([alert('d25', 'ACCIDENT', at, 'Side Rd')], driverAt(START, 0))).toBe(
+      'Crash reported nearby on Side Road, Elizabeth, 1 kilometre away.'
     );
     resetRoadContext();
     routeFor = (to) => directionsBody(START, to, [['depart', null, 'Main North Road', 1_900]]);
