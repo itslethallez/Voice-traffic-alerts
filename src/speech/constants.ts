@@ -21,3 +21,13 @@ export const BRIEFING_GAP_MS = 1500;
  * on-device voice) for as long as the bad conditions last.
  */
 export const GOOGLE_TTS_RETRY_COOLDOWN_MS = 2 * 60 * 1000;
+
+/**
+ * If Google's audio isn't ready this long after an announcement is
+ * dispatched, speak it on the on-device voice instead of waiting. A
+ * prefetched sentence is ready in well under 100ms; this only bites on a
+ * prefetch miss, where the Google round-trip measured 850-1650ms on drive
+ * tests. Not a failure: the fetch keeps running into the audio cache, and
+ * GOOGLE_TTS_RETRY_COOLDOWN_MS is not started.
+ */
+export const GOOGLE_TTS_READY_DEADLINE_MS = 600;

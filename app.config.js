@@ -37,6 +37,11 @@ module.exports = {
         monochromeImage: './assets/android-icon-monochrome.png',
       },
       predictiveBackGestureEnabled: false,
+      // expo-location's background task hands fixes to expo-task-manager,
+      // which schedules a persisted JobScheduler job - Android rejects that
+      // (and the app crashes) unless the app holds RECEIVE_BOOT_COMPLETED.
+      // Neither library's manifest or config plugin declares it.
+      permissions: ['android.permission.RECEIVE_BOOT_COMPLETED'],
     },
     web: {
       favicon: './assets/favicon.png',

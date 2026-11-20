@@ -8,7 +8,7 @@ import type { FixedSpeedCamera } from '../../data/fixedSpeedCameras';
 import { selectClosestOnPathAlert } from '../../engine/selectClosestOnPathAlert';
 import { compassDirection } from '../../geo/bearing';
 import { clusterMarkers, markerSeparationMeters } from '../../geo/declutterMarkers';
-import { haversineDistance, midpoint } from '../../geo/distance';
+import { haversineDistance } from '../../geo/distance';
 import { MAX_ZOOM, MIN_ZOOM } from '../../geo/mercatorZoom';
 import { awarenessCircleCoordinates, awarenessZoomLevel } from '../../geo/mapScale';
 import { nearestAlertToDriver } from '../../geo/nearestAlert';
@@ -700,11 +700,17 @@ export function RadarMap({
   const cameraCenterCoordinate = useMemo<[number, number] | undefined>(() => {
     if (!cameraFollowsPresentation) return undefined;
     if (cameraFocus) return [cameraFocus.longitude, cameraFocus.latitude];
+    // Navigate: Mapbox's native follow mode owns the camera (PR #5).
     if (nativeFollow) return undefined;
-    if (mapPresentation === 'nearest' && driverPosition && nearestMapAlert) {
-      const center = midpoint(driverPosition, nearestMapAlert);
-      return [center.longitude, center.latitude];
-    }
+    // Co-pilot Cruise: the puck stays centred (lower third while moving,
+    // via cameraPadding's cruisingLookAhead above) regardless of what else
+    // is on screen. This used to center 'nearest' mode on the midpoint
+    // between the driver and the closest visible alert instead, so the
+    // driver mark visibly drifted off-centre - toward whatever direction
+    // the nearest hazard happened to be - every time one was in range,
+    // which on a real route is most of the time. nearestAlertZoom below
+    // still zooms out for a close hazard, so it stays visible on screen;
+    // it just no longer moves the centre away from the driver to do it.
     if (driverPosition) return [driverPosition.longitude, driverPosition.latitude];
     return undefined;
   }, [
@@ -712,11 +718,8 @@ export function RadarMap({
     cameraFocus?.longitude,
     cameraFocus?.latitude,
     nativeFollow,
-    mapPresentation,
     driverPosition?.longitude,
     driverPosition?.latitude,
-    nearestMapAlert?.longitude,
-    nearestMapAlert?.latitude,
   ]);
   const cameraZoomLevel =
     (cameraFocus

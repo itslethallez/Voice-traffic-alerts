@@ -1,3 +1,4 @@
+import { appStateLabel } from '../diagnostics/appState';
 import {
   fetchCorridorAlerts,
   fetchFixedCameras,
@@ -22,6 +23,7 @@ import { applyFetchResult, initialAlertsCache } from '../engine/cache';
 import { initialMovementState, updateMovementState } from '../engine/movement';
 import { planPoll } from '../engine/pollPlanner';
 import { selectAnnounceableAlerts, type RouteCorridor } from '../engine/selectAlerts';
+import { selectApproachingAlerts } from '../engine/selectApproachingAlerts';
 import { selectBriefingAlerts } from '../engine/selectBriefingAlerts';
 import {
   hasNearbyWarningTarget,
@@ -46,7 +48,8 @@ import {
 import { delay } from '../speech/delay';
 import { formatBriefingAlert, NO_BRIEFING_ALERTS_MESSAGE } from '../speech/formatAnnouncement';
 import { formatSpeedCameraWarning } from '../speech/formatSpeedCameraWarning';
-import { speakAsync } from '../speech/ttsAdapter';
+import { PREFETCH_HORIZON_MS, predictUpcomingAnnouncementTexts } from '../speech/predictAnnouncement';
+import { prefetchSpeech, speakAsync, speakUrgentAsync, warmUpDeviceVoice } from '../speech/ttsAdapter';
 import {
   ALERT_FILTER_CATEGORIES,
   speakableTypesFromFilters,
@@ -410,10 +413,18 @@ let chainGeneration = 0;
 
 export type DriverUpdateSource = 'foreground' | 'background';
 
-/** While the foreground watch has delivered a fix this recently, background
- * task fixes are ignored. They're Balanced-accuracy and up to 15s stale on
- * arrival; interleaved with 3s High-accuracy fixes they drag the puck,
- * step progress and ETA backwards and forwards on every batch. */
+/** While the app is on screen and the foreground watch has delivered a fix
+ * this recently, background task fixes are ignored - two feeds interleaved
+ * drag the puck, step progress and ETA back and forth.
+ *
+ * Only while on screen: the moment the screen goes off or Waze / Google
+ * Maps takes over (AppState leaves 'active'), the foreground watch stops
+ * and the background task is the only feed. Gating on time alone left the
+ * first 30s after every screen-off and every handoff silent - no alerts,
+ * no camera warnings - which is exactly when Shotgun is meant to work.
+ * (The original reason, Balanced-accuracy fixes up to 15s stale, is gone:
+ * the background task now asks for High accuracy at the foreground
+ * cadence.) */
 const FOREGROUND_FIX_FRESH_MS = 30_000;
 let lastForegroundFixAtMs: number | null = null;
 let ignoringBackgroundFixes = false;
@@ -438,7 +449,11 @@ export function handleDriverUpdate(
 ): Promise<void> {
   if (source === 'foreground') {
     lastForegroundFixAtMs = nowMs;
-  } else if (lastForegroundFixAtMs !== null && nowMs - lastForegroundFixAtMs < FOREGROUND_FIX_FRESH_MS) {
+  } else if (
+    appStateLabel() === 'active' &&
+    lastForegroundFixAtMs !== null &&
+    nowMs - lastForegroundFixAtMs < FOREGROUND_FIX_FRESH_MS
+  ) {
     if (!ignoringBackgroundFixes) {
       ignoringBackgroundFixes = true;
       console.log('[trip] ignoring background fixes - foreground watch is live');
@@ -447,7 +462,7 @@ export function handleDriverUpdate(
   }
   if (source === 'background' && ignoringBackgroundFixes) {
     ignoringBackgroundFixes = false;
-    console.log('[trip] foreground watch quiet - using background fixes');
+    console.log(`[trip] using background fixes (app=${appStateLabel()})`);
   }
 
   // Radar UI mirror (Step 11) - written at call time, NOT inside the
@@ -521,7 +536,7 @@ const SLOW_UPDATE_PASS_MS = 1500;
  * hasNearbyWarningTarget already confirms there's something worth
  * warning about - most of a trip has no nearby camera or corroborated
  * report, so this keeps Overpass usage rare. Speaks directly via
- * speakAsync, bypassing the announcer's priority queue
+ * speakUrgentAsync, bypassing the announcer's priority queue
  * (submitCandidates/tick) entirely - that queue's 20s MIN_ANNOUNCEMENT_GAP_MS
  * and distance-based dedupe don't fit this feature's own fixed 500m/200m
  * checkpoints (see engine/selectSpeedCameraWarning.ts). In nav mode the
@@ -540,6 +555,8 @@ async function checkSpeedCameraWarning(
   if (!hasNearbyWarningTarget(driver, cameras, alertsCache.alerts, nowMs, routeCorridor)) return;
 
   prefetchSpeedLimit(driver.position).catch(() => {});
+  // Backstop for runBriefing's warm-up: a no-op once the engine is up.
+  void warmUpDeviceVoice();
   const speedLimitKmh = getCachedSpeedLimit(driver.position) ?? null;
 
   const warning = selectSpeedCameraWarning({
@@ -554,7 +571,9 @@ async function checkSpeedCameraWarning(
   if (!warning) return;
 
   try {
-    await speakAsync(formatSpeedCameraWarning(warning.target.kind, warning.checkpoint, warning.confirmedSpeeding), {
+    // speakUrgentAsync, not speakAsync: on-device voice first, so the
+    // 500m/200m checkpoint isn't spent waiting on a Google round-trip.
+    await speakUrgentAsync(formatSpeedCameraWarning(warning.target.kind, warning.checkpoint, warning.confirmedSpeeding), {
       rate: settings.voiceRate,
       volume: settings.voiceVolume,
     });
@@ -610,16 +629,18 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     ? { polyline: remainingRoutePolyline, corridorMeters: NAV_ROUTE_CORRIDOR_METERS }
     : undefined;
 
+  const announceableSource = [...alertsCache.alerts, ...corridorAlerts];
+  const announceSettings = {
+    enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
+    maxDistanceMeters: settings.announceDistanceMeters,
+    routeCorridor,
+  };
   const candidates = selectAnnounceableAlerts(
-    [...alertsCache.alerts, ...corridorAlerts],
+    announceableSource,
     driver,
     announcerState.announcedDistances,
     nowMs,
-    {
-      enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
-      maxDistanceMeters: settings.announceDistanceMeters,
-      routeCorridor,
-    }
+    announceSettings
   );
   announcerState = submitCandidates(announcerState, candidates);
 
@@ -633,6 +654,21 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     (entry) => useTripStore.getState().pushAnnouncement(entry)
   );
   announcerState = result.state;
+
+  // Fetch Google audio for what's about to be spoken - the queue, and
+  // alerts about to cross into the warn radius - before tick() reaches it,
+  // so it plays with no network wait (speech/ttsAudioCache.ts).
+  const approaching = selectApproachingAlerts(
+    announceableSource,
+    driver,
+    announcerState.announcedDistances,
+    nowMs,
+    announceSettings,
+    (Math.max(0, driver.speedKmh) / 3.6) * (PREFETCH_HORIZON_MS / 1000)
+  );
+  prefetchSpeech(
+    predictUpcomingAnnouncementTexts(announcerState.queue, approaching, driver, nowMs, Date.now())
+  );
 
   await checkSpeedCameraWarning(driver, nowMs, settings, routeCorridor);
 }
@@ -719,6 +755,12 @@ export async function runBriefing(
   const settings = useSettingsStore.getState();
   const boundingBox = radiusBoundingBox(driver.position, settings.briefingRadiusMeters);
 
+  // The speed-camera warning speaks on the device voice; get its engine
+  // out of cold start now rather than at the first 500m checkpoint.
+  void warmUpDeviceVoice();
+  // The empty-briefing line is fixed text - fetch it while the alerts load.
+  if (!settings.masterMute) prefetchSpeech([NO_BRIEFING_ALERTS_MESSAGE]);
+
   // Radar UI mirror (Step 11) - so the map has a driver position to
   // center on right away, before the first handleDriverUpdate() call.
   useTripStore.getState().setDriverPosition(driver.position, driver.headingDeg, driver.speedKmh);
@@ -745,6 +787,10 @@ export async function runBriefing(
     }
     return;
   }
+
+  // The whole briefing list is known up front: fetch every item now, so
+  // each one after the first is ready by the time its turn comes.
+  prefetchSpeech(candidates.map(formatBriefingAlert));
 
   announcerState = await speakBriefing(announcerState, candidates, formatBriefingAlert, {
     speakOptions,
