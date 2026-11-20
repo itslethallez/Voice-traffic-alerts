@@ -80,11 +80,11 @@ describe('FirstFixGate', () => {
 describe('FirstFixGate: stale (cached) first fixes', () => {
   const good = { latitude: -34.94, longitude: 138.53, accuracy: 5 };
 
-  it('never starts the briefing from a fix older than 30s - even after the accuracy wait', () => {
+  it('never starts the briefing from a fix older than 10s - even after the accuracy wait (drive test: 19s old, 3.3km off)', () => {
     const gate = new FirstFixGate(50, 5_000);
     const now = 1_000_000;
-    expect(gate.isUsable(good, now, now - 31_000)).toBe(false);
-    expect(gate.isUsable(good, now + 60_000, now - 31_000)).toBe(false);
+    expect(gate.isUsable(good, now, now - 19_000)).toBe(false);
+    expect(gate.isUsable(good, now + 60_000, now - 19_000)).toBe(false);
   });
 
   it('accepts a fresh fix, and one with no timestamp', () => {

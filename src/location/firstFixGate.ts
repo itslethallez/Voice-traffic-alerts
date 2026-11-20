@@ -29,10 +29,11 @@ export function isAccurateEnough(accuracy: number | null | undefined, thresholdM
  * next fix is accepted regardless of its accuracy.
  */
 /** A first fix older than this is a cached position, not where the car
- * is: the screen-off cold-start drive test was handed the previous trip's
- * end point and briefed the wrong suburbs. Never accepted, however long
- * the accuracy wait has run. */
-export const FIRST_FIX_MAX_AGE_MS = 30_000;
+ * is: the screen-off cold-start drive tests were handed the previous
+ * position (19s old and 3.3km away on the second run) and briefed the
+ * wrong suburbs. 10s is ~220m at 80km/h - close enough to brief from.
+ * Never accepted, however long the accuracy wait has run. */
+export const FIRST_FIX_MAX_AGE_MS = 10_000;
 
 export class FirstFixGate {
   private waitDeadlineMs: number | null = null;
