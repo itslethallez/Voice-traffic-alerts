@@ -26,6 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const { neon } = require('@neondatabase/serverless');
+const { fetchViaScraperApi } = require('./scrapers/lib/scraperApi');
 
 const SAPOL_PAGE_URL = 'https://www.police.sa.gov.au/your-safety/road-safety/traffic-camera-locations';
 
@@ -112,26 +113,15 @@ function parseFixedCameraRows(html) {
  * workflow - see git history around late Aug/early Sep 2026), so this now
  * routes through ScraperAPI (https://www.scraperapi.com, free tier: 1,000
  * requests/month, no card - this script runs weekly, so usage is
- * negligible) with premium=true, which uses ScraperAPI's residential/
- * higher-trust IP pool instead of a datacenter one. premium=true requests
- * take significantly longer (observed ~60-90s vs a plain request's few
- * seconds) - the default fetch timeout is raised accordingly below.
+ * negligible). It originally used premium=true (residential pool), but
+ * the free plan has no premium access, so it now goes through the shared
+ * fetchViaScraperApi helper: Australian exit IPs, standard pool with
+ * free retries, premium as a last attempt.
  *
  * Requires SCRAPERAPI_KEY in .env (or the SCRAPERAPI_KEY secret in CI).
  */
 async function fetchSapolPageHtml() {
-  const scraperApiKey = readEnvValue('SCRAPERAPI_KEY');
-  const url = new URL('http://api.scraperapi.com');
-  url.searchParams.set('api_key', scraperApiKey);
-  url.searchParams.set('url', SAPOL_PAGE_URL);
-  url.searchParams.set('premium', 'true');
-
-  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(120_000) });
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error(`ScraperAPI request failed (${response.status}): ${body.slice(0, 300)}`);
-  }
-  return body;
+  return fetchViaScraperApi(SAPOL_PAGE_URL);
 }
 
 async function fetchSapolTableRows() {

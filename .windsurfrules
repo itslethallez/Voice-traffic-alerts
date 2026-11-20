@@ -25,6 +25,10 @@ side-streets-only routing).
   layer only, NOT a pub/sub broadcast transport
 - Ingestion: queue-based via Upstash QStash (HTTP-based, triggers Vercel
   functions), never synchronous scraping inline with API requests
+  - Written exception: the community (Facebook-notification) agent
+    extracts inline in the intake request, with no QStash hop. Post text
+    must never rest in a queue, log, cache or table - it exists only in
+    that request's memory and is discarded once facts are extracted.
 - Scheduled jobs: GitHub Actions cron, matching the existing
   refresh-waze-alerts.yml / refresh-fixed-cameras.yml pattern — no
   node-cron, no worker process, and no Vercel Cron (the repo has no
@@ -54,8 +58,14 @@ side-streets-only routing).
   (no names, plates, or personal identifiers) — location and incident
   type only.
 - Nightly scraper jobs must fail loudly (Sentry alert), never silently.
-- All Facebook-derived alerts require human-in-the-loop review until
-  explicitly told otherwise per group.
+- Facebook-derived alerts follow per-group auto-publish: each group in
+  community_groups has auto_publish, default OFF. With it off, every
+  candidate scoring >=60 goes to the human review queue (<60 is dropped).
+  Only a group with auto_publish ON may publish >=85 without review, and
+  it is only switched on by the owner once that group's audited >=85
+  precision holds at 95%+ in the weekly report. Store facts only (event
+  type, location, time) - never usernames, photos, comments, screenshots
+  or original wording.
 
 ## Code conventions
 - TypeScript strict mode, no `any` without a comment explaining why
