@@ -76,3 +76,20 @@ describe('FirstFixGate', () => {
     expect(gate.isUsable({ ...VALID_FIX, accuracy: 200 }, 5000)).toBe(true);
   });
 });
+
+describe('FirstFixGate: stale (cached) first fixes', () => {
+  const good = { latitude: -34.94, longitude: 138.53, accuracy: 5 };
+
+  it('never starts the briefing from a fix older than 30s - even after the accuracy wait', () => {
+    const gate = new FirstFixGate(50, 5_000);
+    const now = 1_000_000;
+    expect(gate.isUsable(good, now, now - 31_000)).toBe(false);
+    expect(gate.isUsable(good, now + 60_000, now - 31_000)).toBe(false);
+  });
+
+  it('accepts a fresh fix, and one with no timestamp', () => {
+    const gate = new FirstFixGate(50, 5_000);
+    expect(gate.isUsable(good, 1_000_000, 1_000_000 - 2_000)).toBe(true);
+    expect(gate.isUsable(good, 1_000_000)).toBe(true);
+  });
+});

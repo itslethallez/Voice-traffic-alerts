@@ -59,7 +59,7 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
     const location = data.locations[data.locations.length - 1];
     if (preLiveFixListener) {
       console.log(
-        `[background-location] pre-live fix lat=${location.coords.latitude.toFixed(5)} lon=${location.coords.longitude.toFixed(5)} -> drive loop`
+        `[background-location] pre-live fix lat=${location.coords.latitude.toFixed(5)} lon=${location.coords.longitude.toFixed(5)} age=${Math.round((Date.now() - location.timestamp) / 1000)}s -> drive loop`
       );
       preLiveFixListener(location);
       return;

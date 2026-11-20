@@ -163,7 +163,11 @@ export function useDriveLoop(): void {
       }
 
       if (phaseRef.current === 'waitingForFirstFix') {
-        if (!firstFixGate.isUsable(location.coords, nowMs)) return;
+        if (firstFixGate.isStale(nowMs, location.timestamp)) {
+          console.log(`[drive] ignoring a cached ${Math.round((nowMs - location.timestamp) / 1000)}s-old first fix from ${source}`);
+          return;
+        }
+        if (!firstFixGate.isUsable(location.coords, nowMs, location.timestamp)) return;
 
         phaseRef.current = 'briefing';
         console.log(`[drive] first fix from ${source} (app=${AppState.currentState}) - starting briefing`);
