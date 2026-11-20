@@ -30,6 +30,17 @@ Shotgun is a **co-pilot, not a navigation app**.
   `[drive]`, `[map]`, `[perf]`, …). A new subsystem ships with its own tag
   so a drive test can be read back from logcat.
 
+## Approved exceptions
+
+- **One always-on routing server (approved 21 Nov 2026).** The
+  `.windsurfrules` stack rule "never introduce an always-on service" has one
+  exception: a single self-hosted **Valhalla** routing server in the
+  **Sydney** region, used for road matching (option C: Valhalla first,
+  Mapbox Directions only as fallback when Valhalla errors or times out).
+  It does not extend to any other always-on service - ask again for
+  anything else. Its data is OpenStreetMap, so **"© OpenStreetMap
+  contributors"** must appear on the app's attribution screen.
+
 ## Stages
 
 Rows are in **build order** (reordered 20 Nov 2026: visual refresh moved
@@ -40,7 +51,7 @@ existing references to "stage 4", "stage 7" etc. stay valid.
 |---|-------|--------|
 | 1 | Strip Navigate (PR #6) | **done, pushed** |
 | 2 | Feed fixes (PRs #7, #8) | merged |
-| 3 | Cruise core | **built, awaiting check** (local branch `stage-3-cruise-core`) |
+| 3 | Cruise core | **PR #14, awaiting merge** (branch `stage-3-cruise-core`) |
 | 8 | Visual refresh | |
 | 4 | Handoff (Waze / Google Maps / Apple Maps) | |
 | 5 | Reroute | |
@@ -51,8 +62,8 @@ existing references to "stage 4", "stage 7" etc. stay valid.
 
 **Stage 1 (PR #6)** pushed, unchanged since 20 Nov.
 
-**Stage 3 Cruise core built, not pushed** - local branch
-`stage-3-cruise-core` (3 commits on top of PR #6). Road matching (`src/road/`,
+**Stage 3 Cruise core is PR #14** - branch `stage-3-cruise-core`, based
+on PR #6's branch. Road matching (`src/road/`,
 `[road]` tag): "ahead on X" only when Mapbox Directions confirms the alert is
 on the driver's road with no turn off it; otherwise "nearby, X away";
 behind / U-turn is silent. Per-type distances behind one Close / Normal / Far
@@ -72,16 +83,16 @@ launch + expo-location patch, built from source via
 before prefetch; `EXPO_PUBLIC_BRIEFING_FIXTURE=1` forces a 3-item briefing
 in drive-test builds only. 778/778 tests.
 
-**PR #5** now has PR #6 merged in (RadarMap conflict resolved keeping #6's
+**PR #5** now has PR #6 and Stage 3 (#14) merged in (RadarMap conflict resolved keeping #6's
 driver-centred Cruise camera) and the 30s background silence fixed
-(background fixes are only ignored while the app is on screen). Ready to
-merge after #6; the puck-centring carry-forward is done.
+(background fixes are only ignored while the app is on screen). Merge order: **#6, then #14, then #5**; the puck-centring carry-forward is done.
 
 **Open PRs:**
 
 | PR | What it is | State |
 |----|-----------|-------|
-| #5 | Native nav state — native puck/follow, failed-reroute progress, spoken reroute notices | open, ready after #6 |
+| #5 | Native nav state — native puck/follow, failed-reroute progress, spoken reroute notices | open, merge after #14 |
 | #6 | This Stage 1 work — Navigate behind a flag, background voice fix, puck centring | open |
+| #14 | Stage 3 Cruise core — road matching, screen-off alerting, fewer Mapbox calls | open, merge after #6 |
 | #7 | Feed health watchdog — opens a GitHub issue when a data feed dies silently | merged |
 | #8 | ScraperAPI Australian-IP + retry handling so the SA feeds work on the free plan | merged |
