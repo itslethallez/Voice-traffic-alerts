@@ -71,3 +71,10 @@ SELECT id, type, ST_AsText(location::geometry) FROM alerts ORDER BY created_at D
 - Redis is a cache only; live delivery is Expo push + polling, scheduled
   jobs are GitHub Actions cron (see `../.github/workflows/`), and queued
   work is QStash (see `../.windsurfrules`).
+- `/api/road/forward-route` asks Shotgun's own Valhalla server first
+  (`lib/valhalla.ts`; the server itself is `../infra/valhalla/`) and falls
+  back to Mapbox Directions if Valhalla is unset, errors, or takes over
+  1.5s. Needs `VALHALLA_URL`, `VALHALLA_SHARED_SECRET`,
+  `MAPBOX_ACCESS_TOKEN` (fallback), `UPSTASH_REDIS_REST_URL` /
+  `UPSTASH_REDIS_REST_TOKEN` (shared route cache). `vercel.json` pins the
+  functions to `syd1` so the Valhalla hop stays in Sydney.

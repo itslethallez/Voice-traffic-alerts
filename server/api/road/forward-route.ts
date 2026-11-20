@@ -8,13 +8,19 @@ import {
   trimDirections,
   type StoredDirections,
 } from '../../lib/routeShare';
+import { fetchValhallaDirections } from '../../lib/valhalla';
 
 /**
- * GET /api/road/forward-route - road matching's one Mapbox Directions
- * request, shared across every driver (see lib/routeShare.ts).
+ * GET /api/road/forward-route - road matching's one forward route,
+ * shared across every driver (see lib/routeShare.ts).
+ *
+ * Router: Shotgun's own Valhalla server first (lib/valhalla.ts, approved
+ * 21 Nov 2026), Mapbox Directions only when Valhalla isn't configured,
+ * errors, or hasn't answered within VALHALLA_TIMEOUT_MS. Both come back
+ * as the same Mapbox-shaped body, tagged `router`.
  *
  * Params: fromLat, fromLng, heading (0-360), toLat, toLng.
- * Returns { directions, cache: 'hit' | 'miss' } - `directions` is a
+ * Returns { directions, cache: 'hit' | 'miss', router } - `directions` is a
  * trimmed Mapbox Directions body, so the app parses a hit and a miss the
  * same way it parses a direct call.
  *
@@ -33,6 +39,10 @@ const CACHE_TTL_SECONDS = 6 * 60 * 60;
 const MAX_ROUTES_PER_ALERT = 6;
 const MAX_SPAN_METERS = 10_000;
 const MAPBOX_TIMEOUT_MS = 3_500;
+/** Both Valhalla calls together. Measured 8-17ms locally, plus ~20-30ms
+ * Adelaide -> Sydney; past this, Mapbox answers instead (and the app's own
+ * 4s native timeout still covers the pair). */
+export const VALHALLA_TIMEOUT_MS = 1_500;
 /** Australia, loosely (incl. Tasmania and the external territories' mainland ports). */
 const AU_BOUNDS = { minLat: -44, maxLat: -9, minLng: 112, maxLng: 154 };
 
@@ -61,7 +71,35 @@ async function fetchDirections(from: { lat: number; lng: number }, heading: numb
   if (!response.ok) throw new Error(`Mapbox Directions failed with status ${response.status}`);
   const body = (await response.json()) as StoredDirections;
   if (body.code !== 'Ok' || !body.routes?.[0]) throw new Error(`Mapbox Directions returned ${body.code}`);
-  return trimDirections(body);
+  return trimDirections({ ...body, router: 'mapbox' });
+}
+
+/** Valhalla first; Mapbox if it isn't set up, fails or is slow. */
+async function fetchRoute(from: { lat: number; lng: number }, heading: number, to: { lat: number; lng: number }): Promise<StoredDirections> {
+  const baseUrl = process.env.VALHALLA_URL;
+  const secret = process.env.VALHALLA_SHARED_SECRET;
+  if (baseUrl && secret) {
+    const startedAt = Date.now();
+    try {
+      const directions = await fetchValhallaDirections(from, heading, to, {
+        baseUrl,
+        secret,
+        signal: AbortSignal.timeout(VALHALLA_TIMEOUT_MS),
+      });
+      console.log(`[road] valhalla ok in ${Date.now() - startedAt}ms`);
+      return trimDirections(directions);
+    } catch (error) {
+      // Not fatal - Mapbox answers - but a Valhalla that keeps failing is
+      // costing money silently, so it goes to Sentry as well.
+      captureException(error);
+      console.warn(
+        `[road] valhalla failed after ${Date.now() - startedAt}ms, falling back to Mapbox: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  } else {
+    console.warn('[road] VALHALLA_URL / VALHALLA_SHARED_SECRET not set - Mapbox only');
+  }
+  return fetchDirections(from, heading, to);
 }
 
 async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
@@ -100,7 +138,7 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
     const shared = findShareableRoute(stored, from, heading % 360);
     if (shared) {
       console.log(`[road] shared hit ${key} (${stored.length} cached)`);
-      res.status(200).json({ directions: shared, cache: 'hit' });
+      res.status(200).json({ directions: shared, cache: 'hit', router: shared.router ?? 'mapbox' });
       return;
     }
   } catch (error) {
@@ -108,17 +146,17 @@ async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   }
 
   try {
-    const directions = await fetchDirections(from, heading % 360, to);
-    console.log(`[road] shared miss ${key} - Mapbox call`);
+    const directions = await fetchRoute(from, heading % 360, to);
+    console.log(`[road] shared miss ${key} - ${directions.router} route`);
     try {
       await getRedis().set(key, [directions, ...stored].slice(0, MAX_ROUTES_PER_ALERT), { ex: CACHE_TTL_SECONDS });
     } catch (error) {
       console.warn('[road] redis write failed, route not shared', error);
     }
-    res.status(200).json({ directions, cache: 'miss' });
+    res.status(200).json({ directions, cache: 'miss', router: directions.router });
   } catch (error) {
     captureException(error);
-    console.error('[road] Mapbox Directions failed', error);
+    console.error('[road] no router answered (Valhalla and Mapbox both failed)', error);
     res.status(502).json({ error: 'Directions unavailable' });
   }
 }

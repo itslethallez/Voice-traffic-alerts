@@ -1,0 +1,37 @@
+#cloud-config
+# First-boot setup for the Valhalla droplet (passed as DigitalOcean
+# user_data by provision.sh). Docker, a firewall, swap so the weekly
+# Australia build can't OOM-kill the live server, and the /opt/valhalla
+# layout docker-compose.yml expects. The tiles themselves are built by the
+# first refresh.sh run, not here.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - curl
+  - jq
+  - ufw
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/90-shotgun.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+
+runcmd:
+  - fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - sysctl -w vm.swappiness=10 && echo 'vm.swappiness=10' > /etc/sysctl.d/90-swappiness.conf
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+  - systemctl enable --now docker
+  - mkdir -p /opt/valhalla/live /opt/valhalla/staging /opt/valhalla/previous
+  - systemctl reload ssh || systemctl reload sshd || true
+  - touch /var/lib/cloud/instance/shotgun-ready
