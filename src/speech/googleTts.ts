@@ -1,52 +1,17 @@
 import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
-import { env } from '../config/env';
 import { appStateLabel } from '../diagnostics/appState';
+import { getAudioDataUri, GoogleTtsNotReadyError } from './ttsAudioCache';
 
-/**
- * Google's current flagship "Chirp3 HD" tier - UK English, female, verified
- * live against the real API before wiring it in (GET /v1/voices and a real
- * /v1/text:synthesize call both confirmed against the user's own GCP
- * project, not assumed from docs). If a cheaper TTS provider swap happens
- * later, this voice preference (UK English, female, Chirp3 HD tier or
- * equivalent) should carry over rather than reset to whatever that
- * provider's own default is.
- */
-const GOOGLE_TTS_LANGUAGE_CODE = 'en-GB';
-const GOOGLE_TTS_VOICE_NAME = 'en-GB-Chirp3-HD-Kore';
-
-async function fetchAudioDataUri(text: string, signal: AbortSignal): Promise<string> {
-  if (!env.googleTtsApiKey) {
-    throw new Error('EXPO_PUBLIC_GOOGLE_TTS_API_KEY is not set');
-  }
-
-  const response = await fetch(
-    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${env.googleTtsApiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        input: { text },
-        voice: { languageCode: GOOGLE_TTS_LANGUAGE_CODE, name: GOOGLE_TTS_VOICE_NAME },
-        audioConfig: { audioEncoding: 'MP3' },
-      }),
-      signal,
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Google TTS request failed with status ${response.status}`);
-  }
-
-  // Unlike ElevenLabs (raw binary, needing a hand-rolled base64 encode -
-  // Hermes has no btoa), Google's response is already a base64 JSON string.
-  const { audioContent } = (await response.json()) as { audioContent: string };
-  return `data:audio/mp3;base64,${audioContent}`;
-}
+export { GoogleTtsNotReadyError };
 
 export interface GoogleTtsSpeakOptions {
   rate?: number;
   volume?: number;
+  /** Reject with GoogleTtsNotReadyError if the audio isn't ready by then -
+   * enforced natively, see ttsAudioCache.ts's fetchAudioDataUriWithin. */
+  readyDeadlineMs?: number;
 }
+
 
 /**
  * Bumped on every speakWithGoogleTtsAsync()/stopGoogleTtsSpeech() call -
@@ -165,15 +130,15 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
     // apart in a drive-test logcat without a debugger attached.
     const startedAtMs = Date.now();
 
-    fetchAudioDataUri(text, abortController.signal)
-      .then((dataUri) => {
+    getAudioDataUri(text, abortController.signal, options.readyDeadlineMs)
+      .then(({ dataUri, source }) => {
         const fetchedAtMs = Date.now();
-        if (!isCurrent()) {
+          if (!isCurrent()) {
           settleResolve(); // stopped while the fetch was still in flight
           return;
         }
         console.log(
-          `[speech] google fetch ok in ${fetchedAtMs - startedAtMs}ms (${Math.round(dataUri.length / 1024)}kB) app=${appStateLabel()}`
+          `[speech] google audio ready in ${fetchedAtMs - startedAtMs}ms source=${source} (${Math.round(dataUri.length / 1024)}kB) app=${appStateLabel()}`
         );
 
         const player = createAudioPlayer({ uri: dataUri });
@@ -209,10 +174,18 @@ export function speakWithGoogleTtsAsync(text: string, options: GoogleTtsSpeakOpt
         });
 
         playStartedAtMs = Date.now();
-        console.log(`[speech] google playback start app=${appStateLabel()}`);
+        // The number that matters to the driver: silence between this
+        // utterance being dispatched and its first sound. Same line shape
+        // as ttsAdapter's device-voice one, so one grep covers both voices.
+        console.log(
+          `[speech] first sound after ${playStartedAtMs - startedAtMs}ms voice=google source=${source} app=${appStateLabel()}`
+        );
         player.play();
       })
       .catch((error) => {
+        if (error instanceof GoogleTtsNotReadyError && isCurrent()) {
+          console.log(`[speech] google not ready after ${options.readyDeadlineMs}ms app=${appStateLabel()}`);
+        }
         if (!isCurrent()) {
           settleResolve(); // stopped/aborted while the fetch was still in flight
           return;

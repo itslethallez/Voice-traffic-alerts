@@ -51,7 +51,14 @@ jest.mock('../../config/env', () => ({
   },
 }));
 
-import { speakWithGoogleTtsAsync, stopGoogleTtsSpeech } from '../googleTts';
+import { GoogleTtsNotReadyError, speakWithGoogleTtsAsync, stopGoogleTtsSpeech } from '../googleTts';
+import { clearTtsAudioCache, prefetchTtsAudio } from '../ttsAudioCache';
+
+/** Lets the fetch -> audio-cache -> createAudioPlayer promise chain run to
+ * completion without the test depending on its exact number of hops. */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+}
 
 function makeFetchResponse(ok: boolean, status = 200): Response {
   return {
@@ -63,6 +70,7 @@ function makeFetchResponse(ok: boolean, status = 200): Response {
 
 describe('speakWithGoogleTtsAsync', () => {
   beforeEach(() => {
+    clearTtsAudioCache();
     googleTtsApiKey = 'test-key';
     mockPlayer = createMockPlayer();
     createAudioPlayer.mockClear();
@@ -74,9 +82,7 @@ describe('speakWithGoogleTtsAsync', () => {
 
     const promise = speakWithGoogleTtsAsync('Police reported, 800 metres ahead.');
     // Let the fetch/createAudioPlayer microtasks settle before emitting.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     mockPlayer.emitStatus({ didJustFinish: true });
 
     await expect(promise).resolves.toBeUndefined();
@@ -88,9 +94,7 @@ describe('speakWithGoogleTtsAsync', () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
     const promise = speakWithGoogleTtsAsync('hello');
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     mockPlayer.emitStatus({ didJustFinish: true });
     await promise;
 
@@ -106,9 +110,7 @@ describe('speakWithGoogleTtsAsync', () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
     const promise = speakWithGoogleTtsAsync('hello', { volume: 0.6, rate: 1.4 });
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(mockPlayer.volume).toBe(0.6);
     expect(mockPlayer.setPlaybackRate).toHaveBeenCalledWith(1.4);
     mockPlayer.emitStatus({ didJustFinish: true });
@@ -139,9 +141,7 @@ describe('speakWithGoogleTtsAsync', () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
     const promise = speakWithGoogleTtsAsync('hello');
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     mockPlayer.emitStatus({ error: 'decode failed' });
 
     await expect(promise).rejects.toThrow('decode failed');
@@ -152,9 +152,7 @@ describe('speakWithGoogleTtsAsync', () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue(makeFetchResponse(true));
 
     const promise = speakWithGoogleTtsAsync('hello');
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     stopGoogleTtsSpeech();
 
     await expect(promise).resolves.toBeUndefined();
@@ -203,9 +201,7 @@ describe('speakWithGoogleTtsAsync', () => {
       const promise = speakWithGoogleTtsAsync('hello');
       const expectation = expect(promise).rejects.toThrow('Google TTS timed out');
       // Let the fetch .then() microtask create the player before the clock advances.
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushMicrotasks();
       await jest.advanceTimersByTimeAsync(20_000);
       await expectation;
 
@@ -224,9 +220,7 @@ describe('speakWithGoogleTtsAsync', () => {
     // speed-camera warning racing the live announcer queue, which has no
     // reason to know about (or call stop on behalf of) the other caller.
     const first = speakWithGoogleTtsAsync('first');
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     const second = speakWithGoogleTtsAsync('second');
 
@@ -234,9 +228,7 @@ describe('speakWithGoogleTtsAsync', () => {
     expect(mockPlayer.pause).toHaveBeenCalledTimes(1);
     expect(mockPlayer.remove).toHaveBeenCalledTimes(1);
 
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     mockPlayer.emitStatus({ didJustFinish: true });
 
     await expect(second).resolves.toBeUndefined();
@@ -262,9 +254,7 @@ describe('speakWithGoogleTtsAsync', () => {
       // device fallback. It must not go on to create/play a player, which
       // would overlap the fallback voice.
       resolveFetch(makeFetchResponse(true));
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushMicrotasks();
 
       expect(createAudioPlayer).not.toHaveBeenCalled();
     } finally {
@@ -299,9 +289,7 @@ describe('speakWithGoogleTtsAsync', () => {
       // per-utterance) timer slot would let this stale settle wipe the
       // second utterance's watchdog instead of just its own.
       resolveFirstFetch(makeFetchResponse(true));
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushMicrotasks();
 
       // The second utterance's own watchdog must still be armed.
       await jest.advanceTimersByTimeAsync(20_000);
@@ -320,11 +308,105 @@ describe('speakWithGoogleTtsAsync', () => {
 
     await expect(stale).resolves.toBeUndefined();
 
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     mockPlayer.emitStatus({ didJustFinish: true });
 
     await expect(fresh).resolves.toBeUndefined();
+  });
+
+  describe('ready deadline (native XHR timeout)', () => {
+    /** Minimal XMLHttpRequest stand-in: the test drives load/timeout. */
+    class FakeXhr {
+      static last: FakeXhr | null = null;
+      timeout = 0;
+      status = 0;
+      responseText = '';
+      body: string | null = null;
+      onload: (() => void) | null = null;
+      ontimeout: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      aborted = false;
+      open = jest.fn();
+      setRequestHeader = jest.fn();
+      send(body: string) {
+        this.body = body;
+        FakeXhr.last = this;
+      }
+      abort() {
+        this.aborted = true;
+        this.onabort?.();
+      }
+      respond() {
+        this.status = 200;
+        this.responseText = JSON.stringify({ audioContent: 'AAECAwQ=' });
+        this.onload?.();
+      }
+    }
+
+    beforeEach(() => {
+      FakeXhr.last = null;
+      (globalThis as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXhr;
+    });
+
+    it('hands the deadline to the native request timeout, not a JS timer', async () => {
+      const promise = speakWithGoogleTtsAsync('hello', { readyDeadlineMs: 600 });
+      expect(FakeXhr.last?.timeout).toBe(600);
+      expect(JSON.parse(FakeXhr.last?.body ?? '{}').input.text).toBe('hello');
+      FakeXhr.last?.respond();
+      await flushMicrotasks();
+      mockPlayer.emitStatus({ didJustFinish: true });
+      await expect(promise).resolves.toBeUndefined();
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects with GoogleTtsNotReadyError when the native timeout fires, and never plays', async () => {
+      const promise = speakWithGoogleTtsAsync('slow', { readyDeadlineMs: 600 });
+      FakeXhr.last?.ontimeout?.();
+      await expect(promise).rejects.toBeInstanceOf(GoogleTtsNotReadyError);
+      expect(createAudioPlayer).not.toHaveBeenCalled();
+    });
+
+    it('treats an XHR error arriving at the deadline as not-ready (RN reports callTimeout as onerror)', async () => {
+      const nowSpy = jest.spyOn(Date, 'now');
+      const t0 = Date.now();
+      nowSpy.mockReturnValue(t0);
+      const promise = speakWithGoogleTtsAsync('slow', { readyDeadlineMs: 600 });
+      nowSpy.mockReturnValue(t0 + 612);
+      FakeXhr.last?.onerror?.();
+      await expect(promise).rejects.toBeInstanceOf(GoogleTtsNotReadyError);
+      nowSpy.mockRestore();
+    });
+
+    it('still treats a fast XHR error as a real failure', async () => {
+      const promise = speakWithGoogleTtsAsync('offline', { readyDeadlineMs: 600 });
+      FakeXhr.last?.onerror?.();
+      await expect(promise).rejects.toThrow('network error');
+    });
+
+    it('uses a prefetch already in flight if it lands first, and cancels its own request', async () => {
+      let resolveFetch: (r: Response) => void = () => {};
+      (globalThis.fetch as jest.Mock).mockReturnValue(new Promise<Response>((r) => (resolveFetch = r)));
+      prefetchTtsAudio('racing');
+
+      const promise = speakWithGoogleTtsAsync('racing', { readyDeadlineMs: 600 });
+      const own = FakeXhr.last;
+      resolveFetch(makeFetchResponse(true));
+      await flushMicrotasks();
+      mockPlayer.emitStatus({ didJustFinish: true });
+
+      await expect(promise).resolves.toBeUndefined();
+      expect(own?.aborted).toBe(true);
+    });
+
+    it('still gives up at the deadline while a slower prefetch is in flight', async () => {
+      (globalThis.fetch as jest.Mock).mockReturnValue(new Promise<Response>(() => {}));
+      prefetchTtsAudio('racing');
+
+      const promise = speakWithGoogleTtsAsync('racing', { readyDeadlineMs: 600 });
+      FakeXhr.last?.ontimeout?.();
+
+      await expect(promise).rejects.toBeInstanceOf(GoogleTtsNotReadyError);
+    });
   });
 });
