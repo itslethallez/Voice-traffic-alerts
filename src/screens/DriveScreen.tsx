@@ -27,6 +27,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useTripStore } from '../store/useTripStore';
 import { useCommunityReportStore } from '../store/useCommunityReportStore';
 import { useNavigationStore } from '../store/useNavigationStore';
+import { NAVIGATE_MODE_ENABLED } from '../config/featureFlags';
 import { useRouteOptionsStore } from '../store/useRouteOptionsStore';
 import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
 import { formatRelativeTime } from './formatRelativeTime';
@@ -124,7 +125,7 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
   /** Stage B route-planning state - anything but 'idle' means the map is
    * showing route previews and the options panel replaces the alerts
    * sheet/report bar until the plan is picked or cancelled. */
-  const routeOptionsActive = useRouteOptionsStore((state) => state.status !== 'idle');
+  const routeOptionsActive = useRouteOptionsStore((state) => state.status !== 'idle') && NAVIGATE_MODE_ENABLED;
   /** While navigating, §8's "large next-turn instruction" replaces the
    * Cruising chrome (mode switch + filters) as the dominant top element -
    * rendered inside this panel so it can never overlap the way the old
@@ -133,7 +134,8 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
   const activeRoute = useNavigationStore((state) => state.activeRoute);
   const navCurrentStepIndex = useNavigationStore((state) => state.currentStepIndex);
   const navDistanceToNextManeuverM = useNavigationStore((state) => state.distanceToNextManeuverM);
-  const isNavigating = navigationStatus === 'navigating' || navigationStatus === 'rerouting';
+  const isNavigating =
+    NAVIGATE_MODE_ENABLED && (navigationStatus === 'navigating' || navigationStatus === 'rerouting');
   const insets = useSafeAreaInsets();
   /** Measured height of this screen's top overlay chrome - passed to
    * RadarMap so its absolute-positioned elements (controls column,
@@ -364,9 +366,11 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
               <Row justify="flex-end" align="flex-end">
                 <ReportBar />
               </Row>
-              <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
-                <NavigationStatusBar nowMs={now} />
-              </View>
+              {NAVIGATE_MODE_ENABLED ? (
+                <View onLayout={(event) => setNavStatusBarHeight(event.nativeEvent.layout.height)}>
+                  <NavigationStatusBar nowMs={now} />
+                </View>
+              ) : null}
             </Stack>
           </MapOverlayPanel>
 
