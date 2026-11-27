@@ -10,6 +10,13 @@ import {
 } from '@expo-google-fonts/archivo';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { Rajdhani_600SemiBold, Rajdhani_700Bold } from '@expo-google-fonts/rajdhani';
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { WazeAlert } from './src/api/waze/types';
 import { DriveScreen } from './src/screens/DriveScreen';
@@ -38,6 +45,12 @@ export default function App() {
     Inter_600SemiBold,
     Rajdhani_600SemiBold,
     Rajdhani_700Bold,
+    // Stage 8 refresh type (tokens.ts typography.fontFamily).
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
   });
   // Map-first chrome: no bottom tab bar - the map owns the screen and
   // settings is reached through the map header's gear, matching the §8

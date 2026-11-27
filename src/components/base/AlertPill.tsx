@@ -21,8 +21,8 @@ export type AlertPillType = AlertType;
  */
 const PILL_META: Record<AlertPillType, { label: string; color: string; icon?: LucideIcon }> = {
   police: { label: 'Police', color: colors.coolBlue, icon: Shield },
-  mobile_camera: { label: 'Mobile camera', color: colors.coolBlue, icon: Camera },
-  fixed_camera: { label: 'Fixed camera', color: colors.coolBlue, icon: Cctv },
+  mobile_camera: { label: 'Mobile camera', color: colors.camera, icon: Camera },
+  fixed_camera: { label: 'Fixed camera', color: colors.camera, icon: Cctv },
   traffic: { label: 'Traffic', color: colors.red },
   accident: { label: 'Accident', color: colors.red },
   closure: { label: 'Closure', color: colors.amber },

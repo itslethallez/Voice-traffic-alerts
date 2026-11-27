@@ -24,9 +24,9 @@ export interface AlertTypeMeta {
 const ALERT_TYPE_META: Partial<Record<string, AlertTypeMeta>> = {
   POLICE: { label: 'Police', color: colors.coolBlue, emoji: '🚓', letter: 'P' },
   // Synthetic corridor types (api/backend/corridorAlert.ts) - the camera
-  // family, same coolBlue family as POLICE per the brand board.
-  MOBILE_CAMERA: { label: 'Mobile camera', color: colors.coolBlue, emoji: '📷', letter: 'M' },
-  FIXED_CAMERA: { label: 'Fixed camera', color: colors.coolBlue, emoji: '📸', letter: 'F' },
+  // family is amber in the Stage 8 refresh (police stays blue).
+  MOBILE_CAMERA: { label: 'Mobile camera', color: colors.camera, emoji: '📷', letter: 'M' },
+  FIXED_CAMERA: { label: 'Fixed camera', color: colors.camera, emoji: '📸', letter: 'F' },
   ACCIDENT: { label: 'Crash', color: colors.critical, emoji: '💥', letter: 'X' },
   HAZARD: { label: 'Hazard', color: colors.caution, emoji: '⚠️', letter: 'H' },
   ROAD_CLOSED: { label: 'Closed', color: colors.caution, emoji: '🚧', letter: 'C' },
