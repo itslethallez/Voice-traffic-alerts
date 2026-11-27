@@ -11,6 +11,7 @@ on:
       - Refresh police mobile-camera notices
       - Refresh fixed camera dataset
       - Refresh central Waze alert mirror
+      - Refresh Valhalla road map
     types: [completed]
   schedule:
     - cron: '17 */6 * * *'
@@ -41,4 +42,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           # Optional repo variable; empty falls back to the repo owner.
           FEED_ALERT_ASSIGNEE: ${{ vars.FEED_ALERT_ASSIGNEE }}
+          # Valhalla routing server probe (infra/valhalla/); skipped until set.
+          VALHALLA_URL: ${{ vars.VALHALLA_URL }}
+          VALHALLA_SHARED_SECRET: ${{ secrets.VALHALLA_SHARED_SECRET }}
         run: node scripts/checkFeedHealth.js

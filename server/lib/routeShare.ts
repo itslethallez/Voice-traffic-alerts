@@ -28,6 +28,9 @@ export interface StoredDirections {
     legs: Array<{ steps: Array<{ name?: string; distance: number; maneuver: { type: string; modifier?: string } }> }>;
   }>;
   waypoints?: Array<{ distance?: number }>;
+  /** Which router produced it (api/road/forward-route.ts: Valhalla first,
+   * Mapbox fallback). Absent on routes cached before Valhalla. */
+  router?: 'valhalla' | 'mapbox';
 }
 
 /** Origin further than this from a cached route isn't on it. */
@@ -122,6 +125,7 @@ export function trimDirections(body: StoredDirections): StoredDirections {
       })),
     })),
     waypoints: body.waypoints?.map((w) => ({ distance: w.distance })),
+    ...(body.router ? { router: body.router } : {}),
   };
 }
 

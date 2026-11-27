@@ -1,0 +1,55 @@
+name: Refresh Valhalla road map
+
+# Weekly OpenStreetMap update for the Valhalla routing server (road
+# matching's first router - infra/valhalla/README.md). Runs refresh.sh on
+# the server over SSH: download the latest Geofabrik Australia extract,
+# build tiles beside the live ones, check them (Sir Donald Bradman Drive
+# keeps its name, Sydney routes), then swap. A failed run leaves last
+# week's map serving and goes red; feed-health.yml then opens a
+# "Feed down: Valhalla road map update" issue.
+#
+# Monday 03:00 Adelaide (16:30 UTC Sunday in ACDT) - the quietest hour on
+# the road. Same pattern as the other refresh-*.yml jobs: GitHub Actions
+# cron, no worker process.
+on:
+  schedule:
+    - cron: '30 16 * * 0'
+  workflow_dispatch: {}
+
+concurrency:
+  group: refresh-valhalla
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # An Australia build is ~1h on 4 vCPU; leave room for a slow download.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH to the Valhalla server
+        env:
+          VALHALLA_SSH_KEY: ${{ secrets.VALHALLA_SSH_KEY }}
+          VALHALLA_SSH_KNOWN_HOSTS: ${{ secrets.VALHALLA_SSH_KNOWN_HOSTS }}
+          VALHALLA_IP: ${{ vars.VALHALLA_IP }}
+        run: |
+          if [ -z "$VALHALLA_SSH_KEY" ] || [ -z "$VALHALLA_SSH_KNOWN_HOSTS" ] || [ -z "$VALHALLA_IP" ]; then
+            echo "::error::VALHALLA_SSH_KEY / VALHALLA_SSH_KNOWN_HOSTS secrets or VALHALLA_IP variable not set"
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VALHALLA_SSH_KEY" > ~/.ssh/valhalla
+          chmod 600 ~/.ssh/valhalla
+          printf '%s\n' "$VALHALLA_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Sync server scripts from the repo
+        run: |
+          scp -i ~/.ssh/valhalla -o ServerAliveInterval=30 \
+            infra/valhalla/docker-compose.yml infra/valhalla/Caddyfile infra/valhalla/refresh.sh \
+            "root@${{ vars.VALHALLA_IP }}:/opt/valhalla/"
+
+      - name: Rebuild and swap in the new road map
+        run: |
+          ssh -i ~/.ssh/valhalla -o ServerAliveInterval=30 "root@${{ vars.VALHALLA_IP }}" \
+            'chmod +x /opt/valhalla/refresh.sh && /opt/valhalla/refresh.sh'

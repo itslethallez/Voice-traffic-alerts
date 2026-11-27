@@ -115,6 +115,9 @@ function isGeometricallyEligible(
   road: RoadContext | null = null
 ): boolean {
   if (road?.kind === 'behind') return false;
+  // A camera on a road the driver isn't on is silent (21 Nov 2026, case F).
+  // Only when the route confirmed it - an unknown road still warns.
+  if (target.kind === 'camera' && road?.kind === 'nearby' && road.offRoad) return false;
   const distanceMeters = warningDistance(driver, target, road);
   const outerCheckpoint = SPEED_WARNING_CHECKPOINTS_M[0];
   if (distanceMeters > outerCheckpoint) return false;

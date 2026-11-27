@@ -22,7 +22,11 @@ Shotgun is a **co-pilot, not a navigation app**.
   **Silence must never read as "all clear."**
 - **Road awareness positioning.** Shotgun tells the driver what is ahead.
   **Never offer a reroute for police or cameras** — not as a prompt, not as
-  a route option, not as a nudge.
+  an "avoid police/cameras" route option, not as a nudge. Shotgun never
+  *suggests* it. Rerouting itself is always the driver's choice: the
+  driver's own reroute control stays available whatever is ahead or behind,
+  Shotgun just never proposes it because of police or cameras
+  (clarified 28 Nov 2026).
 - **Official/licensed sources only.** Facebook-derived data is **facts
   only**: incident type, location, time. **Never** usernames, photos,
   comments, or the original wording.
@@ -63,21 +67,38 @@ existing references to "stage 4", "stage 7" etc. stay valid.
 
 | # | Stage | Status |
 |---|-------|--------|
-| 1 | Strip Navigate (PR #6) | **done, pushed** |
+| 1 | Strip Navigate (PR #6) | merged |
 | 2 | Feed fixes (PRs #7, #8) | merged |
-| 3 | Cruise core | **PR #14, awaiting merge** (branch `stage-3-cruise-core`) |
+| 3 | Cruise core | merged (PRs #14, #5); Valhalla follow-up is **PR #16** |
+| 3c | Direction-aware warning zone (see below) | agreed 28 Nov; build after #16 |
 | 8 | Visual refresh | |
 | 4 | Handoff (Waze / Google Maps / Apple Maps) | |
 | 5 | Reroute | |
 | 6 | National data | |
 | 7 | Community pipeline | plan approved; code only after stages 3–5 |
 
-## Current status (as of 21 Nov 2026)
+## Stage 3c - direction-aware warning zone (agreed 28 Nov 2026)
 
-**Stage 1 (PR #6)** pushed, unchanged since 20 Nov.
+Replaces the 20 Nov "behind is silent" call. **Cruise mode only** (not
+Navigate). Every alert inside the driver's warning zone is announced with
+its direction - this is a selling point over other apps:
 
-**Stage 3 Cruise core is PR #14** - branch `stage-3-cruise-core`, based
-on PR #6's branch. Road matching (`src/road/`,
+| Where the alert is | Spoken |
+|---|---|
+| On my road, in front | "ahead on [road], X away" (unchanged) |
+| Direction not certain / road matching down | "in your warning area, X away" (replaces "nearby") |
+| Behind me / needs a U-turn - **police and mobile cameras only** | "behind you, X away", **once** per alert |
+| Behind me - any other type (crash, roadwork, hazard...) | silent, as now |
+
+Shotgun still never *suggests* a reroute for police or cameras, behind or
+ahead - but the driver's own reroute control is always available.
+
+## Current status (as of 28 Nov 2026)
+
+**PRs #6, #14 and #5 are merged** into `claude/voice-traffic-alerts-os1jef`
+(in that order). Stage 3 Cruise core is done apart from Valhalla (PR #16).
+
+**Stage 3 Cruise core (PR #14, merged).** Road matching (`src/road/`,
 `[road]` tag): "ahead on X" only when Mapbox Directions confirms the alert is
 on the driver's road with no turn off it; otherwise "nearby, X away";
 behind / U-turn is silent. Per-type distances behind one Close / Normal / Far
@@ -88,25 +109,41 @@ are fixtures in `src/road/__tests__/aheadCases.test.ts`. 754/754 tests.
 
 **21 Nov follow-up (same branch):** road-match cost cut (route reused
 per road segment, lookups only inside the warn radius, 30s per-target
-spacing, shared server cache `server/api/road/forward-route.ts` - built,
-NOT deployed: needs a backend URL in the app and `MAPBOX_ACCESS_TOKEN` +
-Upstash on the server). Divided-road reports ("on [road], X" with no side),
+spacing, shared server cache `server/api/road/forward-route.ts` - **live since
+28 Nov** at `https://shotgun-api-zeta.vercel.app/api/road/forward-route`,
+verified miss -> Mapbox, then hit for the next driver). Divided-road reports ("on [road], X" with no side),
 2x detour. Screen-off cold start now alerts (background location at
 launch + expo-location patch, built from source via
 `expo.autolinking.android.buildFromSource`). Briefing sentences frozen
 before prefetch; `EXPO_PUBLIC_BRIEFING_FIXTURE=1` forces a 3-item briefing
 in drive-test builds only. 778/778 tests.
 
-**PR #5** now has PR #6 and Stage 3 (#14) merged in (RadarMap conflict resolved keeping #6's
-driver-centred Cruise camera) and the 30s background silence fixed
-(background fixes are only ignored while the app is on screen). Merge order: **#6, then #14, then #5**; the puck-centring carry-forward is done.
+**PR #5 (merged):** native puck/follow, 30s background silence fixed
+(background fixes are only ignored while the app is on screen).
+
+**Vercel backend (28 Nov):** project `shotgun-api` in team `insanelysmart`,
+root `server/`, functions in `syd1`. Production now builds from
+`claude/voice-traffic-alerts-os1jef` (it was `main`, which is stale, so
+prod had been 70 days old). `MAPBOX_ACCESS_TOKEN` set for Production +
+Preview (the app's pk. token); Upstash via the `KV_REST_API_*` vars.
+`server/` is linked locally (`server/.vercel`, git-ignored).
+
+**Valhalla (branch `stage-3b-valhalla`, on top of #5 + main):** case C
+(same-named report within 60m of my road is "on [road]" whatever the
+router does) and case F (camera on another road is silent; unknown road
+still warns). Valhalla-first road matching with Mapbox fallback
+(`server/lib/valhalla.ts`), server + weekly OSM update + runbook in
+`infra/valhalla/`, watchdog probe, Settings -> MAP DATA credits. Code
+complete and tested (841/841), **PR #16**, checks green. **Server not
+provisioned yet** - waiting only on `DIGITALOCEAN_TOKEN` reaching the
+session. After that: `VALHALLA_URL` + `VALHALLA_SHARED_SECRET` in Vercel,
+the GitHub secrets/variables in `infra/valhalla/README.md`, then merge #16.
+Until then production road matching runs on Mapbox only.
 
 **Open PRs:**
 
 | PR | What it is | State |
 |----|-----------|-------|
-| #5 | Native nav state — native puck/follow, failed-reroute progress, spoken reroute notices | open, merge after #14 |
-| #6 | This Stage 1 work — Navigate behind a flag, background voice fix, puck centring | open |
-| #14 | Stage 3 Cruise core — road matching, screen-off alerting, fewer Mapbox calls | open, merge after #6 |
-| #7 | Feed health watchdog — opens a GitHub issue when a data feed dies silently | merged |
-| #8 | ScraperAPI Australian-IP + retry handling so the SA feeds work on the free plan | merged |
+| #16 | Stage 3b Valhalla-first road matching (Mapbox fallback), cases C and F | open, checks green; merge once Valhalla is provisioned |
+
+Merged: #5, #6, #7, #8, #9, #12, #13, #14. #15 closed (duplicate of #14).
