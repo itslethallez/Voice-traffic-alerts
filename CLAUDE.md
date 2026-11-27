@@ -22,7 +22,11 @@ Shotgun is a **co-pilot, not a navigation app**.
   **Silence must never read as "all clear."**
 - **Road awareness positioning.** Shotgun tells the driver what is ahead.
   **Never offer a reroute for police or cameras** — not as a prompt, not as
-  a route option, not as a nudge.
+  an "avoid police/cameras" route option, not as a nudge. Shotgun never
+  *suggests* it. Rerouting itself is always the driver's choice: the
+  driver's own reroute control stays available whatever is ahead or behind,
+  Shotgun just never proposes it because of police or cameras
+  (clarified 28 Nov 2026).
 - **Official/licensed sources only.** Facebook-derived data is **facts
   only**: incident type, location, time. **Never** usernames, photos,
   comments, or the original wording.
@@ -86,7 +90,8 @@ its direction - this is a selling point over other apps:
 | Behind me / needs a U-turn - **police and mobile cameras only** | "behind you, X away", **once** per alert |
 | Behind me - any other type (crash, roadwork, hazard...) | silent, as now |
 
-Still no reroute offer for police or cameras, behind or ahead.
+Shotgun still never *suggests* a reroute for police or cameras, behind or
+ahead - but the driver's own reroute control is always available.
 
 ## Current status (as of 28 Nov 2026)
 
