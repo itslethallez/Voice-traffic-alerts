@@ -24,739 +24,1179 @@ export interface FixedSpeedCamera {
 
 export const FIXED_SPEED_CAMERAS: FixedSpeedCamera[] = [
   {
-    id: "sapol-48",
-    label: "Kensington Road/Portrush Road, MARRYATVILLE",
-    position: {
-      latitude: -34.929508,
-      longitude: 138.641681
+    "id": "sapol-48",
+    "label": "Kensington Road/Portrush Road, MARRYATVILLE",
+    "position": {
+      "latitude": -34.926937,
+      "longitude": 138.641456
     }
   },
   {
-    id: "sapol-49",
-    label: "King William Road/Sir Edwin Smith Avenue, NORTH ADELAIDE",
-    position: {
-      latitude: -34.912983,
-      longitude: 138.600549
+    "id": "sapol-49",
+    "label": "King William Road/Sir Edwin Smith Avenue, NORTH ADELAIDE",
+    "position": {
+      "latitude": -34.915471,
+      "longitude": 138.598881
     }
   },
   {
-    id: "sapol-50",
-    label: "Tapleys Hill Road/West Lakes Boulevard SEATON",
-    position: {
-      latitude: -34.894461,
-      longitude: 138.508154
+    "id": "sapol-50",
+    "label": "Tapleys Hill Road/West Lakes Boulevard SEATON",
+    "position": {
+      "latitude": -34.879417,
+      "longitude": 138.512786
     }
   },
   {
-    id: "sapol-51",
-    label: "Greenhill Road/Hutt Road, ADELAIDE",
-    position: {
-      latitude: -34.937935,
-      longitude: 138.666954
+    "id": "sapol-51",
+    "label": "Greenhill Road/Hutt Road, ADELAIDE",
+    "position": {
+      "latitude": -34.940602,
+      "longitude": 138.612735
     }
   },
   {
-    id: "sapol-58",
-    label: "North East Road/Sudholz Road, GILLES PLAINS",
-    position: {
-      latitude: -34.856652,
-      longitude: 138.654674
+    "id": "sapol-56",
+    "label": "North East Road/Ascot Avenue, VALE PARK",
+    "position": {
+      "latitude": -34.882971,
+      "longitude": 138.621744
     }
   },
   {
-    id: "sapol-59",
-    label: "Sudholz Road/North East Road, GILLES PLAINS",
-    position: {
-      latitude: -34.856652,
-      longitude: 138.654674
+    "id": "sapol-57",
+    "label": "Anzac Highway/Marion Road, PLYMPTON",
+    "position": {
+      "latitude": -34.96401,
+      "longitude": 138.554771
     }
   },
   {
-    id: "sapol-61",
-    label: "Lower Nth East Road/Darley Road, PARADISE",
-    position: {
-      latitude: -34.865938,
-      longitude: 138.674656
+    "id": "sapol-58",
+    "label": "North East Road/Sudholz Road, GILLES PLAINS",
+    "position": {
+      "latitude": -34.857206,
+      "longitude": 138.655526
     }
   },
   {
-    id: "sapol-65",
-    label: "West Terrace/Hindley Street, ADELAIDE",
-    position: {
-      latitude: -34.947967,
-      longitude: 138.653111
+    "id": "sapol-59",
+    "label": "Sudholz Road/North East Road, GILLES PLAINS",
+    "position": {
+      "latitude": -34.857206,
+      "longitude": 138.655526
     }
   },
   {
-    id: "sapol-67",
-    label: "Henley Beach Road/Holbrooks Road, UNDERDALE",
-    position: {
-      latitude: -34.914599,
-      longitude: 138.548262
+    "id": "sapol-61",
+    "label": "Lower Nth East Road/Darley Road, PARADISE",
+    "position": {
+      "latitude": -34.873607,
+      "longitude": 138.668906
     }
   },
   {
-    id: "sapol-69",
-    label: "Glover Avenue/West Terrace, ADELAIDE",
-    position: {
-      latitude: -34.947967,
-      longitude: 138.653111
+    "id": "sapol-63",
+    "label": "Grand Junction Road/Walkleys Road, WALKLEY HEIGHTS",
+    "position": {
+      "latitude": -34.846064,
+      "longitude": 138.649468
     }
   },
   {
-    id: "sapol-75",
-    label: "Panalatinga Road/Pimpala Road, WOODCROFT",
-    position: {
-      latitude: -35.103711,
-      longitude: 138.554173
+    "id": "sapol-64",
+    "label": "The Grove Way/Atlantis Drive, GOLDEN GROVE",
+    "position": {
+      "latitude": -34.788966,
+      "longitude": 138.6969
     }
   },
   {
-    id: "sapol-76",
-    label: "Main South Road/Bains Road, MORPHETT VALE",
-    position: {
-      latitude: -35.122048,
-      longitude: 138.523185
+    "id": "sapol-65",
+    "label": "West Terrace/Hindley Street, ADELAIDE",
+    "position": {
+      "latitude": -34.92359,
+      "longitude": 138.587465
     }
   },
   {
-    id: "sapol-77",
-    label: "Main South Road/Doctors Road, MORPHETT VALE",
-    position: {
-      latitude: -35.122048,
-      longitude: 138.523185
+    "id": "sapol-66",
+    "label": "Grand Junction Road/Main North Road, ENFIELD",
+    "position": {
+      "latitude": -34.848082,
+      "longitude": 138.600255
     }
   },
   {
-    id: "sapol-78",
-    label: "Adelaide Road/Maurice Road, MURRAY BRIDGE",
-    position: {
-      latitude: -35.125419,
-      longitude: 139.256531
+    "id": "sapol-67",
+    "label": "Henley Beach Road/Holbrooks Road, UNDERDALE",
+    "position": {
+      "latitude": -34.924728,
+      "longitude": 138.549034
     }
   },
   {
-    id: "sapol-79",
-    label: "Adelaide Road/Mannum Road, MURRAY BRIDGE",
-    position: {
-      latitude: -35.120449,
-      longitude: 139.272658
+    "id": "sapol-68",
+    "label": "Grand Junction Road/Hanson Road, OTTOWAY",
+    "position": {
+      "latitude": -34.85059,
+      "longitude": 138.546678
     }
   },
   {
-    id: "sapol-80",
-    label: "Playford Avenue/Elliott Street, WHYALLA",
-    position: {
-      latitude: -33.030255,
-      longitude: 137.569555
+    "id": "sapol-69",
+    "label": "Glover Avenue/West Terrace, ADELAIDE",
+    "position": {
+      "latitude": -34.924895,
+      "longitude": 138.587481
     }
   },
   {
-    id: "sapol-81",
-    label: "Norrie Avenue/Nicolson Avenue, WHYALLA PLAYFORD",
-    position: {
-      latitude: -33.028044,
-      longitude: 137.556023
+    "id": "sapol-70",
+    "label": "Grand Junction Road/Addison Road, PENNINGTON",
+    "position": {
+      "latitude": -34.851498,
+      "longitude": 138.528983
     }
   },
   {
-    id: "sapol-82",
-    label: "Victoria Parade/Flinders Terrace, PORT AUGUSTA",
-    position: {
-      latitude: -32.498817,
-      longitude: 137.776312
+    "id": "sapol-71",
+    "label": "Goodwood Road/Cross Road, CUMBERLAND PARK",
+    "position": {
+      "latitude": -34.966343,
+      "longitude": 138.590786
     }
   },
   {
-    id: "sapol-83",
-    label: "Victoria Parade/Carlton Parade, PORT AUGUSTA",
-    position: {
-      latitude: -32.486634,
-      longitude: 137.7837
+    "id": "sapol-73",
+    "label": "South Rd/Richmond Road, MILE END SOUTH",
+    "position": {
+      "latitude": -34.942085,
+      "longitude": 138.571094
     }
   },
   {
-    id: "sapol-84",
-    label: "Commercial Street West/Wehl Street South, MOUNT GAMBIER",
-    position: {
-      latitude: -37.825632,
-      longitude: 140.771844
+    "id": "sapol-74",
+    "label": "Henley Beach Road/Tapleys Hill Road, FULHAM",
+    "position": {
+      "latitude": -34.926386,
+      "longitude": 138.517661
     }
   },
   {
-    id: "sapol-85",
-    label: "Commercial Street East/Crouch Street North, MOUNT GAMBIER",
-    position: {
-      latitude: -37.833039,
-      longitude: 140.78562
+    "id": "sapol-75",
+    "label": "Panalatinga Road/Pimpala Road, WOODCROFT",
+    "position": {
+      "latitude": -35.10403,
+      "longitude": 138.547499
     }
   },
   {
-    id: "sapol-86",
-    label: "Sturt Street/Bay Road, MOUNT GAMBIER",
-    position: {
-      latitude: -37.846514,
-      longitude: 140.769163
+    "id": "sapol-76",
+    "label": "Main South Road/Bains Road, MORPHETT VALE",
+    "position": {
+      "latitude": -35.115771,
+      "longitude": 138.522832
     }
   },
   {
-    id: "sapol-87",
-    label: "Main North Road/Yorktown Road, ELIZABETH PARK",
-    position: {
-      latitude: -34.707758,
-      longitude: 138.678407
+    "id": "sapol-77",
+    "label": "Main South Road/Doctors Road, MORPHETT VALE",
+    "position": {
+      "latitude": -35.136639,
+      "longitude": 138.524606
     }
   },
   {
-    id: "sapol-91",
-    label: "South Road/Ashwin Parade, TORRENSVILLE",
-    position: {
-      latitude: -34.922695,
-      longitude: 138.569613
+    "id": "sapol-78",
+    "label": "Adelaide Road/Maurice Road, MURRAY BRIDGE",
+    "position": {
+      "latitude": -35.126613,
+      "longitude": 139.257493
     }
   },
   {
-    id: "sapol-92",
-    label: "Payneham Road/Nelson Street, STEPNEY",
-    position: {
-      latitude: -34.912078,
-      longitude: 138.629744
+    "id": "sapol-79",
+    "label": "Adelaide Road/Mannum Road, MURRAY BRIDGE",
+    "position": {
+      "latitude": -35.12004,
+      "longitude": 139.273714
     }
   },
   {
-    id: "sapol-93",
-    label: "Payneham Road/Lower Portrush Road, MARDEN",
-    position: {
-      latitude: -34.893238,
-      longitude: 138.635146
+    "id": "sapol-80",
+    "label": "Playford Avenue/Elliott Street, WHYALLA",
+    "position": {
+      "latitude": -33.029441,
+      "longitude": 137.568241
     }
   },
   {
-    id: "sapol-94",
-    label: "Main South Road/Black Road, O'HALLORAN HILL",
-    position: {
-      latitude: -35.054221,
-      longitude: 138.559673
+    "id": "sapol-81",
+    "label": "Norrie Avenue/Nicolson Avenue, WHYALLA PLAYFORD",
+    "position": {
+      "latitude": -33.028105,
+      "longitude": 137.551243
     }
   },
   {
-    id: "sapol-97",
-    label: "Waterloo Corner Road/Bagster Road, SALISBURY NORTH",
-    position: {
-      latitude: -34.753002,
-      longitude: 138.626384
+    "id": "sapol-82",
+    "label": "Victoria Parade/Flinders Terrace, PORT AUGUSTA",
+    "position": {
+      "latitude": -32.49125,
+      "longitude": 137.768088
     }
   },
   {
-    id: "sapol-98",
-    label: "Bridge Road/Montague Road, INGLE FARM",
-    position: {
-      latitude: -34.827864,
-      longitude: 138.647932
+    "id": "sapol-83",
+    "label": "Victoria Parade/Carlton Parade, PORT AUGUSTA",
+    "position": {
+      "latitude": -32.495349,
+      "longitude": 137.771241
     }
   },
   {
-    id: "sapol-102",
-    label: "Sir Donald Bradman Drive/Brooker Terrace, HILTON",
-    position: {
-      latitude: -34.931956,
-      longitude: 138.567066
+    "id": "sapol-84",
+    "label": "Commercial Street West/Wehl Street South, MOUNT GAMBIER",
+    "position": {
+      "latitude": -37.826442,
+      "longitude": 140.774403
     }
   },
   {
-    id: "sapol-105",
-    label: "Main North Road/Fairfield Road, ELIZABETH GROVE",
-    position: {
-      latitude: -34.731672,
-      longitude: 138.675455
+    "id": "sapol-85",
+    "label": "Commercial Street East/Crouch Street North, MOUNT GAMBIER",
+    "position": {
+      "latitude": -37.830427,
+      "longitude": 140.786936
     }
   },
   {
-    id: "sapol-106",
-    label: "Sturt Road/Marion Road, BEDFORD PARK",
-    position: {
-      latitude: -35.026265,
-      longitude: 138.573085
+    "id": "sapol-86",
+    "label": "Sturt Street/Bay Road, MOUNT GAMBIER",
+    "position": {
+      "latitude": -37.830482,
+      "longitude": 140.779622
     }
   },
   {
-    id: "sapol-107",
-    label: "Commercial Road/Grand Junction Road, PORT ADELAIDE",
-    position: {
-      latitude: -34.852499,
-      longitude: 138.505403
+    "id": "sapol-87",
+    "label": "Main North Road/Yorktown Road, ELIZABETH PARK",
+    "position": {
+      "latitude": -34.71966,
+      "longitude": 138.673288
     }
   },
   {
-    id: "sapol-108",
-    label: "North Terrace/Frome Road, ADELAIDE",
-    position: {
-      latitude: -34.960997,
-      longitude: 138.619346
+    "id": "sapol-88",
+    "label": "Main North Road/Yorketown Road M/S, ELIZABETH PARK",
+    "position": {
+      "latitude": -34.71966,
+      "longitude": 138.673288
     }
   },
   {
-    id: "sapol-109",
-    label: "Bridge Road/McIntyre Road, GULFVIEW HEIGHTS",
-    position: {
-      latitude: -34.805469,
-      longitude: 138.666293
+    "id": "sapol-89",
+    "label": "Diagonal Road/Oaklands Road, GLENGOWRIE",
+    "position": {
+      "latitude": -34.996695,
+      "longitude": 138.530451
     }
   },
   {
-    id: "sapol-112",
-    label: "Regency Road/Main North Road, PROSPECT",
-    position: {
-      latitude: -34.873005,
-      longitude: 138.601849
+    "id": "sapol-90",
+    "label": "Adelaide Road/South Eastern Freeway, LITTLEHAMPTON",
+    "position": {
+      "latitude": -35.058565,
+      "longitude": 138.852281
     }
   },
   {
-    id: "sapol-113",
-    label: "Torrens Road/South Road, RENOWN PARK",
-    position: {
-      latitude: -34.893743,
-      longitude: 138.583985
+    "id": "sapol-91",
+    "label": "South Road/Ashwin Parade, TORRENSVILLE",
+    "position": {
+      "latitude": -34.914708,
+      "longitude": 138.565581
     }
   },
   {
-    id: "sapol-116",
-    label: "Salisbury Highway/Kings Road, PARAFIELD GARDENS",
-    position: {
-      latitude: -34.782721,
-      longitude: 138.623298
+    "id": "sapol-92",
+    "label": "Payneham Road/Nelson Street, STEPNEY",
+    "position": {
+      "latitude": -34.90941,
+      "longitude": 138.62797
     }
   },
   {
-    id: "sapol-117",
-    label: "Anzac Highway/Morphett Road, CAMDEN PARK",
-    position: {
-      latitude: -34.970332,
-      longitude: 138.544873
+    "id": "sapol-93",
+    "label": "Payneham Road/Lower Portrush Road, MARDEN",
+    "position": {
+      "latitude": -34.89646,
+      "longitude": 138.638909
     }
   },
   {
-    id: "sapol-118",
-    label: "Grote Street/West Terrace, ADELAIDE",
-    position: {
-      latitude: -34.947967,
-      longitude: 138.653111
+    "id": "sapol-94",
+    "label": "Main South Road/Black Road, O'HALLORAN HILL",
+    "position": {
+      "latitude": -35.054809,
+      "longitude": 138.560124
     }
   },
   {
-    id: "sapol-119",
-    label: "South Road/Torrens Road, RENOWN PARK",
-    position: {
-      latitude: -34.893743,
-      longitude: 138.583985
+    "id": "sapol-95",
+    "label": "Anzac Highway/Cross Road, PLYMPTON",
+    "position": {
+      "latitude": -34.968313,
+      "longitude": 138.548171
     }
   },
   {
-    id: "sapol-120",
-    label: "Main North Road/Regency Road, ENFIELD",
-    position: {
-      latitude: -34.867549,
-      longitude: 138.601606
+    "id": "sapol-96",
+    "label": "Marion Road/Sturt Road, MITCHELL PARK",
+    "position": {
+      "latitude": -35.017139,
+      "longitude": 138.55887
     }
   },
   {
-    id: "sapol-121",
-    label: "Kings Road/Salisbury Highway, SALISBURY DOWNS",
-    position: {
-      latitude: -34.781227,
-      longitude: 138.629863
+    "id": "sapol-97",
+    "label": "Waterloo Corner Road/Bagster Road, SALISBURY NORTH",
+    "position": {
+      "latitude": -34.755947,
+      "longitude": 138.631194
     }
   },
   {
-    id: "sapol-123",
-    label: "Dequetteville Terrace/Botanic Road, ADELAIDE",
-    position: {
-      latitude: -34.933255,
-      longitude: 138.620775
+    "id": "sapol-98",
+    "label": "Bridge Road/Montague Road, INGLE FARM",
+    "position": {
+      "latitude": -34.824422,
+      "longitude": 138.635608
     }
   },
   {
-    id: "sapol-126",
-    label: "Stephen Terrace/Payneham Road, ST PETERS",
-    position: {
-      latitude: -34.908695,
-      longitude: 138.627269
+    "id": "sapol-99",
+    "label": "Glover Avenue, ADELAIDE",
+    "position": {
+      "latitude": -34.924952,
+      "longitude": 138.587625
     }
   },
   {
-    id: "sapol-127",
-    label: "Main North Road/Frost Road, SALISBURY SOUTH",
-    position: {
-      latitude: -34.787267,
-      longitude: 138.64228
+    "id": "sapol-100",
+    "label": "Churchill Road/Regency Road, PROSPECT",
+    "position": {
+      "latitude": -34.874487,
+      "longitude": 138.584086
     }
   },
   {
-    id: "sapol-128",
-    label: "West Terrace/Hindley Street, ADELAIDE",
-    position: {
-      latitude: -34.947967,
-      longitude: 138.653111
+    "id": "sapol-101",
+    "label": "Glynburn Road/Kensington Road, KENSINGTON GARDENS",
+    "position": {
+      "latitude": -34.926007,
+      "longitude": 138.659223
     }
   },
   {
-    id: "sapol-131",
-    label: "Portrush Road/Magill Road, NORWOOD",
-    position: {
-      latitude: -34.915082,
-      longitude: 138.634659
+    "id": "sapol-102",
+    "label": "Sir Donald Bradman Drive/Brooker Terrace, HILTON",
+    "position": {
+      "latitude": -34.932344,
+      "longitude": 138.561337
     }
   },
   {
-    id: "sapol-132",
-    label: "Fitzroy Terrace/Prospect Road, FITZROY",
-    position: {
-      latitude: -34.898208,
-      longitude: 138.594698
+    "id": "sapol-103",
+    "label": "Montefiore Road/War Memorial Drive, NORTH ADELAIDE",
+    "position": {
+      "latitude": -34.917569,
+      "longitude": 138.593047
     }
   },
   {
-    id: "sapol-134",
-    label: "North East Road/Reservoir Road, MODBURY",
-    position: {
-      latitude: -34.831324,
-      longitude: 138.688392
+    "id": "sapol-105",
+    "label": "Main North Road/Fairfield Road, ELIZABETH GROVE",
+    "position": {
+      "latitude": -34.728931,
+      "longitude": 138.675083
     }
   },
   {
-    id: "sapol-136",
-    label: "Findon Road/Balcombe Avenue, FINDON",
-    position: {
-      latitude: -34.905108,
-      longitude: 138.532572
+    "id": "sapol-106",
+    "label": "Sturt Road/Marion Road, BEDFORD PARK",
+    "position": {
+      "latitude": -35.017139,
+      "longitude": 138.55887
     }
   },
   {
-    id: "sapol-139",
-    label: "North East Road/Sudholz Road, HOLDEN HILL",
-    position: {
-      latitude: -34.852419,
-      longitude: 138.665924
+    "id": "sapol-107",
+    "label": "Commercial Road/Grand Junction Road, PORT ADELAIDE",
+    "position": {
+      "latitude": -34.852252,
+      "longitude": 138.509352
     }
   },
   {
-    id: "sapol-157",
-    label: "Montague Road, INGLE FARM",
-    position: {
-      latitude: -34.827864,
-      longitude: 138.647932
+    "id": "sapol-108",
+    "label": "North Terrace/Frome Road, ADELAIDE",
+    "position": {
+      "latitude": -34.921106,
+      "longitude": 138.607781
     }
   },
   {
-    id: "sapol-158",
-    label: "Frederick Road, ROYAL PARK",
-    position: {
-      latitude: -34.866843,
-      longitude: 138.502903
+    "id": "sapol-109",
+    "label": "Bridge Road/McIntyre Road, GULFVIEW HEIGHTS",
+    "position": {
+      "latitude": -34.797993,
+      "longitude": 138.657109
     }
   },
   {
-    id: "sapol-160",
-    label: "Magill Road/Glynburn Road, ST MORRIS",
-    position: {
-      latitude: -34.910711,
-      longitude: 138.657979
+    "id": "sapol-110",
+    "label": "Grange Road/Findon Road, FINDON",
+    "position": {
+      "latitude": -34.905472,
+      "longitude": 138.532576
     }
   },
   {
-    id: "sapol-161",
-    label: "Lower North East Road/Darley Road, PARADISE",
-    position: {
-      latitude: -34.865938,
-      longitude: 138.674656
+    "id": "sapol-111",
+    "label": "Prospect Road/Fitzroy Terrace, NORTH ADELAIDE",
+    "position": {
+      "latitude": -34.898834,
+      "longitude": 138.594791
     }
   },
   {
-    id: "sapol-163",
-    label: "Tapleys Hill Road/Grange Road, SEATON",
-    position: {
-      latitude: -34.894461,
-      longitude: 138.508154
+    "id": "sapol-112",
+    "label": "Regency Road/Main North Road, PROSPECT",
+    "position": {
+      "latitude": -34.873634,
+      "longitude": 138.60196
     }
   },
   {
-    id: "sapol-165",
-    label: "Chandlers Hill Road, HAPPY VALLEY",
-    position: {
-      latitude: -35.085935,
-      longitude: 138.605509
+    "id": "sapol-113",
+    "label": "Torrens Road/South Road, RENOWN PARK",
+    "position": {
+      "latitude": -34.888318,
+      "longitude": 138.57
     }
   },
   {
-    id: "sapol-169",
-    label: "Grange Road, KIDMAN PARK",
-    position: {
-      latitude: -34.905806,
-      longitude: 138.526861
+    "id": "sapol-114",
+    "label": "Yorktown Road/Main North Road, ELIZABETH EAST",
+    "position": {
+      "latitude": -34.71966,
+      "longitude": 138.673288
     }
   },
   {
-    id: "sapol-173",
-    label: "Port Wakefield Road, PARALOWIE",
-    position: {
-      latitude: -34.769131,
-      longitude: 138.599579
+    "id": "sapol-115",
+    "label": "Grand Junction Road/Main North Road, GEPPS CROSS",
+    "position": {
+      "latitude": -34.848082,
+      "longitude": 138.600255
     }
   },
   {
-    id: "sapol-185",
-    label: "Salisbury Highway/Elder Smith Road, MAWSON LAKES",
-    position: {
-      latitude: -34.80485,
-      longitude: 138.615141
+    "id": "sapol-116",
+    "label": "Salisbury Highway/Kings Road, PARAFIELD GARDENS",
+    "position": {
+      "latitude": -34.779174,
+      "longitude": 138.626373
     }
   },
   {
-    id: "sapol-191",
-    label: "Main North Road/Womma Road, ELIZABETH NORTH",
-    position: {
-      latitude: -34.702539,
-      longitude: 138.681267
+    "id": "sapol-117",
+    "label": "Anzac Highway/Morphett Road, CAMDEN PARK",
+    "position": {
+      "latitude": -34.975066,
+      "longitude": 138.537718
     }
   },
   {
-    id: "sapol-193",
-    label: "Montague Rd/Walkleys Rd, INGLE FARM",
-    position: {
-      latitude: -34.827864,
-      longitude: 138.647932
+    "id": "sapol-118",
+    "label": "Grote Street/West Terrace, ADELAIDE",
+    "position": {
+      "latitude": -34.929234,
+      "longitude": 138.587893
     }
   },
   {
-    id: "sapol-194",
-    label: "Port Wakefield Road/Globe Derby Drive, GLOBE DERBY PARK",
-    position: {
-      latitude: -34.791078,
-      longitude: 138.595776
+    "id": "sapol-119",
+    "label": "South Road/Torrens Road, RENOWN PARK",
+    "position": {
+      "latitude": -34.888318,
+      "longitude": 138.57
     }
   },
   {
-    id: "sapol-600",
-    label: "Port Wakefield Highway, TWO WELLS",
-    position: {
-      latitude: -34.636528,
-      longitude: 138.530007
+    "id": "sapol-120",
+    "label": "Main North Road/Regency Road, ENFIELD",
+    "position": {
+      "latitude": -34.873634,
+      "longitude": 138.60196
     }
   },
   {
-    id: "sapol-601",
-    label: "Port Wakefield Highway, PORT WAKEFIELD",
-    position: {
-      latitude: -34.220461,
-      longitude: 138.196928
+    "id": "sapol-121",
+    "label": "Kings Road/Salisbury Highway, SALISBURY DOWNS",
+    "position": {
+      "latitude": -34.779174,
+      "longitude": 138.626373
     }
   },
   {
-    id: "sapol-602",
-    label: "Port Wakefield Highway, TWO WELLS TO PORT WAKEFIELD",
-    position: {
-      latitude: -34.220461,
-      longitude: 138.196928
+    "id": "sapol-122",
+    "label": "Brighton Road/Sturt Road, BRIGHTON",
+    "position": {
+      "latitude": -35.019188,
+      "longitude": 138.523126
     }
   },
   {
-    id: "sapol-603",
-    label: "Port Wakefield Highway, PORT WAKEFIELD",
-    position: {
-      latitude: -34.220461,
-      longitude: 138.196928
+    "id": "sapol-123",
+    "label": "Dequetteville Terrace/Botanic Road, ADELAIDE",
+    "position": {
+      "latitude": -34.919618,
+      "longitude": 138.614988
     }
   },
   {
-    id: "sapol-604",
-    label: "Port Wakefield Highway, TWO WELLS",
-    position: {
-      latitude: -34.636528,
-      longitude: 138.530007
+    "id": "sapol-124",
+    "label": "Hampstead Road/Grand Junction Road, CLEARVIEW",
+    "position": {
+      "latitude": -34.847345,
+      "longitude": 138.617291
     }
   },
   {
-    id: "sapol-605",
-    label: "Port Wakefield Highway, PORT WAKEFIELD TO TWO WELLS",
-    position: {
-      latitude: -34.679169,
-      longitude: 138.550891
+    "id": "sapol-125",
+    "label": "Port Road/Woodville Road, WOODVILLE SOUTH",
+    "position": {
+      "latitude": -34.880755,
+      "longitude": 138.535156
     }
   },
   {
-    id: "sapol-607",
-    label: "Dukes Highway, COONALPYN",
-    position: {
-      latitude: -35.69661,
-      longitude: 139.857456
+    "id": "sapol-126",
+    "label": "Stephen Terrace/Payneham Road, ST PETERS",
+    "position": {
+      "latitude": -34.909346,
+      "longitude": 138.627915
     }
   },
   {
-    id: "sapol-608",
-    label: "Dukes Highway, KI KI TO COONALPYN",
-    position: {
-      latitude: -36.330814,
-      longitude: 140.942877
+    "id": "sapol-127",
+    "label": "Main North Road/Frost Road, SALISBURY SOUTH",
+    "position": {
+      "latitude": -34.783208,
+      "longitude": 138.654255
     }
   },
   {
-    id: "sapol-609",
-    label: "Dukes Highway COONALPYN",
-    position: {
-      latitude: -35.69661,
-      longitude: 139.857456
+    "id": "sapol-128",
+    "label": "West Terrace/Hindley Street, ADELAIDE",
+    "position": {
+      "latitude": -34.92359,
+      "longitude": 138.587465
     }
   },
   {
-    id: "sapol-611",
-    label: "Dukes Highway COONALPYN TO KI KI",
-    position: {
-      latitude: -36.330814,
-      longitude: 140.942877
+    "id": "sapol-129",
+    "label": "Montacute Road/Glynburn Road, HECTORVILLE",
+    "position": {
+      "latitude": -34.88949,
+      "longitude": 138.656571
     }
   },
   {
-    id: "sapol-612",
-    label: "Victor Harbor Road, MCLAREN VALE",
-    position: {
-      latitude: -35.195792,
-      longitude: 138.508352
+    "id": "sapol-130",
+    "label": "Cross Road/Goodwood Road, WESTBOURNE PARK",
+    "position": {
+      "latitude": -34.966343,
+      "longitude": 138.590786
     }
   },
   {
-    id: "sapol-614",
-    label: "Victor Harbor Road, MCLAREN VALE TO WILLUNGA",
-    position: {
-      latitude: -35.195792,
-      longitude: 138.508352
+    "id": "sapol-131",
+    "label": "Portrush Road/Magill Road, NORWOOD",
+    "position": {
+      "latitude": -34.914758,
+      "longitude": 138.640425
     }
   },
   {
-    id: "sapol-617",
-    label: "Victor Harbor Road, WHITES VALLEY TO TATACHILLA",
-    position: {
-      latitude: -35.296365,
-      longitude: 138.581006
+    "id": "sapol-132",
+    "label": "Fitzroy Terrace/Prospect Road, FITZROY",
+    "position": {
+      "latitude": -34.898834,
+      "longitude": 138.594791
     }
   },
   {
-    id: "sapol-620",
-    label: "South Eastern Freeway, NAIRNE TO CALLINGTON",
-    position: {
-      latitude: -35.059079,
-      longitude: 138.843924
+    "id": "sapol-133",
+    "label": "Marion Road/Cross Road, PLYMPTON PARK",
+    "position": {
+      "latitude": -34.968187,
+      "longitude": 138.555064
     }
   },
   {
-    id: "sapol-623",
-    label: "South Eastern Freeway, CALLINGTON TO MOUNT BARKER SUMMIT",
-    position: {
-      latitude: -35.059079,
-      longitude: 138.843924
+    "id": "sapol-134",
+    "label": "North East Road/Reservoir Road, MODBURY",
+    "position": {
+      "latitude": -34.831461,
+      "longitude": 138.687902
     }
   },
   {
-    id: "sapol-624",
-    label: "Sturt Highway, LOWBANK",
-    position: {
-      latitude: -34.18863,
-      longitude: 140.105562
+    "id": "sapol-135",
+    "label": "Golden Grove Road/Milne Road, MODBURY HEIGHTS",
+    "position": {
+      "latitude": -34.816902,
+      "longitude": 138.694601
     }
   },
   {
-    id: "sapol-625",
-    label: "Sturt Highway, WIGLEY FLAT",
-    position: {
-      latitude: -34.192272,
-      longitude: 140.283553
+    "id": "sapol-136",
+    "label": "Findon Road/Balcombe Avenue, FINDON",
+    "position": {
+      "latitude": -34.8952,
+      "longitude": 138.531832
     }
   },
   {
-    id: "sapol-626",
-    label: "Sturt Highway, LOWBANK TO WIGLEY FLAT",
-    position: {
-      latitude: -34.192272,
-      longitude: 140.283553
+    "id": "sapol-137",
+    "label": "Goodwood Road/Cross Road, KINGS PARK",
+    "position": {
+      "latitude": -34.966343,
+      "longitude": 138.590786
     }
   },
   {
-    id: "sapol-628",
-    label: "Sturt Highway, KANNI",
-    position: {
-      latitude: -34.219522,
-      longitude: 140.041149
+    "id": "sapol-138",
+    "label": "Morphett Road/Sturt Road, DOVER GARDENS",
+    "position": {
+      "latitude": -35.018242,
+      "longitude": 138.540975
     }
   },
   {
-    id: "sapol-629",
-    label: "Sturt Highway, WOOLPUNDA TO KANNI",
-    position: {
-      latitude: -32.479241,
-      longitude: 137.752358
+    "id": "sapol-139",
+    "label": "North East Road/Sudholz Road, HOLDEN HILL",
+    "position": {
+      "latitude": -34.857206,
+      "longitude": 138.655526
     }
   },
   {
-    id: "sapol-632",
-    label: "Northern Expressway, VIRGINIA TO WARD BELT",
-    position: {
-      latitude: -34.659271,
-      longitude: 138.656805
+    "id": "sapol-140",
+    "label": "Magill Road/Portrush Road, BEULAH PARK",
+    "position": {
+      "latitude": -34.914758,
+      "longitude": 138.640425
     }
   },
   {
-    id: "sapol-635",
-    label: "Northern Expressway, BUCHFELDE TO WATERLOO CORNER",
-    position: {
-      latitude: -34.659271,
-      longitude: 138.656805
+    "id": "sapol-155",
+    "label": "South Eastern Freeway, CRAFERS",
+    "position": {
+      "latitude": -34.998875,
+      "longitude": 138.710145
     }
   },
   {
-    id: "sapol-801",
-    label: "South Eastern Freeway, LEAWOOD GARDENS",
-    position: {
-      latitude: -34.974842,
-      longitude: 138.677673
+    "id": "sapol-156",
+    "label": "South Eastern Freeway, LEAWOOD GARDENS",
+    "position": {
+      "latitude": -34.968994,
+      "longitude": 138.673165
     }
   },
   {
-    id: "sapol-802",
-    label: "South Eastern Freeway, LEAWOOD GARDENS",
-    position: {
-      latitude: -34.974842,
-      longitude: 138.677673
+    "id": "sapol-157",
+    "label": "Montague Road, INGLE FARM",
+    "position": {
+      "latitude": -34.826663,
+      "longitude": 138.643983
     }
   },
   {
-    id: "sapol-803",
-    label: "South Eastern Freeway, LEAWOOD GARDENS",
-    position: {
-      latitude: -34.974842,
-      longitude: 138.677673
+    "id": "sapol-158",
+    "label": "Frederick Road, ROYAL PARK",
+    "position": {
+      "latitude": -34.870099,
+      "longitude": 138.503307
     }
   },
   {
-    id: "sapol-88",
-    label: "Main North Road/Yorketown Road M/S, ELIZABETH PARK",
-    position: {
-      latitude: -34.707758,
-      longitude: 138.678407
+    "id": "sapol-159",
+    "label": "Greenhill Road/Anzac Highway, WAYVILLE",
+    "position": {
+      "latitude": -34.942147,
+      "longitude": 138.582997
     }
   },
   {
-    id: "sapol-99",
-    label: "Glover Avenue, ADELAIDE",
-    position: {
-      latitude: -34.828111,
-      longitude: 138.616205
+    "id": "sapol-160",
+    "label": "Magill Road/Glynburn Road, ST MORRIS",
+    "position": {
+      "latitude": -34.913897,
+      "longitude": 138.65827
     }
   },
   {
-    id: "sapol-156",
-    label: "South Eastern Freeway, LEAWOOD GARDENS",
-    position: {
-      latitude: -34.974842,
-      longitude: 138.677673
+    "id": "sapol-161",
+    "label": "Lower North East Road/Darley Road, PARADISE",
+    "position": {
+      "latitude": -34.873607,
+      "longitude": 138.668906
+    }
+  },
+  {
+    "id": "sapol-162",
+    "label": "Regency Road/Prospect Road, PROSPECT",
+    "position": {
+      "latitude": -34.874051,
+      "longitude": 138.593122
+    }
+  },
+  {
+    "id": "sapol-163",
+    "label": "Tapleys Hill Road/Grange Road, SEATON",
+    "position": {
+      "latitude": -34.906366,
+      "longitude": 138.514682
+    }
+  },
+  {
+    "id": "sapol-164",
+    "label": "Tapleys Hill Road, WEST BEACH",
+    "position": {
+      "latitude": -34.946111,
+      "longitude": 138.517736
+    }
+  },
+  {
+    "id": "sapol-165",
+    "label": "Chandlers Hill Road, HAPPY VALLEY",
+    "position": {
+      "latitude": -35.082482,
+      "longitude": 138.573702
+    }
+  },
+  {
+    "id": "sapol-168",
+    "label": "Cross Road, KINGSWOOD",
+    "position": {
+      "latitude": -34.965271,
+      "longitude": 138.612976
+    }
+  },
+  {
+    "id": "sapol-169",
+    "label": "Grange Road, KIDMAN PARK",
+    "position": {
+      "latitude": -34.905834,
+      "longitude": 138.526298
+    }
+  },
+  {
+    "id": "sapol-173",
+    "label": "Port Wakefield Road, PARALOWIE",
+    "position": {
+      "latitude": -34.762174,
+      "longitude": 138.592645
+    }
+  },
+  {
+    "id": "sapol-174",
+    "label": "West Lakes Boulevard, WEST LAKES",
+    "position": {
+      "latitude": -34.875647,
+      "longitude": 138.491601
+    }
+  },
+  {
+    "id": "sapol-185",
+    "label": "Salisbury Highway/Elder Smith Road, MAWSON LAKES",
+    "position": {
+      "latitude": -34.801364,
+      "longitude": 138.606577
+    }
+  },
+  {
+    "id": "sapol-188",
+    "label": "Main North Road / Kings Road, PARAFIELD",
+    "position": {
+      "latitude": -34.791702,
+      "longitude": 138.646964
+    }
+  },
+  {
+    "id": "sapol-189",
+    "label": "Hampstead Road/Folland Avenue, CLEARVIEW",
+    "position": {
+      "latitude": -34.858696,
+      "longitude": 138.618199
+    }
+  },
+  {
+    "id": "sapol-190",
+    "label": "Elder Smith Road/Main North Road, PARAFIELD",
+    "position": {
+      "latitude": -34.809136,
+      "longitude": 138.631384
+    }
+  },
+  {
+    "id": "sapol-191",
+    "label": "Main North Road/Womma Road, ELIZABETH NORTH",
+    "position": {
+      "latitude": -34.7072,
+      "longitude": 138.678563
+    }
+  },
+  {
+    "id": "sapol-192",
+    "label": "Tapleys Hill Road/Old Port Road, QUEENSTOWN",
+    "position": {
+      "latitude": -34.86526,
+      "longitude": 138.51195
+    }
+  },
+  {
+    "id": "sapol-193",
+    "label": "Montague Rd/Walkleys Rd, INGLE FARM",
+    "position": {
+      "latitude": -34.827397,
+      "longitude": 138.6464
+    }
+  },
+  {
+    "id": "sapol-194",
+    "label": "Port Wakefield Road/Globe Derby Drive, GLOBE DERBY PARK",
+    "position": {
+      "latitude": -34.799714,
+      "longitude": 138.596416
+    }
+  },
+  {
+    "id": "sapol-600",
+    "label": "Port Wakefield Highway, TWO WELLS",
+    "position": {
+      "latitude": -34.606195,
+      "longitude": 138.516324
+    }
+  },
+  {
+    "id": "sapol-601",
+    "label": "Port Wakefield Highway, PORT WAKEFIELD",
+    "position": {
+      "latitude": -34.20264,
+      "longitude": 138.171904
+    }
+  },
+  {
+    "id": "sapol-602",
+    "label": "Port Wakefield Highway, TWO WELLS TO PORT WAKEFIELD",
+    "position": {
+      "latitude": -34.340272,
+      "longitude": 138.281893
+    }
+  },
+  {
+    "id": "sapol-603",
+    "label": "Port Wakefield Highway, PORT WAKEFIELD",
+    "position": {
+      "latitude": -34.20264,
+      "longitude": 138.171904
+    }
+  },
+  {
+    "id": "sapol-604",
+    "label": "Port Wakefield Highway, TWO WELLS",
+    "position": {
+      "latitude": -34.606195,
+      "longitude": 138.516324
+    }
+  },
+  {
+    "id": "sapol-605",
+    "label": "Port Wakefield Highway, PORT WAKEFIELD TO TWO WELLS",
+    "position": {
+      "latitude": -34.340272,
+      "longitude": 138.281893
+    }
+  },
+  {
+    "id": "sapol-606",
+    "label": "Dukes Highway, KI KI",
+    "position": {
+      "latitude": -35.581171,
+      "longitude": 139.803605
+    }
+  },
+  {
+    "id": "sapol-607",
+    "label": "Dukes Highway, COONALPYN",
+    "position": {
+      "latitude": -35.677853,
+      "longitude": 139.841762
+    }
+  },
+  {
+    "id": "sapol-608",
+    "label": "Dukes Highway, KI KI TO COONALPYN",
+    "position": {
+      "latitude": -35.626596,
+      "longitude": 139.81862
+    }
+  },
+  {
+    "id": "sapol-609",
+    "label": "Dukes Highway COONALPYN",
+    "position": {
+      "latitude": -35.677853,
+      "longitude": 139.841762
+    }
+  },
+  {
+    "id": "sapol-610",
+    "label": "Dukes Highway, KI KI",
+    "position": {
+      "latitude": -35.581171,
+      "longitude": 139.803605
+    }
+  },
+  {
+    "id": "sapol-611",
+    "label": "Dukes Highway COONALPYN TO KI KI",
+    "position": {
+      "latitude": -35.626596,
+      "longitude": 139.81862
+    }
+  },
+  {
+    "id": "sapol-612",
+    "label": "Victor Harbor Road, MCLAREN VALE",
+    "position": {
+      "latitude": -35.206011,
+      "longitude": 138.523012
+    }
+  },
+  {
+    "id": "sapol-613",
+    "label": "Victor Harbor Road, WILLUNGA",
+    "position": {
+      "latitude": -35.280104,
+      "longitude": 138.559196
+    }
+  },
+  {
+    "id": "sapol-614",
+    "label": "Victor Harbor Road, MCLAREN VALE TO WILLUNGA",
+    "position": {
+      "latitude": -35.238346,
+      "longitude": 138.525682
+    }
+  },
+  {
+    "id": "sapol-615",
+    "label": "Victor Harbor Road, WHITES VALLEY",
+    "position": {
+      "latitude": -35.263588,
+      "longitude": 138.533759
+    }
+  },
+  {
+    "id": "sapol-616",
+    "label": "Victor Harbor Road, TATACHILLA",
+    "position": {
+      "latitude": -35.23634,
+      "longitude": 138.525557
+    }
+  },
+  {
+    "id": "sapol-617",
+    "label": "Victor Harbor Road, WHITES VALLEY TO TATACHILLA",
+    "position": {
+      "latitude": -35.251322,
+      "longitude": 138.526617
+    }
+  },
+  {
+    "id": "sapol-618",
+    "label": "South Eastern Freeway, NAIRNE",
+    "position": {
+      "latitude": -35.05593,
+      "longitude": 138.904198
+    }
+  },
+  {
+    "id": "sapol-619",
+    "label": "South Eastern Freeway, CALLINGTON",
+    "position": {
+      "latitude": -35.123971,
+      "longitude": 139.031153
+    }
+  },
+  {
+    "id": "sapol-620",
+    "label": "South Eastern Freeway, NAIRNE TO CALLINGTON",
+    "position": {
+      "latitude": -35.085282,
+      "longitude": 138.958872
+    }
+  },
+  {
+    "id": "sapol-621",
+    "label": "South Eastern Freeway, CALLINGTON",
+    "position": {
+      "latitude": -35.123971,
+      "longitude": 139.031153
+    }
+  },
+  {
+    "id": "sapol-622",
+    "label": "South Eastern Freeway, MOUNT BARKER SUMMIT",
+    "position": {
+      "latitude": -35.057386,
+      "longitude": 138.918213
+    }
+  },
+  {
+    "id": "sapol-623",
+    "label": "South Eastern Freeway, CALLINGTON TO MOUNT BARKER SUMMIT",
+    "position": {
+      "latitude": -35.10034,
+      "longitude": 138.96998
+    }
+  },
+  {
+    "id": "sapol-624",
+    "label": "Sturt Highway, LOWBANK",
+    "position": {
+      "latitude": -34.190091,
+      "longitude": 140.086715
+    }
+  },
+  {
+    "id": "sapol-625",
+    "label": "Sturt Highway, WIGLEY FLAT",
+    "position": {
+      "latitude": -34.188629,
+      "longitude": 140.239278
+    }
+  },
+  {
+    "id": "sapol-626",
+    "label": "Sturt Highway, LOWBANK TO WIGLEY FLAT",
+    "position": {
+      "latitude": -34.188573,
+      "longitude": 140.161039
+    }
+  },
+  {
+    "id": "sapol-627",
+    "label": "Sturt Highway, WOOLPUNDA",
+    "position": {
+      "latitude": -34.188591,
+      "longitude": 140.207653
+    }
+  },
+  {
+    "id": "sapol-628",
+    "label": "Sturt Highway, KANNI",
+    "position": {
+      "latitude": -34.192227,
+      "longitude": 140.062896
+    }
+  },
+  {
+    "id": "sapol-629",
+    "label": "Sturt Highway, WOOLPUNDA TO KANNI",
+    "position": {
+      "latitude": -34.188582,
+      "longitude": 140.128562
+    }
+  },
+  {
+    "id": "sapol-630",
+    "label": "Northern Expressway, VIRGINIA",
+    "position": {
+      "latitude": -34.692165,
+      "longitude": 138.587141
+    }
+  },
+  {
+    "id": "sapol-631",
+    "label": "Northern Expressway, WARD BELT",
+    "position": {
+      "latitude": -34.606841,
+      "longitude": 138.692983
+    }
+  },
+  {
+    "id": "sapol-632",
+    "label": "Northern Expressway, VIRGINIA TO WARD BELT",
+    "position": {
+      "latitude": -34.63978,
+      "longitude": 138.668958
+    }
+  },
+  {
+    "id": "sapol-633",
+    "label": "Northern Expressway, BUCHFELDE",
+    "position": {
+      "latitude": -34.604085,
+      "longitude": 138.702662
+    }
+  },
+  {
+    "id": "sapol-634",
+    "label": "Northern Expressway, WATERLOO CORNER",
+    "position": {
+      "latitude": -34.709826,
+      "longitude": 138.57498
+    }
+  },
+  {
+    "id": "sapol-635",
+    "label": "Northern Expressway, BUCHFELDE TO WATERLOO CORNER",
+    "position": {
+      "latitude": -34.66753,
+      "longitude": 138.652778
+    }
+  },
+  {
+    "id": "sapol-801",
+    "label": "South Eastern Freeway, LEAWOOD GARDENS",
+    "position": {
+      "latitude": -34.968994,
+      "longitude": 138.673165
+    }
+  },
+  {
+    "id": "sapol-802",
+    "label": "South Eastern Freeway, LEAWOOD GARDENS",
+    "position": {
+      "latitude": -34.968994,
+      "longitude": 138.673165
+    }
+  },
+  {
+    "id": "sapol-803",
+    "label": "South Eastern Freeway, LEAWOOD GARDENS",
+    "position": {
+      "latitude": -34.968994,
+      "longitude": 138.673165
     }
   }
 ];

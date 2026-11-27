@@ -1,0 +1,1582 @@
+{
+  "source": "OpenStreetMap contributors (ODbL), via Overpass",
+  "sites": {
+    "48": {
+      "address": "Kensington Road/Portrush Road, MARRYATVILLE",
+      "latitude": -34.926937,
+      "longitude": 138.641456,
+      "method": "osm-junction"
+    },
+    "49": {
+      "address": "King William Road/Sir Edwin Smith Avenue, NORTH ADELAIDE",
+      "latitude": -34.915471,
+      "longitude": 138.598881,
+      "method": "osm-junction"
+    },
+    "50": {
+      "address": "Tapleys Hill Road/West Lakes Boulevard SEATON",
+      "latitude": -34.879417,
+      "longitude": 138.512786,
+      "method": "osm-junction"
+    },
+    "51": {
+      "address": "Greenhill Road/Hutt Road, ADELAIDE",
+      "latitude": -34.940602,
+      "longitude": 138.612735,
+      "method": "osm-junction"
+    },
+    "56": {
+      "address": "North East Road/Ascot Avenue, VALE PARK",
+      "latitude": -34.882971,
+      "longitude": 138.621744,
+      "method": "osm-junction"
+    },
+    "57": {
+      "address": "Anzac Highway/Marion Road, PLYMPTON",
+      "latitude": -34.96401,
+      "longitude": 138.554771,
+      "method": "osm-junction"
+    },
+    "58": {
+      "address": "North East Road/Sudholz Road, GILLES PLAINS",
+      "latitude": -34.857206,
+      "longitude": 138.655526,
+      "method": "osm-junction"
+    },
+    "59": {
+      "address": "Sudholz Road/North East Road, GILLES PLAINS",
+      "latitude": -34.857206,
+      "longitude": 138.655526,
+      "method": "osm-junction"
+    },
+    "61": {
+      "address": "Lower Nth East Road/Darley Road, PARADISE",
+      "latitude": -34.873607,
+      "longitude": 138.668906,
+      "method": "osm-junction"
+    },
+    "63": {
+      "address": "Grand Junction Road/Walkleys Road, WALKLEY HEIGHTS",
+      "latitude": -34.846064,
+      "longitude": 138.649468,
+      "method": "osm-junction"
+    },
+    "64": {
+      "address": "The Grove Way/Atlantis Drive, GOLDEN GROVE",
+      "latitude": -34.788966,
+      "longitude": 138.6969,
+      "method": "osm-junction"
+    },
+    "65": {
+      "address": "West Terrace/Hindley Street, ADELAIDE",
+      "latitude": -34.92359,
+      "longitude": 138.587465,
+      "method": "osm-junction"
+    },
+    "66": {
+      "address": "Grand Junction Road/Main North Road, ENFIELD",
+      "latitude": -34.848082,
+      "longitude": 138.600255,
+      "method": "osm-junction"
+    },
+    "67": {
+      "address": "Henley Beach Road/Holbrooks Road, UNDERDALE",
+      "latitude": -34.924728,
+      "longitude": 138.549034,
+      "method": "osm-junction"
+    },
+    "68": {
+      "address": "Grand Junction Road/Hanson Road, OTTOWAY",
+      "latitude": -34.85059,
+      "longitude": 138.546678,
+      "method": "osm-junction"
+    },
+    "69": {
+      "address": "Glover Avenue/West Terrace, ADELAIDE",
+      "latitude": -34.924895,
+      "longitude": 138.587481,
+      "method": "osm-junction"
+    },
+    "70": {
+      "address": "Grand Junction Road/Addison Road, PENNINGTON",
+      "latitude": -34.851498,
+      "longitude": 138.528983,
+      "method": "osm-junction"
+    },
+    "71": {
+      "address": "Goodwood Road/Cross Road, CUMBERLAND PARK",
+      "latitude": -34.966343,
+      "longitude": 138.590786,
+      "method": "osm-junction"
+    },
+    "73": {
+      "address": "South Rd/Richmond Road, MILE END SOUTH",
+      "latitude": -34.942085,
+      "longitude": 138.571094,
+      "method": "osm-junction"
+    },
+    "74": {
+      "address": "Henley Beach Road/Tapleys Hill Road, FULHAM",
+      "latitude": -34.926386,
+      "longitude": 138.517661,
+      "method": "osm-junction"
+    },
+    "75": {
+      "address": "Panalatinga Road/Pimpala Road, WOODCROFT",
+      "latitude": -35.10403,
+      "longitude": 138.547499,
+      "method": "osm-junction"
+    },
+    "76": {
+      "address": "Main South Road/Bains Road, MORPHETT VALE",
+      "latitude": -35.115771,
+      "longitude": 138.522832,
+      "method": "osm-junction"
+    },
+    "77": {
+      "address": "Main South Road/Doctors Road, MORPHETT VALE",
+      "latitude": -35.136639,
+      "longitude": 138.524606,
+      "method": "osm-junction"
+    },
+    "78": {
+      "address": "Adelaide Road/Maurice Road, MURRAY BRIDGE",
+      "latitude": -35.126613,
+      "longitude": 139.257493,
+      "method": "osm-junction"
+    },
+    "79": {
+      "address": "Adelaide Road/Mannum Road, MURRAY BRIDGE",
+      "latitude": -35.12004,
+      "longitude": 139.273714,
+      "method": "osm-junction"
+    },
+    "80": {
+      "address": "Playford Avenue/Elliott Street, WHYALLA",
+      "latitude": -33.029441,
+      "longitude": 137.568241,
+      "method": "osm-junction"
+    },
+    "81": {
+      "address": "Norrie Avenue/Nicolson Avenue, WHYALLA PLAYFORD",
+      "latitude": -33.028105,
+      "longitude": 137.551243,
+      "method": "osm-junction"
+    },
+    "82": {
+      "address": "Victoria Parade/Flinders Terrace, PORT AUGUSTA",
+      "latitude": -32.49125,
+      "longitude": 137.768088,
+      "method": "osm-junction"
+    },
+    "83": {
+      "address": "Victoria Parade/Carlton Parade, PORT AUGUSTA",
+      "latitude": -32.495349,
+      "longitude": 137.771241,
+      "method": "osm-junction"
+    },
+    "84": {
+      "address": "Commercial Street West/Wehl Street South, MOUNT GAMBIER",
+      "latitude": -37.826442,
+      "longitude": 140.774403,
+      "method": "osm-junction"
+    },
+    "85": {
+      "address": "Commercial Street East/Crouch Street North, MOUNT GAMBIER",
+      "latitude": -37.830427,
+      "longitude": 140.786936,
+      "method": "osm-junction"
+    },
+    "86": {
+      "address": "Sturt Street/Bay Road, MOUNT GAMBIER",
+      "latitude": -37.830482,
+      "longitude": 140.779622,
+      "method": "osm-junction"
+    },
+    "87": {
+      "address": "Main North Road/Yorktown Road, ELIZABETH PARK",
+      "latitude": -34.71966,
+      "longitude": 138.673288,
+      "method": "osm-junction"
+    },
+    "88": {
+      "address": "Main North Road/Yorketown Road M/S, ELIZABETH PARK",
+      "latitude": -34.71966,
+      "longitude": 138.673288,
+      "method": "osm-junction"
+    },
+    "89": {
+      "address": "Diagonal Road/Oaklands Road, GLENGOWRIE",
+      "latitude": -34.996695,
+      "longitude": 138.530451,
+      "method": "osm-junction"
+    },
+    "90": {
+      "address": "Adelaide Road/South Eastern Freeway, LITTLEHAMPTON",
+      "latitude": -35.058565,
+      "longitude": 138.852281,
+      "method": "osm-closest-approach"
+    },
+    "91": {
+      "address": "South Road/Ashwin Parade, TORRENSVILLE",
+      "latitude": -34.914708,
+      "longitude": 138.565581,
+      "method": "osm-junction"
+    },
+    "92": {
+      "address": "Payneham Road/Nelson Street, STEPNEY",
+      "latitude": -34.90941,
+      "longitude": 138.62797,
+      "method": "osm-junction"
+    },
+    "93": {
+      "address": "Payneham Road/Lower Portrush Road, MARDEN",
+      "latitude": -34.89646,
+      "longitude": 138.638909,
+      "method": "osm-junction"
+    },
+    "94": {
+      "address": "Main South Road/Black Road, O'HALLORAN HILL",
+      "latitude": -35.054809,
+      "longitude": 138.560124,
+      "method": "osm-junction"
+    },
+    "95": {
+      "address": "Anzac Highway/Cross Road, PLYMPTON",
+      "latitude": -34.968313,
+      "longitude": 138.548171,
+      "method": "osm-junction"
+    },
+    "96": {
+      "address": "Marion Road/Sturt Road, MITCHELL PARK",
+      "latitude": -35.017139,
+      "longitude": 138.55887,
+      "method": "osm-junction"
+    },
+    "97": {
+      "address": "Waterloo Corner Road/Bagster Road, SALISBURY NORTH",
+      "latitude": -34.755947,
+      "longitude": 138.631194,
+      "method": "osm-junction"
+    },
+    "98": {
+      "address": "Bridge Road/Montague Road, INGLE FARM",
+      "latitude": -34.824422,
+      "longitude": 138.635608,
+      "method": "osm-junction"
+    },
+    "99": {
+      "address": "Glover Avenue, ADELAIDE",
+      "latitude": -34.924952,
+      "longitude": 138.587625,
+      "method": "osm-road-in-suburb"
+    },
+    "100": {
+      "address": "Churchill Road/Regency Road, PROSPECT",
+      "latitude": -34.874487,
+      "longitude": 138.584086,
+      "method": "osm-junction"
+    },
+    "101": {
+      "address": "Glynburn Road/Kensington Road, KENSINGTON GARDENS",
+      "latitude": -34.926007,
+      "longitude": 138.659223,
+      "method": "osm-junction"
+    },
+    "102": {
+      "address": "Sir Donald Bradman Drive/Brooker Terrace, HILTON",
+      "latitude": -34.932344,
+      "longitude": 138.561337,
+      "method": "osm-junction"
+    },
+    "103": {
+      "address": "Montefiore Road/War Memorial Drive, NORTH ADELAIDE",
+      "latitude": -34.917569,
+      "longitude": 138.593047,
+      "method": "osm-junction"
+    },
+    "105": {
+      "address": "Main North Road/Fairfield Road, ELIZABETH GROVE",
+      "latitude": -34.728931,
+      "longitude": 138.675083,
+      "method": "osm-junction"
+    },
+    "106": {
+      "address": "Sturt Road/Marion Road, BEDFORD PARK",
+      "latitude": -35.017139,
+      "longitude": 138.55887,
+      "method": "osm-junction"
+    },
+    "107": {
+      "address": "Commercial Road/Grand Junction Road, PORT ADELAIDE",
+      "latitude": -34.852252,
+      "longitude": 138.509352,
+      "method": "osm-junction"
+    },
+    "108": {
+      "address": "North Terrace/Frome Road, ADELAIDE",
+      "latitude": -34.921106,
+      "longitude": 138.607781,
+      "method": "osm-junction"
+    },
+    "109": {
+      "address": "Bridge Road/McIntyre Road, GULFVIEW HEIGHTS",
+      "latitude": -34.797993,
+      "longitude": 138.657109,
+      "method": "osm-junction"
+    },
+    "110": {
+      "address": "Grange Road/Findon Road, FINDON",
+      "latitude": -34.905472,
+      "longitude": 138.532576,
+      "method": "osm-junction"
+    },
+    "111": {
+      "address": "Prospect Road/Fitzroy Terrace, NORTH ADELAIDE",
+      "latitude": -34.898834,
+      "longitude": 138.594791,
+      "method": "osm-junction"
+    },
+    "112": {
+      "address": "Regency Road/Main North Road, PROSPECT",
+      "latitude": -34.873634,
+      "longitude": 138.60196,
+      "method": "osm-junction"
+    },
+    "113": {
+      "address": "Torrens Road/South Road, RENOWN PARK",
+      "latitude": -34.888318,
+      "longitude": 138.57,
+      "method": "osm-junction"
+    },
+    "114": {
+      "address": "Yorktown Road/Main North Road, ELIZABETH EAST",
+      "latitude": -34.71966,
+      "longitude": 138.673288,
+      "method": "osm-junction"
+    },
+    "115": {
+      "address": "Grand Junction Road/Main North Road, GEPPS CROSS",
+      "latitude": -34.848082,
+      "longitude": 138.600255,
+      "method": "osm-junction"
+    },
+    "116": {
+      "address": "Salisbury Highway/Kings Road, PARAFIELD GARDENS",
+      "latitude": -34.779174,
+      "longitude": 138.626373,
+      "method": "osm-junction"
+    },
+    "117": {
+      "address": "Anzac Highway/Morphett Road, CAMDEN PARK",
+      "latitude": -34.975066,
+      "longitude": 138.537718,
+      "method": "osm-junction"
+    },
+    "118": {
+      "address": "Grote Street/West Terrace, ADELAIDE",
+      "latitude": -34.929234,
+      "longitude": 138.587893,
+      "method": "osm-junction"
+    },
+    "119": {
+      "address": "South Road/Torrens Road, RENOWN PARK",
+      "latitude": -34.888318,
+      "longitude": 138.57,
+      "method": "osm-junction"
+    },
+    "120": {
+      "address": "Main North Road/Regency Road, ENFIELD",
+      "latitude": -34.873634,
+      "longitude": 138.60196,
+      "method": "osm-junction"
+    },
+    "121": {
+      "address": "Kings Road/Salisbury Highway, SALISBURY DOWNS",
+      "latitude": -34.779174,
+      "longitude": 138.626373,
+      "method": "osm-junction"
+    },
+    "122": {
+      "address": "Brighton Road/Sturt Road, BRIGHTON",
+      "latitude": -35.019188,
+      "longitude": 138.523126,
+      "method": "osm-junction"
+    },
+    "123": {
+      "address": "Dequetteville Terrace/Botanic Road, ADELAIDE",
+      "latitude": -34.919618,
+      "longitude": 138.614988,
+      "method": "osm-junction"
+    },
+    "124": {
+      "address": "Hampstead Road/Grand Junction Road, CLEARVIEW",
+      "latitude": -34.847345,
+      "longitude": 138.617291,
+      "method": "osm-junction"
+    },
+    "125": {
+      "address": "Port Road/Woodville Road, WOODVILLE SOUTH",
+      "latitude": -34.880755,
+      "longitude": 138.535156,
+      "method": "osm-junction"
+    },
+    "126": {
+      "address": "Stephen Terrace/Payneham Road, ST PETERS",
+      "latitude": -34.909346,
+      "longitude": 138.627915,
+      "method": "osm-junction"
+    },
+    "127": {
+      "address": "Main North Road/Frost Road, SALISBURY SOUTH",
+      "latitude": -34.783208,
+      "longitude": 138.654255,
+      "method": "osm-junction"
+    },
+    "128": {
+      "address": "West Terrace/Hindley Street, ADELAIDE",
+      "latitude": -34.92359,
+      "longitude": 138.587465,
+      "method": "osm-junction"
+    },
+    "129": {
+      "address": "Montacute Road/Glynburn Road, HECTORVILLE",
+      "latitude": -34.88949,
+      "longitude": 138.656571,
+      "method": "osm-junction"
+    },
+    "130": {
+      "address": "Cross Road/Goodwood Road, WESTBOURNE PARK",
+      "latitude": -34.966343,
+      "longitude": 138.590786,
+      "method": "osm-junction"
+    },
+    "131": {
+      "address": "Portrush Road/Magill Road, NORWOOD",
+      "latitude": -34.914758,
+      "longitude": 138.640425,
+      "method": "osm-junction"
+    },
+    "132": {
+      "address": "Fitzroy Terrace/Prospect Road, FITZROY",
+      "latitude": -34.898834,
+      "longitude": 138.594791,
+      "method": "osm-junction"
+    },
+    "133": {
+      "address": "Marion Road/Cross Road, PLYMPTON PARK",
+      "latitude": -34.968187,
+      "longitude": 138.555064,
+      "method": "osm-junction"
+    },
+    "134": {
+      "address": "North East Road/Reservoir Road, MODBURY",
+      "latitude": -34.831461,
+      "longitude": 138.687902,
+      "method": "osm-junction"
+    },
+    "135": {
+      "address": "Golden Grove Road/Milne Road, MODBURY HEIGHTS",
+      "latitude": -34.816902,
+      "longitude": 138.694601,
+      "method": "osm-junction"
+    },
+    "136": {
+      "address": "Findon Road/Balcombe Avenue, FINDON",
+      "latitude": -34.8952,
+      "longitude": 138.531832,
+      "method": "osm-junction"
+    },
+    "137": {
+      "address": "Goodwood Road/Cross Road, KINGS PARK",
+      "latitude": -34.966343,
+      "longitude": 138.590786,
+      "method": "osm-junction"
+    },
+    "138": {
+      "address": "Morphett Road/Sturt Road, DOVER GARDENS",
+      "latitude": -35.018242,
+      "longitude": 138.540975,
+      "method": "osm-junction"
+    },
+    "139": {
+      "address": "North East Road/Sudholz Road, HOLDEN HILL",
+      "latitude": -34.857206,
+      "longitude": 138.655526,
+      "method": "osm-junction"
+    },
+    "140": {
+      "address": "Magill Road/Portrush Road, BEULAH PARK",
+      "latitude": -34.914758,
+      "longitude": 138.640425,
+      "method": "osm-junction"
+    },
+    "155": {
+      "address": "South Eastern Freeway, CRAFERS",
+      "latitude": -34.998875,
+      "longitude": 138.710145,
+      "method": "osm-road-in-suburb"
+    },
+    "156": {
+      "address": "South Eastern Freeway, LEAWOOD GARDENS",
+      "latitude": -34.968994,
+      "longitude": 138.673165,
+      "method": "osm-road-in-suburb"
+    },
+    "157": {
+      "address": "Montague Road, INGLE FARM",
+      "latitude": -34.826663,
+      "longitude": 138.643983,
+      "method": "osm-road-in-suburb"
+    },
+    "158": {
+      "address": "Frederick Road, ROYAL PARK",
+      "latitude": -34.870099,
+      "longitude": 138.503307,
+      "method": "osm-road-in-suburb"
+    },
+    "159": {
+      "address": "Greenhill Road/Anzac Highway, WAYVILLE",
+      "latitude": -34.942147,
+      "longitude": 138.582997,
+      "method": "osm-junction"
+    },
+    "160": {
+      "address": "Magill Road/Glynburn Road, ST MORRIS",
+      "latitude": -34.913897,
+      "longitude": 138.65827,
+      "method": "osm-junction"
+    },
+    "161": {
+      "address": "Lower North East Road/Darley Road, PARADISE",
+      "latitude": -34.873607,
+      "longitude": 138.668906,
+      "method": "osm-junction"
+    },
+    "162": {
+      "address": "Regency Road/Prospect Road, PROSPECT",
+      "latitude": -34.874051,
+      "longitude": 138.593122,
+      "method": "osm-junction"
+    },
+    "163": {
+      "address": "Tapleys Hill Road/Grange Road, SEATON",
+      "latitude": -34.906366,
+      "longitude": 138.514682,
+      "method": "osm-junction"
+    },
+    "164": {
+      "address": "Tapleys Hill Road, WEST BEACH",
+      "latitude": -34.946111,
+      "longitude": 138.517736,
+      "method": "osm-road-in-suburb"
+    },
+    "165": {
+      "address": "Chandlers Hill Road, HAPPY VALLEY",
+      "latitude": -35.082482,
+      "longitude": 138.573702,
+      "method": "osm-road-in-suburb"
+    },
+    "168": {
+      "address": "Cross Road, KINGSWOOD",
+      "latitude": -34.965271,
+      "longitude": 138.612976,
+      "method": "osm-road-in-suburb"
+    },
+    "169": {
+      "address": "Grange Road, KIDMAN PARK",
+      "latitude": -34.905834,
+      "longitude": 138.526298,
+      "method": "osm-road-in-suburb"
+    },
+    "173": {
+      "address": "Port Wakefield Road, PARALOWIE",
+      "latitude": -34.762174,
+      "longitude": 138.592645,
+      "method": "osm-road-in-suburb"
+    },
+    "174": {
+      "address": "West Lakes Boulevard, WEST LAKES",
+      "latitude": -34.875647,
+      "longitude": 138.491601,
+      "method": "osm-road-in-suburb"
+    },
+    "185": {
+      "address": "Salisbury Highway/Elder Smith Road, MAWSON LAKES",
+      "latitude": -34.801364,
+      "longitude": 138.606577,
+      "method": "osm-junction"
+    },
+    "188": {
+      "address": "Main North Road / Kings Road, PARAFIELD",
+      "latitude": -34.791702,
+      "longitude": 138.646964,
+      "method": "osm-junction"
+    },
+    "189": {
+      "address": "Hampstead Road/Folland Avenue, CLEARVIEW",
+      "latitude": -34.858696,
+      "longitude": 138.618199,
+      "method": "osm-junction"
+    },
+    "190": {
+      "address": "Elder Smith Road/Main North Road, PARAFIELD",
+      "latitude": -34.809136,
+      "longitude": 138.631384,
+      "method": "osm-junction"
+    },
+    "191": {
+      "address": "Main North Road/Womma Road, ELIZABETH NORTH",
+      "latitude": -34.7072,
+      "longitude": 138.678563,
+      "method": "osm-junction"
+    },
+    "192": {
+      "address": "Tapleys Hill Road/Old Port Road, QUEENSTOWN",
+      "latitude": -34.86526,
+      "longitude": 138.51195,
+      "method": "osm-junction"
+    },
+    "193": {
+      "address": "Montague Rd/Walkleys Rd, INGLE FARM",
+      "latitude": -34.827397,
+      "longitude": 138.6464,
+      "method": "osm-junction"
+    },
+    "194": {
+      "address": "Port Wakefield Road/Globe Derby Drive, GLOBE DERBY PARK",
+      "latitude": -34.799714,
+      "longitude": 138.596416,
+      "method": "osm-junction"
+    },
+    "600": {
+      "address": "Port Wakefield Highway, TWO WELLS",
+      "latitude": -34.606195,
+      "longitude": 138.516324,
+      "method": "osm-road-in-suburb"
+    },
+    "601": {
+      "address": "Port Wakefield Highway, PORT WAKEFIELD",
+      "latitude": -34.20264,
+      "longitude": 138.171904,
+      "method": "osm-road-in-suburb"
+    },
+    "602": {
+      "address": "Port Wakefield Highway, TWO WELLS TO PORT WAKEFIELD",
+      "latitude": -34.340272,
+      "longitude": 138.281893,
+      "method": "osm-road-midsection"
+    },
+    "603": {
+      "address": "Port Wakefield Highway, PORT WAKEFIELD",
+      "latitude": -34.20264,
+      "longitude": 138.171904,
+      "method": "osm-road-in-suburb"
+    },
+    "604": {
+      "address": "Port Wakefield Highway, TWO WELLS",
+      "latitude": -34.606195,
+      "longitude": 138.516324,
+      "method": "osm-road-in-suburb"
+    },
+    "605": {
+      "address": "Port Wakefield Highway, PORT WAKEFIELD TO TWO WELLS",
+      "latitude": -34.340272,
+      "longitude": 138.281893,
+      "method": "osm-road-midsection"
+    },
+    "606": {
+      "address": "Dukes Highway, KI KI",
+      "latitude": -35.581171,
+      "longitude": 139.803605,
+      "method": "osm-road-in-suburb"
+    },
+    "607": {
+      "address": "Dukes Highway, COONALPYN",
+      "latitude": -35.677853,
+      "longitude": 139.841762,
+      "method": "osm-road-in-suburb"
+    },
+    "608": {
+      "address": "Dukes Highway, KI KI TO COONALPYN",
+      "latitude": -35.626596,
+      "longitude": 139.81862,
+      "method": "osm-road-midsection"
+    },
+    "609": {
+      "address": "Dukes Highway COONALPYN",
+      "latitude": -35.677853,
+      "longitude": 139.841762,
+      "method": "osm-road-in-suburb"
+    },
+    "610": {
+      "address": "Dukes Highway, KI KI",
+      "latitude": -35.581171,
+      "longitude": 139.803605,
+      "method": "osm-road-in-suburb"
+    },
+    "611": {
+      "address": "Dukes Highway COONALPYN TO KI KI",
+      "latitude": -35.626596,
+      "longitude": 139.81862,
+      "method": "osm-road-midsection"
+    },
+    "612": {
+      "address": "Victor Harbor Road, MCLAREN VALE",
+      "latitude": -35.206011,
+      "longitude": 138.523012,
+      "method": "osm-road-in-suburb"
+    },
+    "613": {
+      "address": "Victor Harbor Road, WILLUNGA",
+      "latitude": -35.280104,
+      "longitude": 138.559196,
+      "method": "osm-road-in-suburb"
+    },
+    "614": {
+      "address": "Victor Harbor Road, MCLAREN VALE TO WILLUNGA",
+      "latitude": -35.238346,
+      "longitude": 138.525682,
+      "method": "osm-road-midsection"
+    },
+    "615": {
+      "address": "Victor Harbor Road, WHITES VALLEY",
+      "latitude": -35.263588,
+      "longitude": 138.533759,
+      "method": "osm-road-in-suburb"
+    },
+    "616": {
+      "address": "Victor Harbor Road, TATACHILLA",
+      "latitude": -35.23634,
+      "longitude": 138.525557,
+      "method": "osm-road-in-suburb"
+    },
+    "617": {
+      "address": "Victor Harbor Road, WHITES VALLEY TO TATACHILLA",
+      "latitude": -35.251322,
+      "longitude": 138.526617,
+      "method": "osm-road-midsection"
+    },
+    "618": {
+      "address": "South Eastern Freeway, NAIRNE",
+      "latitude": -35.05593,
+      "longitude": 138.904198,
+      "method": "osm-road-in-suburb"
+    },
+    "619": {
+      "address": "South Eastern Freeway, CALLINGTON",
+      "latitude": -35.123971,
+      "longitude": 139.031153,
+      "method": "osm-road-in-suburb"
+    },
+    "620": {
+      "address": "South Eastern Freeway, NAIRNE TO CALLINGTON",
+      "latitude": -35.085282,
+      "longitude": 138.958872,
+      "method": "osm-road-midsection"
+    },
+    "621": {
+      "address": "South Eastern Freeway, CALLINGTON",
+      "latitude": -35.123971,
+      "longitude": 139.031153,
+      "method": "osm-road-in-suburb"
+    },
+    "622": {
+      "address": "South Eastern Freeway, MOUNT BARKER SUMMIT",
+      "latitude": -35.057386,
+      "longitude": 138.918213,
+      "method": "osm-road-in-suburb"
+    },
+    "623": {
+      "address": "South Eastern Freeway, CALLINGTON TO MOUNT BARKER SUMMIT",
+      "latitude": -35.10034,
+      "longitude": 138.96998,
+      "method": "osm-road-midsection"
+    },
+    "624": {
+      "address": "Sturt Highway, LOWBANK",
+      "latitude": -34.190091,
+      "longitude": 140.086715,
+      "method": "osm-road-in-suburb"
+    },
+    "625": {
+      "address": "Sturt Highway, WIGLEY FLAT",
+      "latitude": -34.188629,
+      "longitude": 140.239278,
+      "method": "osm-road-in-suburb"
+    },
+    "626": {
+      "address": "Sturt Highway, LOWBANK TO WIGLEY FLAT",
+      "latitude": -34.188573,
+      "longitude": 140.161039,
+      "method": "osm-road-midsection"
+    },
+    "627": {
+      "address": "Sturt Highway, WOOLPUNDA",
+      "latitude": -34.188591,
+      "longitude": 140.207653,
+      "method": "osm-road-in-suburb"
+    },
+    "628": {
+      "address": "Sturt Highway, KANNI",
+      "latitude": -34.192227,
+      "longitude": 140.062896,
+      "method": "osm-road-in-suburb"
+    },
+    "629": {
+      "address": "Sturt Highway, WOOLPUNDA TO KANNI",
+      "latitude": -34.188582,
+      "longitude": 140.128562,
+      "method": "osm-road-midsection"
+    },
+    "630": {
+      "address": "Northern Expressway, VIRGINIA",
+      "latitude": -34.692165,
+      "longitude": 138.587141,
+      "method": "osm-road-in-suburb"
+    },
+    "631": {
+      "address": "Northern Expressway, WARD BELT",
+      "latitude": -34.606841,
+      "longitude": 138.692983,
+      "method": "osm-road-in-suburb"
+    },
+    "632": {
+      "address": "Northern Expressway, VIRGINIA TO WARD BELT",
+      "latitude": -34.63978,
+      "longitude": 138.668958,
+      "method": "osm-road-midsection"
+    },
+    "633": {
+      "address": "Northern Expressway, BUCHFELDE",
+      "latitude": -34.604085,
+      "longitude": 138.702662,
+      "method": "osm-road-in-suburb"
+    },
+    "634": {
+      "address": "Northern Expressway, WATERLOO CORNER",
+      "latitude": -34.709826,
+      "longitude": 138.57498,
+      "method": "osm-road-in-suburb"
+    },
+    "635": {
+      "address": "Northern Expressway, BUCHFELDE TO WATERLOO CORNER",
+      "latitude": -34.66753,
+      "longitude": 138.652778,
+      "method": "osm-road-midsection"
+    },
+    "801": {
+      "address": "South Eastern Freeway, LEAWOOD GARDENS",
+      "latitude": -34.968994,
+      "longitude": 138.673165,
+      "method": "osm-road-in-suburb"
+    },
+    "802": {
+      "address": "South Eastern Freeway, LEAWOOD GARDENS",
+      "latitude": -34.968994,
+      "longitude": 138.673165,
+      "method": "osm-road-in-suburb"
+    },
+    "803": {
+      "address": "South Eastern Freeway, LEAWOOD GARDENS",
+      "latitude": -34.968994,
+      "longitude": 138.673165,
+      "method": "osm-road-in-suburb"
+    }
+  },
+  "suburbs": {
+    "adelaide": {
+      "name": "Adelaide",
+      "minLat": -34.9421608,
+      "minLng": 138.5770603,
+      "maxLat": -34.9091218,
+      "maxLng": 138.6244769
+    },
+    "bedford park": {
+      "name": "Bedford Park",
+      "minLat": -35.033617,
+      "minLng": 138.5588646,
+      "maxLat": -35.0110353,
+      "maxLng": 138.5777872
+    },
+    "beulah park": {
+      "name": "Beulah Park",
+      "minLat": -34.9210178,
+      "minLng": 138.6405172,
+      "maxLat": -34.9143352,
+      "maxLng": 138.6499056
+    },
+    "brighton": {
+      "name": "Brighton",
+      "minLat": -35.0233481,
+      "minLng": 138.5119978,
+      "maxLat": -35.0125471,
+      "maxLng": 138.5323304
+    },
+    "buchfelde": {
+      "name": "Buchfelde",
+      "minLat": -34.6180799,
+      "minLng": 138.6803207,
+      "maxLat": -34.5975224,
+      "maxLng": 138.7283341
+    },
+    "callington": {
+      "name": "Callington",
+      "minLat": -35.1670654,
+      "minLng": 138.9924765,
+      "maxLat": -35.058363,
+      "maxLng": 139.0782486
+    },
+    "camden park": {
+      "name": "Camden Park",
+      "minLat": -34.9759702,
+      "minLng": 138.5366055,
+      "maxLat": -34.9601541,
+      "maxLng": 138.5465234
+    },
+    "clearview": {
+      "name": "Clearview",
+      "minLat": -34.8674472,
+      "minLng": 138.6087576,
+      "maxLat": -34.8472858,
+      "maxLng": 138.6187784
+    },
+    "coonalpyn": {
+      "name": "Coonalpyn",
+      "minLat": -35.7724602,
+      "minLng": 139.6195707,
+      "maxLat": -35.5530603,
+      "maxLng": 140.1188811
+    },
+    "crafers": {
+      "name": "Crafers",
+      "minLat": -35.0019098,
+      "minLng": 138.6977217,
+      "maxLat": -34.9689754,
+      "maxLng": 138.7356207
+    },
+    "cumberland park": {
+      "name": "Cumberland Park",
+      "minLat": -34.9777048,
+      "minLng": 138.5817674,
+      "maxLat": -34.966361,
+      "maxLng": 138.5916491
+    },
+    "dover gardens": {
+      "name": "Dover Gardens",
+      "minLat": -35.0297685,
+      "minLng": 138.5320359,
+      "maxLat": -35.0182557,
+      "maxLng": 138.5418192
+    },
+    "elizabeth east": {
+      "name": "Elizabeth East",
+      "minLat": -34.7414506,
+      "minLng": 138.6732581,
+      "maxLat": -34.7160417,
+      "maxLng": 138.694362
+    },
+    "elizabeth grove": {
+      "name": "Elizabeth Grove",
+      "minLat": -34.7418146,
+      "minLng": 138.6621417,
+      "maxLat": -34.7289081,
+      "maxLng": 138.6761923
+    },
+    "elizabeth north": {
+      "name": "Elizabeth North",
+      "minLat": -34.710847,
+      "minLng": 138.6694227,
+      "maxLat": -34.6912828,
+      "maxLng": 138.6861957
+    },
+    "elizabeth park": {
+      "name": "Elizabeth Park",
+      "minLat": -34.7197018,
+      "minLng": 138.6729057,
+      "maxLat": -34.7039655,
+      "maxLng": 138.6995815
+    },
+    "enfield": {
+      "name": "Enfield",
+      "minLat": -34.8736568,
+      "minLng": 138.6001653,
+      "maxLat": -34.847664,
+      "maxLng": 138.6105847
+    },
+    "findon": {
+      "name": "Findon",
+      "minLat": -34.9059478,
+      "minLng": 138.5221089,
+      "maxLat": -34.8910058,
+      "maxLng": 138.5477271
+    },
+    "fitzroy": {
+      "name": "Fitzroy",
+      "minLat": -34.8991982,
+      "minLng": 138.5875408,
+      "maxLat": -34.8945273,
+      "maxLng": 138.5947921
+    },
+    "fulham": {
+      "name": "Fulham",
+      "minLat": -34.9334048,
+      "minLng": 138.5052025,
+      "maxLat": -34.9217581,
+      "maxLng": 138.5219683
+    },
+    "gepps cross": {
+      "name": "Gepps Cross",
+      "minLat": -34.8489772,
+      "minLng": 138.5823581,
+      "maxLat": -34.8338464,
+      "maxLng": 138.6237405
+    },
+    "gilles plains": {
+      "name": "Gilles Plains",
+      "minLat": -34.8582279,
+      "minLng": 138.6494651,
+      "maxLat": -34.8449153,
+      "maxLng": 138.671155
+    },
+    "glengowrie": {
+      "name": "Glengowrie",
+      "minLat": -34.9966989,
+      "minLng": 138.523712,
+      "maxLat": -34.9759702,
+      "maxLng": 138.5393398
+    },
+    "globe derby park": {
+      "name": "Globe Derby Park",
+      "minLat": -34.8005358,
+      "minLng": 138.5753074,
+      "maxLat": -34.7707733,
+      "maxLng": 138.5967754
+    },
+    "golden grove": {
+      "name": "Golden Grove",
+      "minLat": -34.7965667,
+      "minLng": 138.684369,
+      "maxLat": -34.7436977,
+      "maxLng": 138.7634736
+    },
+    "gulfview heights": {
+      "name": "Gulfview Heights",
+      "minLat": -34.8097103,
+      "minLng": 138.6571411,
+      "maxLat": -34.7810599,
+      "maxLng": 138.6847882
+    },
+    "happy valley": {
+      "name": "Happy Valley",
+      "minLat": -35.0968588,
+      "minLng": 138.5457617,
+      "maxLat": -35.0502341,
+      "maxLng": 138.6097799
+    },
+    "hectorville": {
+      "name": "Hectorville",
+      "minLat": -34.8974981,
+      "minLng": 138.6565352,
+      "maxLat": -34.8886046,
+      "maxLng": 138.6748343
+    },
+    "hilton": {
+      "name": "Hilton",
+      "minLat": -34.9344079,
+      "minLng": 138.5611652,
+      "maxLat": -34.929895,
+      "maxLng": 138.570489
+    },
+    "holden hill": {
+      "name": "Holden Hill",
+      "minLat": -34.8584651,
+      "minLng": 138.6554831,
+      "maxLat": -34.8441724,
+      "maxLng": 138.6852922
+    },
+    "ingle farm": {
+      "name": "Ingle Farm",
+      "minLat": -34.8370729,
+      "minLng": 138.626548,
+      "maxLat": -34.8151981,
+      "maxLng": 138.6618327
+    },
+    "kanni": {
+      "name": "Kanni",
+      "minLat": -34.3020581,
+      "minLng": 139.9586843,
+      "maxLat": -34.1884992,
+      "maxLng": 140.1405681
+    },
+    "kensington gardens": {
+      "name": "Kensington Gardens",
+      "minLat": -34.9260089,
+      "minLng": 138.6582896,
+      "maxLat": -34.913471,
+      "maxLng": 138.668048
+    },
+    "ki ki": {
+      "name": "Ki Ki",
+      "minLat": -35.6495198,
+      "minLng": 139.6695876,
+      "maxLat": -35.5048058,
+      "maxLng": 139.9512187
+    },
+    "kidman park": {
+      "name": "Kidman Park",
+      "minLat": -34.9205117,
+      "minLng": 138.5184908,
+      "maxLat": -34.9054879,
+      "maxLng": 138.5351868
+    },
+    "kings park": {
+      "name": "Kings Park",
+      "minLat": -34.966361,
+      "minLng": 138.5899565,
+      "maxLat": -34.9582404,
+      "maxLng": 138.5972986
+    },
+    "kingswood": {
+      "name": "Kingswood",
+      "minLat": -34.9773495,
+      "minLng": 138.6086102,
+      "maxLat": -34.9650016,
+      "maxLng": 138.6184511
+    },
+    "leawood gardens": {
+      "name": "Leawood Gardens",
+      "minLat": -34.981269,
+      "minLng": 138.658971,
+      "maxLat": -34.962362,
+      "maxLng": 138.6818327
+    },
+    "littlehampton": {
+      "name": "Littlehampton",
+      "minLat": -35.059233,
+      "minLng": 138.8469627,
+      "maxLat": -35.0151251,
+      "maxLng": 138.8838894
+    },
+    "lowbank": {
+      "name": "Lowbank",
+      "minLat": -34.1925736,
+      "minLng": 140.0398538,
+      "maxLat": -34.1723689,
+      "maxLng": 140.1257159
+    },
+    "marden": {
+      "name": "Marden",
+      "minLat": -34.8979552,
+      "minLng": 138.6249011,
+      "maxLat": -34.8870336,
+      "maxLng": 138.642599
+    },
+    "marryatville": {
+      "name": "Marryatville",
+      "minLat": -34.9307102,
+      "minLng": 138.6414731,
+      "maxLat": -34.92647,
+      "maxLng": 138.6505277
+    },
+    "mawson lakes": {
+      "name": "Mawson Lakes",
+      "minLat": -34.8258891,
+      "minLng": 138.5964385,
+      "maxLat": -34.7944228,
+      "maxLng": 138.6314505
+    },
+    "mclaren vale": {
+      "name": "McLaren Vale",
+      "minLat": -35.2518908,
+      "minLng": 138.4907792,
+      "maxLat": -35.1587341,
+      "maxLng": 138.6143408
+    },
+    "mile end south": {
+      "name": "Mile End South",
+      "minLat": -34.942113,
+      "minLng": 138.570321,
+      "maxLat": -34.9315801,
+      "maxLng": 138.5779994
+    },
+    "mitchell park": {
+      "name": "Mitchell Park",
+      "minLat": -35.0171633,
+      "minLng": 138.55712,
+      "maxLat": -34.9932722,
+      "maxLng": 138.5674547
+    },
+    "modbury": {
+      "name": "Modbury",
+      "minLat": -34.8449153,
+      "minLng": 138.668138,
+      "maxLat": -34.8274272,
+      "maxLng": 138.7006568
+    },
+    "modbury heights": {
+      "name": "Modbury Heights",
+      "minLat": -34.8187333,
+      "minLng": 138.6663176,
+      "maxLat": -34.8038227,
+      "maxLng": 138.7002049
+    },
+    "morphett vale": {
+      "name": "Morphett Vale",
+      "minLat": -35.1376282,
+      "minLng": 138.5049051,
+      "maxLat": -35.104071,
+      "maxLng": 138.5493457
+    },
+    "mount barker summit": {
+      "name": "Mount Barker Summit",
+      "minLat": -35.083983,
+      "minLng": 138.89437,
+      "maxLat": -35.0568376,
+      "maxLng": 138.9488455
+    },
+    "mount gambier": {
+      "name": "Mount Gambier",
+      "minLat": -37.8526165,
+      "minLng": 140.7376121,
+      "maxLat": -37.800028,
+      "maxLng": 140.8236766
+    },
+    "murray bridge": {
+      "name": "Murray Bridge",
+      "minLat": -35.1514264,
+      "minLng": 139.225016,
+      "maxLat": -35.1073914,
+      "maxLng": 139.3097328
+    },
+    "nairne": {
+      "name": "Nairne",
+      "minLat": -35.0621835,
+      "minLng": 138.8789983,
+      "maxLat": -35.0101406,
+      "maxLng": 138.9457418
+    },
+    "north adelaide": {
+      "name": "North Adelaide",
+      "minLat": -34.9192273,
+      "minLng": 138.5770169,
+      "maxLat": -34.8986125,
+      "maxLng": 138.6129047
+    },
+    "norwood": {
+      "name": "Norwood",
+      "minLat": -34.9279034,
+      "minLng": 138.6224541,
+      "maxLat": -34.9148012,
+      "maxLng": 138.6414731
+    },
+    "ohalloran hill": {
+      "name": "O'Halloran Hill",
+      "minLat": -35.0807609,
+      "minLng": 138.5426328,
+      "maxLat": -35.0366736,
+      "maxLng": 138.5674854
+    },
+    "ottoway": {
+      "name": "Ottoway",
+      "minLat": -34.8515044,
+      "minLng": 138.525542,
+      "maxLat": -34.841262,
+      "maxLng": 138.5467174
+    },
+    "paradise": {
+      "name": "Paradise",
+      "minLat": -34.8769488,
+      "minLng": 138.6551819,
+      "maxLat": -34.8625974,
+      "maxLng": 138.695621
+    },
+    "parafield": {
+      "name": "Parafield",
+      "minLat": -34.8091459,
+      "minLng": 138.6158749,
+      "maxLat": -34.7822772,
+      "maxLng": 138.646993
+    },
+    "parafield gardens": {
+      "name": "Parafield Gardens",
+      "minLat": -34.799631,
+      "minLng": 138.5945046,
+      "maxLat": -34.76774,
+      "maxLng": 138.6314071
+    },
+    "paralowie": {
+      "name": "Paralowie",
+      "minLat": -34.772676,
+      "minLng": 138.5852018,
+      "maxLat": -34.7434978,
+      "maxLng": 138.6351149
+    },
+    "pennington": {
+      "name": "Pennington",
+      "minLat": -34.8661351,
+      "minLng": 138.5235167,
+      "maxLat": -34.8510149,
+      "maxLng": 138.5385001
+    },
+    "plympton": {
+      "name": "Plympton",
+      "minLat": -34.9715621,
+      "minLng": 138.5456297,
+      "maxLat": -34.9500988,
+      "maxLng": 138.563569
+    },
+    "plympton park": {
+      "name": "Plympton Park",
+      "minLat": -34.982811,
+      "minLng": 138.5465131,
+      "maxLat": -34.967254,
+      "maxLng": 138.5562015
+    },
+    "port adelaide": {
+      "name": "Port Adelaide",
+      "minLat": -34.859209,
+      "minLng": 138.4969697,
+      "maxLat": -34.8079384,
+      "maxLng": 138.5252573
+    },
+    "port augusta": {
+      "name": "Port Augusta",
+      "minLat": -32.5212575,
+      "minLng": 137.75787,
+      "maxLat": -32.4692809,
+      "maxLng": 137.8192856
+    },
+    "port wakefield": {
+      "name": "Port Wakefield",
+      "minLat": -34.290326,
+      "minLng": 138.07966,
+      "maxLat": -34.1163944,
+      "maxLng": 138.2619765
+    },
+    "prospect": {
+      "name": "Prospect",
+      "minLat": -34.8964579,
+      "minLng": 138.5807586,
+      "maxLat": -34.8699489,
+      "maxLng": 138.603381
+    },
+    "queenstown": {
+      "name": "Queenstown",
+      "minLat": -34.8700243,
+      "minLng": 138.5028631,
+      "maxLat": -34.8535866,
+      "maxLng": 138.5190552
+    },
+    "renown park": {
+      "name": "Renown Park",
+      "minLat": -34.8969791,
+      "minLng": 138.5669374,
+      "maxLat": -34.8859723,
+      "maxLng": 138.5842682
+    },
+    "royal park": {
+      "name": "Royal Park",
+      "minLat": -34.8800831,
+      "minLng": 138.5021719,
+      "maxLat": -34.8594123,
+      "maxLng": 138.5128097
+    },
+    "salisbury downs": {
+      "name": "Salisbury Downs",
+      "minLat": -34.7822772,
+      "minLng": 138.6074118,
+      "maxLat": -34.7623004,
+      "maxLng": 138.6389085
+    },
+    "salisbury north": {
+      "name": "Salisbury North",
+      "minLat": -34.7591026,
+      "minLng": 138.6107411,
+      "maxLat": -34.72945,
+      "maxLng": 138.6441401
+    },
+    "salisbury south": {
+      "name": "Salisbury South",
+      "minLat": -34.7917684,
+      "minLng": 138.6314071,
+      "maxLat": -34.7738282,
+      "maxLng": 138.6543413
+    },
+    "seaton": {
+      "name": "Seaton",
+      "minLat": -34.9067945,
+      "minLng": 138.5037354,
+      "maxLat": -34.8785735,
+      "maxLng": 138.5235919
+    },
+    "st morris": {
+      "name": "St Morris",
+      "minLat": -34.9143373,
+      "minLng": 138.6489551,
+      "maxLat": -34.907742,
+      "maxLng": 138.6582896
+    },
+    "st peters": {
+      "name": "St Peters",
+      "minLat": -34.9132154,
+      "minLng": 138.613877,
+      "maxLat": -34.8965132,
+      "maxLng": 138.6319769
+    },
+    "stepney": {
+      "name": "Stepney",
+      "minLat": -34.9157236,
+      "minLng": 138.6224541,
+      "maxLat": -34.907225,
+      "maxLng": 138.6333947
+    },
+    "tatachilla": {
+      "name": "Tatachilla",
+      "minLat": -35.25353,
+      "minLng": 138.4926399,
+      "maxLat": -35.220477,
+      "maxLng": 138.5266712
+    },
+    "torrensville": {
+      "name": "Torrensville",
+      "minLat": -34.9298429,
+      "minLng": 138.5519141,
+      "maxLat": -34.9109446,
+      "maxLng": 138.5697602
+    },
+    "two wells": {
+      "name": "Two Wells",
+      "minLat": -34.641426,
+      "minLng": 138.4846256,
+      "maxLat": -34.5698817,
+      "maxLng": 138.5673879
+    },
+    "underdale": {
+      "name": "Underdale",
+      "minLat": -34.9249779,
+      "minLng": 138.5438417,
+      "maxLat": -34.9134592,
+      "maxLng": 138.5542411
+    },
+    "vale park": {
+      "name": "Vale Park",
+      "minLat": -34.8938121,
+      "minLng": 138.620533,
+      "maxLat": -34.8793528,
+      "maxLng": 138.635189
+    },
+    "virginia": {
+      "name": "Virginia",
+      "minLat": -34.7055152,
+      "minLng": 138.5313951,
+      "maxLat": -34.6344674,
+      "maxLng": 138.6054809
+    },
+    "walkley heights": {
+      "name": "Walkley Heights",
+      "minLat": -34.846318,
+      "minLng": 138.623672,
+      "maxLat": -34.8346291,
+      "maxLng": 138.6496302
+    },
+    "ward belt": {
+      "name": "Ward Belt",
+      "minLat": -34.6094369,
+      "minLng": 138.6298796,
+      "maxLat": -34.5521446,
+      "maxLng": 138.7307781
+    },
+    "waterloo corner": {
+      "name": "Waterloo Corner",
+      "minLat": -34.7466623,
+      "minLng": 138.5286481,
+      "maxLat": -34.6838246,
+      "maxLng": 138.604325
+    },
+    "wayville": {
+      "name": "Wayville",
+      "minLat": -34.9488639,
+      "minLng": 138.5826063,
+      "maxLat": -34.9412517,
+      "maxLng": 138.6003365
+    },
+    "west beach": {
+      "name": "West Beach",
+      "minLat": -34.9617436,
+      "minLng": 138.4947293,
+      "maxLat": -34.9316432,
+      "maxLng": 138.5182502
+    },
+    "west lakes": {
+      "name": "West Lakes",
+      "minLat": -34.8944675,
+      "minLng": 138.4854361,
+      "maxLat": -34.8522685,
+      "maxLng": 138.5038408
+    },
+    "westbourne park": {
+      "name": "Westbourne Park",
+      "minLat": -34.9771992,
+      "minLng": 138.5907872,
+      "maxLat": -34.9660234,
+      "maxLng": 138.5998215
+    },
+    "whites valley": {
+      "name": "Whites Valley",
+      "minLat": -35.2851899,
+      "minLng": 138.4950684,
+      "maxLat": -35.2518908,
+      "maxLng": 138.5485327
+    },
+    "whyalla": {
+      "name": "Whyalla",
+      "minLat": -33.0762798,
+      "minLng": 137.5629333,
+      "maxLat": -33.0245128,
+      "maxLng": 137.594691
+    },
+    "whyalla playford": {
+      "name": "Whyalla Playford",
+      "minLat": -33.0406317,
+      "minLng": 137.5511171,
+      "maxLat": -33.0173874,
+      "maxLng": 137.5722479
+    },
+    "wigley flat": {
+      "name": "Wigley Flat",
+      "minLat": -34.1954891,
+      "minLng": 140.1863169,
+      "maxLat": -34.1579677,
+      "maxLng": 140.292329
+    },
+    "willunga": {
+      "name": "Willunga",
+      "minLat": -35.2923023,
+      "minLng": 138.5266712,
+      "maxLat": -35.2448581,
+      "maxLng": 138.6050913
+    },
+    "woodcroft": {
+      "name": "Woodcroft",
+      "minLat": -35.1252973,
+      "minLng": 138.5467057,
+      "maxLat": -35.0915311,
+      "maxLng": 138.5857603
+    },
+    "woodville south": {
+      "name": "Woodville South",
+      "minLat": -34.8991987,
+      "minLng": 138.5306386,
+      "maxLat": -34.877756,
+      "maxLng": 138.5415994
+    },
+    "woolpunda": {
+      "name": "Woolpunda",
+      "minLat": -34.3149102,
+      "minLng": 140.1394863,
+      "maxLat": -34.1887093,
+      "maxLng": 140.2761477
+    }
+  }
+}
