@@ -7,17 +7,18 @@ import { ScreenContainer } from '../components/base/ScreenContainer';
 import { RangeSlider } from '../components/RangeSlider';
 import {
   ALERT_CATEGORIES,
-  MAX_ANNOUNCE_DISTANCE_METERS,
-  MAX_BRIEFING_RADIUS_METERS,
   MAX_VOICE_RATE,
-  MIN_ANNOUNCE_DISTANCE_METERS,
-  MIN_BRIEFING_RADIUS_METERS,
   MIN_VOICE_RATE,
   ROUTE_TYPES,
   type AlertCategory,
   type RouteType,
 } from '../store/settingsDefaults';
 import { useSettingsStore } from '../store/useSettingsStore';
+import {
+  ALERT_DISTANCE_SETTINGS,
+  alertDistanceMeters,
+  type AlertDistanceSetting,
+} from '../engine/alertDistance';
 import { alpha, colors, radii, spacing, typography } from '../theme/tokens';
 import { BuildInfoCard } from './BuildInfoCard';
 import type { FacebookNotificationSourceControls } from '../notifications/useFacebookNotificationSource';
@@ -60,16 +61,13 @@ const ROUTE_TYPE_LABELS: Record<RouteType, string> = {
   sidestreets: 'Sidestreets',
 };
 
-/** The big numeral always keeps one decimal ("5.0") - distinct from
- * formatKmTrimmed's slider-end-label style ("5"), matching the two
- * different formats measured in the design artboard. */
-function formatKmFixed1(meters: number): string {
-  return (meters / 1000).toFixed(1);
-}
+const ALERT_DISTANCE_LABELS: Record<AlertDistanceSetting, string> = {
+  close: 'Close',
+  normal: 'Normal',
+  far: 'Far',
+};
 
-/** Slider end labels drop a redundant ".0" ("1", "20") but keep a real
- * decimal ("0.5") - matches the artboard's WARN ME FROM / BRIEF ME WITHIN
- * end labels exactly. */
+/** Drops a redundant ".0" ("1", "5") but keeps a real decimal ("2.5"). */
 function formatKmTrimmed(meters: number): string {
   const km = meters / 1000;
   return Number.isInteger(km) ? String(km) : km.toFixed(1);
@@ -88,8 +86,7 @@ function SectionLabel({ children }: { children: string }) {
 
 export function SettingsScreen({ onClose, notificationSource }: SettingsScreenProps) {
   const categoriesEnabled = useSettingsStore((state) => state.categoriesEnabled);
-  const announceDistanceMeters = useSettingsStore((state) => state.announceDistanceMeters);
-  const briefingRadiusMeters = useSettingsStore((state) => state.briefingRadiusMeters);
+  const alertDistance = useSettingsStore((state) => state.alertDistance);
   const voiceVolume = useSettingsStore((state) => state.voiceVolume);
   const voiceRate = useSettingsStore((state) => state.voiceRate);
   const masterMute = useSettingsStore((state) => state.masterMute);
@@ -97,8 +94,7 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
   const defaultRouteType = useSettingsStore((state) => state.defaultRouteType);
   const setDefaultRouteType = useSettingsStore((state) => state.setDefaultRouteType);
   const toggleCategory = useSettingsStore((state) => state.toggleCategory);
-  const setAnnounceDistanceMeters = useSettingsStore((state) => state.setAnnounceDistanceMeters);
-  const setBriefingRadiusMeters = useSettingsStore((state) => state.setBriefingRadiusMeters);
+  const setAlertDistance = useSettingsStore((state) => state.setAlertDistance);
   const setVoiceVolume = useSettingsStore((state) => state.setVoiceVolume);
   const setVoiceRate = useSettingsStore((state) => state.setVoiceRate);
   const toggleMasterMute = useSettingsStore((state) => state.toggleMasterMute);
@@ -179,38 +175,33 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
             <Card variant="outlined" padding="md">
               <Stack gap="md">
                 <Column gap="sm">
-                  <Row align="baseline" gap="xs">
-                    <Text style={styles.rowTitle}>WARN ME FROM</Text>
-                    <View style={styles.headerSpacer} />
-                    <Text style={styles.statValue}>{formatKmFixed1(announceDistanceMeters)}</Text>
-                    <Text style={styles.statUnit}>KM</Text>
+                  <Text style={styles.rowTitle}>ALERT DISTANCE</Text>
+                  <Text style={styles.note}>
+                    {`Cameras, hazards and roadkill from ${formatKmTrimmed(
+                      alertDistanceMeters('FIXED_CAMERA', alertDistance)
+                    )} km. Police, crashes, closures and traffic from ${formatKmTrimmed(
+                      alertDistanceMeters('POLICE', alertDistance)
+                    )} km. Also sets how far the start-of-trip briefing looks.`}
+                  </Text>
+                  <Row gap="xs">
+                    {ALERT_DISTANCE_SETTINGS.map((setting) => {
+                      const isSelected = setting === alertDistance;
+                      return (
+                        <Pressable
+                          key={setting}
+                          onPress={() => setAlertDistance(setting)}
+                          style={[styles.routeButton, isSelected && styles.routeButtonSelected]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isSelected }}
+                          accessibilityLabel={`${ALERT_DISTANCE_LABELS[setting]} alert distance`}
+                        >
+                          <Text style={[styles.routeButtonText, isSelected && styles.routeButtonTextSelected]}>
+                            {ALERT_DISTANCE_LABELS[setting].toUpperCase()}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </Row>
-                  <RangeSlider
-                    value={announceDistanceMeters}
-                    min={MIN_ANNOUNCE_DISTANCE_METERS}
-                    max={MAX_ANNOUNCE_DISTANCE_METERS}
-                    step={100}
-                    onChange={setAnnounceDistanceMeters}
-                    minLabel={formatKmTrimmed(MIN_ANNOUNCE_DISTANCE_METERS)}
-                    maxLabel={`${formatKmTrimmed(MAX_ANNOUNCE_DISTANCE_METERS)} KM`}
-                  />
-                </Column>
-                <Column gap="sm">
-                  <Row align="baseline" gap="xs">
-                    <Text style={styles.rowTitle}>BRIEF ME WITHIN</Text>
-                    <View style={styles.headerSpacer} />
-                    <Text style={styles.statValue}>{formatKmFixed1(briefingRadiusMeters)}</Text>
-                    <Text style={styles.statUnit}>KM</Text>
-                  </Row>
-                  <RangeSlider
-                    value={briefingRadiusMeters}
-                    min={MIN_BRIEFING_RADIUS_METERS}
-                    max={MAX_BRIEFING_RADIUS_METERS}
-                    step={500}
-                    onChange={setBriefingRadiusMeters}
-                    minLabel={formatKmTrimmed(MIN_BRIEFING_RADIUS_METERS)}
-                    maxLabel={`${formatKmTrimmed(MAX_BRIEFING_RADIUS_METERS)} KM`}
-                  />
                 </Column>
                 <Pressable
                   onPress={toggleRangeOnMap}
@@ -222,7 +213,7 @@ export function SettingsScreen({ onClose, notificationSource }: SettingsScreenPr
                 >
                   <Column gap="xxs" flex={1}>
                     <Text style={styles.rowTitle}>SHOW RANGE ON MAP</Text>
-                    <Text style={styles.note}>Draws your warn-me distance as a ring on the map.</Text>
+                    <Text style={styles.note}>Draws your longest alert distance as a ring on the map.</Text>
                   </Column>
                   <Text
                     style={[styles.stateText, showRangeOnMap ? styles.stateTextOn : styles.stateTextOff]}

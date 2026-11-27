@@ -385,13 +385,14 @@ describe('speakWithGoogleTtsAsync', () => {
     });
 
     it('uses a prefetch already in flight if it lands first, and cancels its own request', async () => {
-      let resolveFetch: (r: Response) => void = () => {};
-      (globalThis.fetch as jest.Mock).mockReturnValue(new Promise<Response>((r) => (resolveFetch = r)));
+      // Prefetches go through the native-timeout XHR too: two requests.
       prefetchTtsAudio('racing');
+      const prefetch = FakeXhr.last;
 
       const promise = speakWithGoogleTtsAsync('racing', { readyDeadlineMs: 600 });
       const own = FakeXhr.last;
-      resolveFetch(makeFetchResponse(true));
+      expect(own).not.toBe(prefetch);
+      prefetch?.respond();
       await flushMicrotasks();
       mockPlayer.emitStatus({ didJustFinish: true });
 
@@ -400,8 +401,7 @@ describe('speakWithGoogleTtsAsync', () => {
     });
 
     it('still gives up at the deadline while a slower prefetch is in flight', async () => {
-      (globalThis.fetch as jest.Mock).mockReturnValue(new Promise<Response>(() => {}));
-      prefetchTtsAudio('racing');
+      prefetchTtsAudio('racing'); // its XHR never answers
 
       const promise = speakWithGoogleTtsAsync('racing', { readyDeadlineMs: 600 });
       FakeXhr.last?.ontimeout?.();

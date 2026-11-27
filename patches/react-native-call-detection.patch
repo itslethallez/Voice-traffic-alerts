@@ -4809,3 +4809,39 @@ index 000a81d067cb90ab99aa9b528055c67c1a971983..00000000000000000000000000000000
 diff --git a/yarn.lock b/yarn.lock
 deleted file mode 100644
 index fb57ccd13afbd082ad82051c2ffebef4840661ec..0000000000000000000000000000000000000000
+diff --git a/android/src/main/java/com/pritesh/calldetection/CallDetectionManagerModule.java b/android/src/main/java/com/pritesh/calldetection/CallDetectionManagerModule.java
+index d480f0f..4fd01a0 100644
+--- a/android/src/main/java/com/pritesh/calldetection/CallDetectionManagerModule.java
++++ b/android/src/main/java/com/pritesh/calldetection/CallDetectionManagerModule.java
+@@ -27,6 +27,7 @@ public class CallDetectionManagerModule
+     private CallStateUpdateActionModule jsModule = null;
+     private CallDetectionPhoneStateListener callDetectionPhoneStateListener;
+     private Activity activity = null;
++    private boolean lifecycleCallbacksRegistered = false;
+ 
+     public CallDetectionManagerModule(ReactApplicationContext reactContext) {
+         super(reactContext);
+@@ -40,9 +41,21 @@ public class CallDetectionManagerModule
+ 
+     @ReactMethod
+     public void startListener() {
+-        if (activity == null) {
++        // Shotgun patch: there is no current Activity when the app is
++        // cold-started with the screen off (background-location relaunch,
++        // or a trip resumed from the lock screen), and the original code
++        // dereferenced it unconditionally - a NullPointerException on the
++        // expo-updates-error-recovery thread that killed the process. The
++        // lifecycle callbacks only need an Application, which the React
++        // context always has, so register through that instead. Call-state
++        // listening itself never needed the Activity.
++        if (!lifecycleCallbacksRegistered) {
+             activity = getCurrentActivity();
+-            activity.getApplication().registerActivityLifecycleCallbacks(this);
++            Application application = activity != null
++                    ? activity.getApplication()
++                    : (Application) this.reactContext.getApplicationContext();
++            application.registerActivityLifecycleCallbacks(this);
++            lifecycleCallbacksRegistered = true;
+         }
+ 
+         telephonyManager = (TelephonyManager) this.reactContext.getSystemService(

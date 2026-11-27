@@ -35,9 +35,12 @@ export function selectApproachingAlerts(
   const shiftedAnnounced = new Map<string, number>();
   for (const [id, distance] of announcedDistances) shiftedAnnounced.set(id, distance + lookaheadMeters);
 
+  const radiusFor = (type: WazeAlert['type']) =>
+    settings.maxDistanceForType ? settings.maxDistanceForType(type) : settings.maxDistanceMeters;
   const extended = selectAnnounceableAlerts(alerts, driver, shiftedAnnounced, nowMs, {
     ...settings,
     maxDistanceMeters: settings.maxDistanceMeters + lookaheadMeters,
+    maxDistanceForType: (type) => radiusFor(type) + lookaheadMeters,
   });
 
   const approaching: ApproachingAlert[] = [];
@@ -46,7 +49,7 @@ export function selectApproachingAlerts(
     const lastAnnounced = announcedDistances.get(candidate.alert.alert_id);
     // In nav mode (routeCorridor) the radius doesn't gate eligibility, so
     // only the reminder threshold is an entry point there.
-    const radiusEntry = settings.routeCorridor ? Infinity : settings.maxDistanceMeters;
+    const radiusEntry = settings.routeCorridor ? Infinity : radiusFor(candidate.alert.type);
     const entryDistanceMeters =
       lastAnnounced === undefined ? radiusEntry : Math.min(radiusEntry, lastAnnounced - REMINDER_MIN_CLOSER_METERS);
     if (!Number.isFinite(entryDistanceMeters) || candidate.distanceMeters <= entryDistanceMeters) continue;

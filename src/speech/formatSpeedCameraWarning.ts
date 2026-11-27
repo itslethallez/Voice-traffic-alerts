@@ -1,4 +1,5 @@
 import type { SpeedWarningCheckpoint, WarningTargetKind } from '../engine/selectSpeedCameraWarning';
+import type { RoadContext } from '../engine/types';
 
 /**
  * Fires while the driver is confirmed over the limit, or the limit simply
@@ -25,11 +26,27 @@ import type { SpeedWarningCheckpoint, WarningTargetKind } from '../engine/select
 export function formatSpeedCameraWarning(
   kind: WarningTargetKind,
   checkpointMeters: SpeedWarningCheckpoint,
-  confirmedSpeeding: boolean
+  confirmedSpeeding: boolean,
+  road: RoadContext | null = null
 ): string {
   const subject = kind === 'camera' ? 'Speed camera' : 'Police reported';
-  if (!confirmedSpeeding) {
-    return `${subject} ${checkpointMeters} metres ahead.`;
+  // Road matching (road/roadContextRuntime.ts) decides whether this is on
+  // the driver's road. If it isn't - or that can't be confirmed - it's
+  // "nearby, X away" and makes no speeding claim: the speed limit was
+  // looked up for the driver's road, not the camera's (case F in
+  // road/__tests__/aheadCases.test.ts).
+  if (road?.kind === 'onRoad') {
+    // A police report on the driver's own divided road, side unknown. The
+    // speed limit is this road's, so the speeding claim stands.
+    const tail = confirmedSpeeding ? ", you're currently over the limit. Reduce speed immediately." : '.';
+    return `${subject} on ${road.roadName}, ${checkpointMeters} metres${tail}`;
   }
-  return `${subject} ${checkpointMeters} metres ahead, you're currently over the limit. Reduce speed immediately.`;
+  if (road?.kind !== 'ahead') {
+    return `${subject} nearby, ${checkpointMeters} metres away.`;
+  }
+  const onRoad = road.roadName ? ` on ${road.roadName}` : '';
+  if (!confirmedSpeeding) {
+    return `${subject}, ${checkpointMeters} metres ahead${onRoad}.`;
+  }
+  return `${subject}, ${checkpointMeters} metres ahead${onRoad}, you're currently over the limit. Reduce speed immediately.`;
 }

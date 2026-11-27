@@ -1,3 +1,4 @@
+import { requestJsonWithNativeTimeout, RequestTimeoutError } from '../api/nativeTimeoutRequest';
 import { env } from '../config/env';
 
 /**
@@ -81,79 +82,37 @@ export class GoogleTtsNotReadyError extends Error {
 }
 
 /**
- * fetchAudioDataUri, but with the deadline enforced by the native HTTP
- * client (XMLHttpRequest.timeout -> OkHttp callTimeout on Android), not a
- * JS timer. React Native pauses JS timers whenever the app isn't in the
- * foreground (JavaTimerManager.onHostPause) - screen off, or Waze in
- * front - so a setTimeout deadline only fired when the fetch itself
- * finished, 1446ms in, on the drive test that found this. The native
- * timeout's event wakes the JS thread the same way a response does.
+ * Google TTS synthesis with the timeout enforced natively
+ * (XMLHttpRequest.timeout -> OkHttp callTimeout), not a JS timer - React
+ * Native pauses JS timers whenever the app isn't in the foreground, so a
+ * setTimeout deadline fired at 1446ms instead of 600ms on the drive test
+ * that found this. See api/nativeTimeoutRequest.ts. A timeout rejects
+ * with RequestTimeoutError.
  */
-/** An XHR error this close to the deadline (90%) is the deadline itself -
- * see the onerror handler below. A genuine failure (offline, DNS) fails
- * in tens of milliseconds, not at the deadline. */
-const DEADLINE_ERROR_SLACK = 0.9;
-
-function fetchAudioDataUriWithin(text: string, deadlineMs: number, signal: AbortSignal): Promise<string> {
-  if (!env.googleTtsApiKey) {
-    return Promise.reject(new Error('EXPO_PUBLIC_GOOGLE_TTS_API_KEY is not set'));
-  }
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const onAbort = () => xhr.abort();
-    const done = () => signal.removeEventListener('abort', onAbort);
-    xhr.open('POST', `https://texttospeech.googleapis.com/v1/text:synthesize?key=${env.googleTtsApiKey}`);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.timeout = deadlineMs;
-    xhr.onload = () => {
-      done();
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(`Google TTS request failed with status ${xhr.status}`));
-        return;
-      }
-      try {
-        const { audioContent } = JSON.parse(xhr.responseText) as { audioContent: string };
-        resolve(`data:audio/mp3;base64,${audioContent}`);
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    };
-    xhr.ontimeout = () => {
-      done();
-      reject(new GoogleTtsNotReadyError(deadlineMs));
-    };
-    xhr.onerror = () => {
-      done();
-      // React Native reports OkHttp's callTimeout as a plain network error,
-      // not a 'timeout' event (it only flags SocketTimeoutException, and
-      // callTimeout throws InterruptedIOException) - so an error arriving
-      // at the deadline IS the deadline. Without this, the drive test saw
-      // every missed deadline counted as a Google failure, tripping the
-      // 2-minute device-voice cooldown.
-      if (Date.now() - sentAtMs >= deadlineMs * DEADLINE_ERROR_SLACK) {
-        reject(new GoogleTtsNotReadyError(deadlineMs));
-        return;
-      }
-      reject(new Error('Google TTS request failed (network error)'));
-    };
-    xhr.onabort = () => {
-      done();
-      reject(new Error('Google TTS request aborted'));
-    };
-    if (signal.aborted) {
-      reject(new Error('Google TTS request aborted'));
-      return;
-    }
-    signal.addEventListener('abort', onAbort);
-    const sentAtMs = Date.now();
-    xhr.send(
-      JSON.stringify({
-        input: { text },
-        voice: { languageCode: GOOGLE_TTS_LANGUAGE_CODE, name: GOOGLE_TTS_VOICE_NAME },
-        audioConfig: { audioEncoding: 'MP3' },
-      })
-    );
+async function synthesizeWithin(text: string, timeoutMs: number, signal: AbortSignal): Promise<string> {
+  if (!env.googleTtsApiKey) throw new Error('EXPO_PUBLIC_GOOGLE_TTS_API_KEY is not set');
+  const { audioContent } = await requestJsonWithNativeTimeout<{ audioContent: string }>({
+    method: 'POST',
+    url: `https://texttospeech.googleapis.com/v1/text:synthesize?key=${env.googleTtsApiKey}`,
+    jsonBody: {
+      input: { text },
+      voice: { languageCode: GOOGLE_TTS_LANGUAGE_CODE, name: GOOGLE_TTS_VOICE_NAME },
+      audioConfig: { audioEncoding: 'MP3' },
+    },
+    timeoutMs,
+    signal,
   });
+  return `data:audio/mp3;base64,${audioContent}`;
+}
+
+/** synthesizeWithin, with a timeout meaning "not ready in time". */
+async function fetchAudioDataUriWithin(text: string, deadlineMs: number, signal: AbortSignal): Promise<string> {
+  try {
+    return await synthesizeWithin(text, deadlineMs, signal);
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) throw new GoogleTtsNotReadyError(deadlineMs);
+    throw error;
+  }
 }
 
 /** Map iteration order is insertion order, so re-inserting on read makes
@@ -180,19 +139,18 @@ export function prefetchTtsAudio(text: string): void {
   if (cache.has(text) || inFlight.has(text)) return;
   if (!env.googleTtsApiKey) return;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TTS_PREFETCH_TIMEOUT_MS);
   const startedAtMs = Date.now();
   console.log(`[ttsprefetch] start "${text}"`);
 
-  const request = fetchAudioDataUri(text, controller.signal)
+  // Native timeout, not setTimeout+abort - the latter stalls in the
+  // background (api/nativeTimeoutRequest.ts).
+  const request = synthesizeWithin(text, TTS_PREFETCH_TIMEOUT_MS, new AbortController().signal)
     .then((dataUri) => {
       remember(text, dataUri);
       console.log(`[ttsprefetch] ok in ${Date.now() - startedAtMs}ms "${text}"`);
       return dataUri;
     })
     .finally(() => {
-      clearTimeout(timeout);
       inFlight.delete(text);
     });
   // The stored promise keeps its rejection for anyone who joins it (see
