@@ -271,7 +271,10 @@ export function DriveScreen({ focusedAlert = null, onFocusAlert, onOpenSearch, o
         now={now}
         minimal
         navStatusBarHeight={navStatusBarHeight}
-        topOverlayBottom={insets.top + topChromeHeight}
+        sheetPeekHeight={routeOptionsActive ? 0 : peekHeight}
+        // The top panel sits spacing.compact below the inset; the map's own
+        // overlays (heading chip, range badge) start a gap below it.
+        topOverlayBottom={insets.top + spacing.compact + topChromeHeight + spacing.xs}
       />
 
       <MapOverlayPanel edge="top" offset={spacing.compact}>

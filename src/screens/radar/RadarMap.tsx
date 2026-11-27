@@ -209,6 +209,9 @@ interface RadarMapProps {
    * clear of it instead of a fixed offset tuned only for the pre-nav
    * control row. */
   navStatusBarHeight?: number;
+  /** Height of DriveScreen's collapsed bottom sheet - the tapped-alert
+   * detail card sits just above it. Defaults to the pre-Stage-8 layout. */
+  sheetPeekHeight?: number;
   /** Absolute y of the bottom edge of DriveScreen's measured top overlay
    * chrome (safe-area inset + panel content, including the ManeuverBanner
    * while navigating). Everything this component anchors to the top edge
@@ -230,6 +233,7 @@ export function RadarMap({
   onSpotlightChange,
   minimal = false,
   navStatusBarHeight = 0,
+  sheetPeekHeight = 100,
   topOverlayBottom = TOP_OVERLAY_FALLBACK,
 }: RadarMapProps) {
   // Start in overview mode: show the driver's travel arrow and the closest
@@ -1140,7 +1144,7 @@ export function RadarMap({
       </Mapbox.MapView>
 
       {selectedAlert ? (
-        <GlassView intensity={45} dim={0.5} style={[styles.alertDetailCard, navStatusBarHeight > 0 && { bottom: 112 + navStatusBarHeight + 10 }]}>
+        <GlassView intensity={45} dim={0.5} style={[styles.alertDetailCard, { bottom: sheetPeekHeight + spacing.sm + (navStatusBarHeight > 0 ? navStatusBarHeight + spacing.compact : 0) }]}>
           <Text style={styles.alertDetailEyebrow}>REPORTED {Math.max(0, Math.round(ageMinutesOf(selectedAlert, now)))} MIN AGO</Text>
           <Text style={styles.alertDetailTitle}>{alertTypeMeta(selectedAlert.type, selectedAlert.subtype).label.toUpperCase()}</Text>
           <Text style={styles.alertDetailMeta}>{resolveAreaName(selectedAlert) ?? ([selectedAlert.street, selectedAlert.city].filter(Boolean).join(' · ') || 'LOCATION ATTACHED')}</Text>
@@ -1334,9 +1338,8 @@ function AlertMarker({
       : `${baseLabel}, reported by another driver`
     : baseLabel;
 
-  // Shape is the at-a-glance differentiator inside the police family -
-  // all three share coolBlue, so colour alone can't tell them apart at
-  // driving distance: a live sighting keeps the square + light bar it
+  // Shape is the at-a-glance differentiator: police is blue, both camera
+  // kinds are amber (Stage 8), so shape separates them at driving distance: a live sighting keeps the square + light bar it
   // already had, a scheduled mobile-camera window is a rotated tag
   // (temporary, fixed location), and permanent infrastructure is a ring.
   let shape: ReactNode;
@@ -1672,14 +1675,14 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.coolBlue,
+    backgroundColor: colors.camera,
     transform: [{ rotate: '45deg' }],
   },
   cameraGlyph: {
     fontFamily: typography.fontFamily.display,
     fontSize: typography.fontSize.body,
     lineHeight: 15,
-    color: colors.white,
+    color: colors.onCaution,
     transform: [{ rotate: '-45deg' }],
   },
   cameraRing: {
@@ -1687,10 +1690,10 @@ const styles = StyleSheet.create({
     height: CAMERA_RING_SIZE,
     borderRadius: CAMERA_RING_SIZE / 2,
     borderWidth: CAMERA_RING_BORDER,
-    borderColor: colors.coolBlue,
+    borderColor: colors.camera,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: alpha(colors.coolBlue, 0.25),
+    backgroundColor: alpha(colors.camera, 0.25),
   },
   cameraRingGlyph: {
     fontFamily: typography.fontFamily.display,
