@@ -8,7 +8,7 @@ jest.mock('expo-task-manager', () => ({
 }));
 
 jest.mock('expo-location', () => ({
-  Accuracy: { Balanced: 3 },
+  Accuracy: { Balanced: 3, High: 4 },
   ActivityType: { AutomotiveNavigation: 2 },
   hasStartedLocationUpdatesAsync: (...args: unknown[]) => hasStartedLocationUpdatesAsync(...args),
   startLocationUpdatesAsync: (...args: unknown[]) => startLocationUpdatesAsync(...args),
@@ -37,20 +37,27 @@ describe('locationTask', () => {
     expect(defineTask).toHaveBeenCalledWith(BACKGROUND_LOCATION_TASK_NAME, expect.any(Function));
   });
 
-  it('starts updates only if not already started', async () => {
+  it('requests HIGH accuracy at the same cadence as the foreground watch', async () => {
+    // This task is the ONLY location request left alive once the screen
+    // goes off (expo-location drops every watchPositionAsync subscription
+    // when the activity backgrounds), so anything below HIGH leaves GMS
+    // free to keep the GPS chip off and the app hears nothing at all.
     hasStartedLocationUpdatesAsync.mockResolvedValue(false);
     await startBackgroundLocationUpdatesAsync();
     expect(startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
     expect(startLocationUpdatesAsync).toHaveBeenCalledWith(
       BACKGROUND_LOCATION_TASK_NAME,
-      expect.objectContaining({ distanceInterval: 25 })
+      expect.objectContaining({ accuracy: 4, timeInterval: 3_000, distanceInterval: 10 })
     );
   });
 
-  it('does not start updates again if already started', async () => {
+  it('re-applies its options even when the task is already started', async () => {
+    // The registration (options included) is persisted across restarts
+    // and app updates, so skipping the call on "already started" would
+    // pin an existing install to whatever options it first registered.
     hasStartedLocationUpdatesAsync.mockResolvedValue(true);
     await startBackgroundLocationUpdatesAsync();
-    expect(startLocationUpdatesAsync).not.toHaveBeenCalled();
+    expect(startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
   });
 
   it('stops updates only if currently started', async () => {

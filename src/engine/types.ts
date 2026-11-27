@@ -17,6 +17,18 @@ export interface AnnounceableAlert {
   driverHeadingDeg: number;
 }
 
+/**
+ * An alert not yet eligible to announce, but closing on the point where it
+ * will be: the warn radius, or for one already announced, the
+ * REMINDER_MIN_CLOSER_METERS reminder threshold. Found by
+ * selectApproachingAlerts.ts; consumed by speech/predictAnnouncement.ts.
+ */
+export interface ApproachingAlert {
+  candidate: AnnounceableAlert;
+  /** It becomes eligible once its distance is at or below this. */
+  entryDistanceMeters: number;
+}
+
 export interface MovementState {
   lastPosition: GeoPoint | null;
   /** ms epoch of the last time the position changed by more than a GPS-noise-sized amount. */
