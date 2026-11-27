@@ -10,10 +10,18 @@ side-streets-only routing).
 
 ## Stack (do not deviate without asking)
 - Mobile app: Expo / React Native, TypeScript
-- Maps & routing: Mapbox GL + Mapbox Directions API
+- Maps & routing: Mapbox GL + Mapbox Directions API. Road matching is
+  Valhalla first, Mapbox Directions only as fallback (see below)
 - Backend: Node.js / TypeScript on Vercel serverless functions in
   /server in front of Neon Postgres — extend this, don't scaffold a
   second backend, and never introduce an always-on service
+  - Written exception (approved 21 Nov 2026): exactly ONE always-on
+    service is approved - a single self-hosted Valhalla routing server
+    in the Sydney region (infra/valhalla/), used only for road
+    matching. Its data is OpenStreetMap, so "© OpenStreetMap
+    contributors" must appear on the attribution screen. Nothing else
+    is approved: no second Valhalla, no other server, worker, daemon or
+    persistent connection - ask first for anything else.
 - Database: Postgres + PostGIS as a Neon extension (spatial queries are
   mandatory for corridor-relevance and route-avoidance — never
   approximate with plain lat/lng math)
