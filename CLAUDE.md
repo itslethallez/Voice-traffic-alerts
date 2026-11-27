@@ -28,7 +28,21 @@ Shotgun is a **co-pilot, not a navigation app**.
   comments, or the original wording.
 - **Keep diagnostic log tags on all new systems** (`[speech]`, `[trip]`,
   `[drive]`, `[map]`, `[perf]`, …). A new subsystem ships with its own tag
-  so a drive test can be read back from logcat.
+  so a drive test can be read back from logcat (Android emulator) or the
+  Xcode / Console.app device log (iPhone).
+
+## Test devices
+
+- **The iPhone is the only physical test device.** Real drive tests,
+  screen-off / locked-phone voice checks and background-location checks
+  are done on the iPhone, from a TestFlight build (`eas build -p ios
+  --profile production --auto-submit`; `production` is the only
+  store-distribution profile with an App Store Connect app id).
+- **Android is emulator-only** until the owner gets an Android phone.
+  Use the emulator for screenshots, UI work and simulated GPS routes;
+  never treat an emulator result as proof of real background behaviour.
+- Any fix to background location, audio or screen-off speech must be
+  made for **both** platforms, and checked on the iPhone.
 
 ## Approved exceptions
 
