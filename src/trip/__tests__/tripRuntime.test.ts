@@ -87,6 +87,11 @@ jest.mock('../../speech/ttsAdapter', () => ({
   stopSpeaking: () => stopSpeaking(),
 }));
 
+let mockAppState = 'active';
+jest.mock('../../diagnostics/appState', () => ({
+  appStateLabel: () => mockAppState,
+}));
+
 // nativeDelay plays a silent clip so the gap survives screen-off; under
 // fake timers the plain JS delay is the same thing.
 jest.mock('../../speech/nativeDelay', () => ({
@@ -199,6 +204,32 @@ describe('handleDriverUpdate', () => {
       ...defaultSettingsValues,
       categoriesEnabled: { ...defaultSettingsValues.categoriesEnabled },
     };
+  });
+
+  it('ignores background fixes while on screen with the foreground watch live, and uses them once it goes quiet', async () => {
+    mockAppState = 'active';
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate(driver, now, 'foreground');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    await handleDriverUpdate(driver, now + 5_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    await handleDriverUpdate(driver, now + 45_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses background fixes straight away once the screen goes off or another app takes over - no 30s silence', async () => {
+    mockAppState = 'active';
+    fetchAlertsForBoundingBox.mockResolvedValue(ok([]));
+    const now = Date.now();
+    await handleDriverUpdate(driver, now, 'foreground');
+    expect(setDriverPosition).toHaveBeenCalledTimes(1);
+
+    mockAppState = 'background'; // screen off, or Waze / Google Maps in front
+    await handleDriverUpdate(driver, now + 3_000, 'background');
+    expect(setDriverPosition).toHaveBeenCalledTimes(2);
   });
 
   it('discloses a location gap while moving (banner + one spoken notice), and clears it once fixes are regular again', async () => {

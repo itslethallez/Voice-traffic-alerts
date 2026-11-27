@@ -49,6 +49,9 @@ interface NavigationStoreState {
     etaMs: number;
   }) => void;
   setRerouting: () => void;
+  /** Back to 'navigating' on the current route after a failed reroute,
+   * keeping the last known step/ETA progress untouched. */
+  resumeNavigating: (notice: string | null) => void;
   setError: (message: string) => void;
   stop: () => void;
 }
@@ -93,7 +96,8 @@ export const useNavigationStore = create<NavigationStoreState>((set) => ({
       remainingDistanceM,
       etaMs,
     })),
-  setRerouting: () => set({ status: 'rerouting' }),
+  setRerouting: () => set({ status: 'rerouting', errorMessage: null }),
+  resumeNavigating: (notice) => set({ status: 'navigating', errorMessage: notice }),
   setError: (message) => set({ status: 'error', errorMessage: message }),
   stop: () => set({ ...IDLE_STATE }),
 }));

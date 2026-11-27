@@ -1,3 +1,4 @@
+import { appStateLabel } from '../diagnostics/appState';
 import {
   fetchCorridorAlerts,
   fetchFixedCameras,
@@ -63,7 +64,6 @@ import { delay } from '../speech/delay';
 import { nativeDelay } from '../speech/nativeDelay';
 import { BRIEFING_FIXTURE_ENABLED } from '../config/featureFlags';
 import { briefingFixtureAlerts } from '../dev/briefingFixture';
-import { appStateLabel } from '../diagnostics/appState';
 import { formatBriefingAlert, NO_BRIEFING_ALERTS_MESSAGE } from '../speech/formatAnnouncement';
 import { formatSpeedCameraWarning } from '../speech/formatSpeedCameraWarning';
 import { PREFETCH_HORIZON_MS, predictUpcomingAnnouncementTexts } from '../speech/predictAnnouncement';
@@ -277,6 +277,8 @@ async function refreshCorridorAlerts(driver: DriverState): Promise<void> {
 
 /** Call when a new trip starts (e.g. app cold start) to clear all of the above. */
 export function resetTripRuntime(): void {
+  lastForegroundFixAtMs = null;
+  ignoringBackgroundFixes = false;
   announcerState = createInitialAnnouncerState();
   movementState = initialMovementState;
   speedState = initialSpeedState;
@@ -436,6 +438,22 @@ let chainGeneration = 0;
 
 export type DriverUpdateSource = 'foreground' | 'background';
 
+/** While the app is on screen and the foreground watch has delivered a fix
+ * this recently, background task fixes are ignored - two feeds interleaved
+ * drag the puck, step progress and ETA back and forth.
+ *
+ * Only while on screen: the moment the screen goes off or Waze / Google
+ * Maps takes over (AppState leaves 'active'), the foreground watch stops
+ * and the background task is the only feed. Gating on time alone left the
+ * first 30s after every screen-off and every handoff silent - no alerts,
+ * no camera warnings - which is exactly when Shotgun is meant to work.
+ * (The original reason, Balanced-accuracy fixes up to 15s stale, is gone:
+ * the background task now asks for High accuracy at the foreground
+ * cadence.) */
+const FOREGROUND_FIX_FRESH_MS = 30_000;
+let lastForegroundFixAtMs: number | null = null;
+let ignoringBackgroundFixes = false;
+
 /**
  * The newest fix that queued while a pass was in flight. When the running
  * pass finishes, only this ticket runs a full pass - any older queued
@@ -454,6 +472,24 @@ export function handleDriverUpdate(
   nowMs: number,
   source: DriverUpdateSource = 'foreground'
 ): Promise<void> {
+  if (source === 'foreground') {
+    lastForegroundFixAtMs = nowMs;
+  } else if (
+    appStateLabel() === 'active' &&
+    lastForegroundFixAtMs !== null &&
+    nowMs - lastForegroundFixAtMs < FOREGROUND_FIX_FRESH_MS
+  ) {
+    if (!ignoringBackgroundFixes) {
+      ignoringBackgroundFixes = true;
+      console.log('[trip] ignoring background fixes - foreground watch is live');
+    }
+    return Promise.resolve();
+  }
+  if (source === 'background' && ignoringBackgroundFixes) {
+    ignoringBackgroundFixes = false;
+    console.log(`[trip] using background fixes (app=${appStateLabel()})`);
+  }
+
   // Radar UI mirror (Step 11) - written at call time, NOT inside the
   // serialized pass. A pass can sit behind seconds of awaited TTS/network
   // work; if the marker/camera/snapped position only updated when the
