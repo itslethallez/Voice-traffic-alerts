@@ -66,11 +66,27 @@ existing references to "stage 4", "stage 7" etc. stay valid.
 | 1 | Strip Navigate (PR #6) | merged |
 | 2 | Feed fixes (PRs #7, #8) | merged |
 | 3 | Cruise core | merged (PRs #14, #5); Valhalla follow-up is **PR #16** |
+| 3c | Direction-aware warning zone (see below) | agreed 28 Nov; build after #16 |
 | 8 | Visual refresh | |
 | 4 | Handoff (Waze / Google Maps / Apple Maps) | |
 | 5 | Reroute | |
 | 6 | National data | |
 | 7 | Community pipeline | plan approved; code only after stages 3–5 |
+
+## Stage 3c - direction-aware warning zone (agreed 28 Nov 2026)
+
+Replaces the 20 Nov "behind is silent" call. **Cruise mode only** (not
+Navigate). Every alert inside the driver's warning zone is announced with
+its direction - this is a selling point over other apps:
+
+| Where the alert is | Spoken |
+|---|---|
+| On my road, in front | "ahead on [road], X away" (unchanged) |
+| Direction not certain / road matching down | "in your warning area, X away" (replaces "nearby") |
+| Behind me / needs a U-turn - **police and mobile cameras only** | "behind you, X away", **once** per alert |
+| Behind me - any other type (crash, roadwork, hazard...) | silent, as now |
+
+Still no reroute offer for police or cameras, behind or ahead.
 
 ## Current status (as of 28 Nov 2026)
 
