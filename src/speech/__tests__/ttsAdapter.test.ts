@@ -16,6 +16,11 @@ jest.mock('expo-speech', () => ({
   getAvailableVoicesAsync: () => getAvailableVoicesAsync(),
 }));
 
+const releaseAudioSessionAfterDeviceSpeech = jest.fn().mockResolvedValue(undefined);
+jest.mock('../deviceVoiceSession', () => ({
+  releaseAudioSessionAfterDeviceSpeech: () => releaseAudioSessionAfterDeviceSpeech(),
+}));
+
 const speakWithGoogleTtsAsync = jest.fn<Promise<void>, [string, Record<string, unknown>?]>();
 const stopGoogleTtsSpeech = jest.fn();
 
@@ -89,6 +94,15 @@ describe('speakAsync', () => {
     speak.mockImplementation((_text, options) => options?.onDone?.());
 
     await expect(speakAsync('hello')).resolves.toBeUndefined();
+  });
+
+  it('hands the iOS audio session back after the device voice, so other audio un-ducks', async () => {
+    releaseAudioSessionAfterDeviceSpeech.mockClear();
+    speakWithGoogleTtsAsync.mockRejectedValue(new Error('Google TTS down'));
+    speak.mockImplementation((_text, options) => options?.onDone?.());
+
+    await speakAsync('hello');
+    expect(releaseAudioSessionAfterDeviceSpeech).toHaveBeenCalledTimes(1);
   });
 
   it('resolves once the device fallback finishes (onStopped)', async () => {

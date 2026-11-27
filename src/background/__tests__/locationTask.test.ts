@@ -48,7 +48,7 @@ describe('locationTask', () => {
     expect(startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
     expect(startLocationUpdatesAsync).toHaveBeenCalledWith(
       BACKGROUND_LOCATION_TASK_NAME,
-      expect.objectContaining({ accuracy: 4, timeInterval: 3_000, distanceInterval: 10 })
+      expect.objectContaining({ accuracy: 4, timeInterval: 3_000, distanceInterval: 10, pausesUpdatesAutomatically: false })
     );
   });
 

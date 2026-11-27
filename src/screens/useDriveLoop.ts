@@ -13,7 +13,11 @@ import {
 } from '../diagnostics/appState';
 import type { DriverState } from '../engine/types';
 import { FirstFixGate } from '../location/firstFixGate';
-import { BACKGROUND_DENIED_EXPLANATION, ensureLocationPermissions } from '../location/permissions';
+import {
+  APPROXIMATE_LOCATION_EXPLANATION,
+  BACKGROUND_DENIED_EXPLANATION,
+  ensureLocationPermissions,
+} from '../location/permissions';
 import { toDriverState } from '../location/toDriverState';
 import { configureDuckingAudioSession } from '../speech/audioSession';
 import { addCallStateListener, startCallStateMonitoring, stopCallStateMonitoring } from '../speech/callState';
@@ -215,7 +219,12 @@ export function useDriveLoop(): void {
       setLocationError(null);
 
       backgroundGranted = permissions.backgroundGranted;
-      if (!backgroundGranted) {
+      // Approximate location outranks background-denied: it makes every
+      // warning unreliable, not just the screen-off ones. [location] tag.
+      if (permissions.approximate) {
+        console.log('[location] precise location is off - warnings may be misplaced');
+        setBannerMessage(APPROXIMATE_LOCATION_EXPLANATION);
+      } else if (!backgroundGranted) {
         setBannerMessage(BACKGROUND_DENIED_EXPLANATION);
       }
 

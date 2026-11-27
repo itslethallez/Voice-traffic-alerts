@@ -1,6 +1,7 @@
 import * as Speech from 'expo-speech';
 import { appStateLabel } from '../diagnostics/appState';
 import { isPhoneCallActive } from './callState';
+import { releaseAudioSessionAfterDeviceSpeech } from './deviceVoiceSession';
 import { GOOGLE_TTS_READY_DEADLINE_MS, GOOGLE_TTS_RETRY_COOLDOWN_MS } from './constants';
 import { GoogleTtsNotReadyError, speakWithGoogleTtsAsync, stopGoogleTtsSpeech } from './googleTts';
 import { prefetchTtsAudio } from './ttsAudioCache';
@@ -24,9 +25,11 @@ function speakWithDeviceAsync(text: string, options: SpeakOptions = {}): Promise
         console.log(
           `[speech] first sound after ${Date.now() - startedAtMs}ms voice=device app=${appStateLabel()}`
         ),
-      onDone: () => resolve(),
-      onStopped: () => resolve(),
-      onError: (error) => reject(error),
+      // Awaited before resolving so the next clip (briefing gap, Google
+      // TTS) can't start while the iOS session is being released.
+      onDone: () => void releaseAudioSessionAfterDeviceSpeech().then(resolve),
+      onStopped: () => void releaseAudioSessionAfterDeviceSpeech().then(resolve),
+      onError: (error) => void releaseAudioSessionAfterDeviceSpeech().then(() => reject(error)),
     });
   });
 }
@@ -193,9 +196,9 @@ function speakSilently(): Promise<void> {
   return new Promise((resolve) => {
     Speech.speak('Ready.', {
       volume: 0,
-      onDone: () => resolve(),
-      onStopped: () => resolve(),
-      onError: () => resolve(),
+      onDone: () => void releaseAudioSessionAfterDeviceSpeech().then(resolve),
+      onStopped: () => void releaseAudioSessionAfterDeviceSpeech().then(resolve),
+      onError: () => void releaseAudioSessionAfterDeviceSpeech().then(resolve),
     });
   });
 }

@@ -8,6 +8,7 @@ jest.mock('expo-location', () => ({
 }));
 
 import {
+  APPROXIMATE_LOCATION_EXPLANATION,
   BACKGROUND_DENIED_EXPLANATION,
   ensureLocationPermissions,
   FOREGROUND_DENIED_EXPLANATION,
@@ -27,6 +28,7 @@ describe('ensureLocationPermissions', () => {
     expect(result).toEqual({
       foregroundGranted: false,
       backgroundGranted: false,
+      approximate: false,
       explanation: FOREGROUND_DENIED_EXPLANATION,
     });
     expect(requestBackgroundPermissionsAsync).not.toHaveBeenCalled();
@@ -41,6 +43,7 @@ describe('ensureLocationPermissions', () => {
     expect(result).toEqual({
       foregroundGranted: true,
       backgroundGranted: false,
+      approximate: false,
       explanation: BACKGROUND_DENIED_EXPLANATION,
     });
   });
@@ -54,7 +57,22 @@ describe('ensureLocationPermissions', () => {
     expect(result).toEqual({
       foregroundGranted: true,
       backgroundGranted: true,
+      approximate: false,
       explanation: null,
+    });
+  });
+
+  it('discloses iOS Precise Location being off, even with every permission granted', async () => {
+    requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted', ios: { scope: 'always', accuracy: 'reduced' } });
+    requestBackgroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+
+    const result = await ensureLocationPermissions();
+
+    expect(result).toEqual({
+      foregroundGranted: true,
+      backgroundGranted: true,
+      approximate: true,
+      explanation: APPROXIMATE_LOCATION_EXPLANATION,
     });
   });
 });

@@ -127,6 +127,13 @@ export async function startBackgroundLocationUpdatesAsync(): Promise<void> {
     timeInterval: 3_000,
     distanceInterval: 10,
     showsBackgroundLocationIndicator: true,
+    // iOS: expo-location defaults this to TRUE, and with
+    // AutomotiveNavigation iOS then pauses GPS once the car sits still
+    // for a while (long lights, a jam). A paused app in the background
+    // never gets updates back until it is reopened - the iOS twin of the
+    // Android Balanced-accuracy bug above: a deaf co-pilot with the
+    // screen locked. Ignored on Android.
+    pausesUpdatesAutomatically: false,
     foregroundService: {
       notificationTitle: 'Voice Traffic Alerts',
       notificationBody: 'Listening for alerts on your route.',
