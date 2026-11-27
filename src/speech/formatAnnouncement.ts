@@ -230,17 +230,25 @@ function locationPhrase(
  * - On the driver's divided road, but Mapbox put it on the other side - a
  *   Waze report has no direction, so no side is claimed:
  *               "Police reported on Sir Donald Bradman Drive, 1.2 kilometres."
+ * - Police or a mobile camera behind the driver (or needing a U-turn),
+ *   straight-line distance, said once per alert (Stage 3c, 28 Nov 2026):
+ *               "Police reported behind you, 800 metres away."
  * - Anywhere else, or not confirmed (road matching unavailable, still in
  *   flight, over budget), straight-line distance and never "ahead":
- *               "Crash reported nearby on Side Street, Adelaide, 1.4 kilometres away."
- *               "Mobile camera nearby in Kidman Park, 2.5 kilometres away."
+ *               "Crash reported on Side Street, Adelaide, in your warning area, 1.4 kilometres away."
+ *               "Mobile camera in Kidman Park, in your warning area, 2.5 kilometres away."
  *
- * Alerts behind the driver never reach here (silent). No "northbound":
+ * Any other type behind the driver never reaches here (silent). No "northbound":
  * that was the driver's own heading, not anything about the alert's road.
  * A live report over 10 minutes old gets " Reported {n} minutes ago." -
  * stale data pretending to be live is the main way this app loses trust.
  * A road/route number is never spoken (spokenStreet).
  */
+/** Spoken for an alert whose direction isn't certain (not confirmed on
+ * the driver's road, or road matching down) - replaced "nearby" in Stage
+ * 3c (28 Nov 2026). Never implies "ahead" or "all clear". */
+export const WARNING_AREA_PHRASE = 'in your warning area';
+
 export function formatAnnouncement(candidate: AnnounceableAlert): string {
   const label = spokenLabel(candidate.alert);
   const distance = formatDistance(candidate.distanceMeters);
@@ -258,9 +266,13 @@ export function formatAnnouncement(candidate: AnnounceableAlert): string {
     // Other carriageway of the driver's divided road: which side it's on
     // is unknown, so neither "ahead" nor a side is claimed.
     text = `${subject} on ${spokenStreet(road.roadName) ?? road.roadName}, ${distance}.`;
+  } else if (road?.kind === 'behind') {
+    text = `${subject} behind you, ${distance} away.`;
   } else {
     const location = locationPhrase(candidate.alert.street, resolveAreaName(candidate.alert), candidate.alert.near_by);
-    text = location ? `${subject} nearby ${location}, ${distance} away.` : `${subject} nearby, ${distance} away.`;
+    text = location
+      ? `${subject} ${location}, ${WARNING_AREA_PHRASE}, ${distance} away.`
+      : `${subject} ${WARNING_AREA_PHRASE}, ${distance} away.`;
   }
 
   if (!staticNotice && candidate.ageMinutes > STALE_ANNOUNCEMENT_AGE_MINUTES) {
