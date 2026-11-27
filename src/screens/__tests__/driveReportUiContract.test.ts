@@ -5,12 +5,16 @@ const root = path.resolve(__dirname, '../../..');
 const source = (relative: string) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 describe('Drive report UI contract', () => {
-  it('uses the real Shotgun wordmark logo asset in the header, not a plain text label', () => {
+  it('opens on the Stage 8 status pill (mockup board 1), not a logo header', () => {
     const drive = source('src/screens/DriveScreen.tsx');
+    const pill = source('src/screens/cruise/CruiseStatusPill.tsx');
 
-    expect(drive).toContain("require('../../assets/shotgun-header.png')");
-    expect(drive).not.toContain('streetwise-header.png');
-    expect(drive).not.toMatch(/>SHOTGUN<\/Text>/);
+    expect(drive).toContain('<CruiseStatusPill');
+    expect(drive).not.toContain('shotgun-header.png');
+    expect(pill).toContain('Watching');
+    // Degraded feed is said in words, not only a dot colour.
+    expect(pill).toContain('Offline - alerts may be out of date');
+    expect(pill).toContain('Alerts not updating');
   });
 
   it('builds the screen chrome from the design-system base components only', () => {
@@ -27,7 +31,7 @@ describe('Drive report UI contract', () => {
     expect(drive).not.toContain("position: 'absolute'");
   });
 
-  it('automatically dismisses each announced-report ticker after 20 seconds', () => {
+  it('automatically dismisses each live alert card after 20 seconds', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
     expect(drive).toContain('const ANNOUNCEMENT_CARD_TIMEOUT_MS = 20_000;');
@@ -37,13 +41,17 @@ describe('Drive report UI contract', () => {
     expect(drive).toContain('clearTimeout(timeout);');
   });
 
-  it('keeps a compact live-report ticker in the top overlay panel', () => {
+  it('shows the live alert card (mockup board 2) in the top overlay panel, never a marquee', () => {
     const drive = source('src/screens/DriveScreen.tsx');
+    const card = source('src/screens/cruise/LiveAlertCard.tsx');
 
-    expect(drive).toContain('<ReportTicker');
-    expect(drive).toContain('LIVE REPORT');
-    expect(drive).toContain('TAP TO SHOW ON MAP');
-    expect(drive).not.toContain('announcementCard');
+    expect(drive).toContain('<LiveAlertCard');
+    expect(drive).not.toContain('ReportTicker');
+    expect(card).toContain('Show on map');
+    expect(card).toContain('Dismiss');
+    // "Still there" only where the backend can confirm it - no dead buttons.
+    expect(card).toContain('{canConfirm ? (');
+    expect(card).not.toMatch(/['">]Not there['"<]/);
   });
 
   it('drives the category filter row from the persisted filter-pill set', () => {
@@ -67,13 +75,13 @@ describe('Drive report UI contract', () => {
     }
   });
 
-  it('renders the nearby-alerts list in the BottomSheet with Card + AlertPill rows', () => {
+  it('renders "Ahead of you" in the BottomSheet with AheadRow rows', () => {
     const drive = source('src/screens/DriveScreen.tsx');
 
     expect(drive).toContain('<BottomSheet');
-    expect(drive).toContain('alerts nearby');
+    expect(drive).toContain('Ahead of you');
     expect(drive).toContain('<FlatList');
-    expect(drive).toMatch(/<Card variant="raised"[\s\S]*?<AlertPill/);
+    expect(drive).toContain('<AheadRow');
   });
 
   it('provides a top map recenter control on native and web map adapters', () => {
@@ -105,10 +113,9 @@ describe('Drive report UI contract', () => {
     expect(reportBar).toContain('Navigation2');
     expect(reportBar).not.toContain('REPORT</Text>');
 
-    // Paired-sign contract (Im52.png): AU limit roundel (red ring, white
-    // face) over the current-speed reading - and the roundel renders only
-    // when a limit is actually resolved (no fabricated limit).
-    expect(speedometer).toContain('limitRoundel');
+    // Stage 8 roundel: current speed with "km/h · limit" beneath - the
+    // limit shows only when actually resolved (no fabricated limit).
+    expect(speedometer).toContain('sizes.roundel');
     expect(speedometer).toContain('speedLimitKmh !== null');
     expect(speedometer).toContain('getCachedSpeedLimit');
   });

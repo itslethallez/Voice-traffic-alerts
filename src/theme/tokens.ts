@@ -142,6 +142,8 @@ export type SpacingKey = Exclude<keyof typeof spacing, 'screenPadding'>;
 
 export const radii = {
   sm: 8,
+  /** Source chips on the live alert card. */
+  chip: 10,
   /** Small icon tiles (36px list-row glyph tile). */
   md: 12,
   lg: 16,

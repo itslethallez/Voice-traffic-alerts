@@ -1,35 +1,20 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTripStore } from '../../store/useTripStore';
-import { GlassView } from '../../components/base/GlassView';
 import { getCachedSpeedLimit, prefetchSpeedLimit } from '../../geo/speedLimitLookup';
-import { alpha, colors, radii, spacing, typography } from '../../theme/tokens';
-
-/** The posted-limit roundel's diameter, matched to the design reference's
- * AU speed-limit sign (Im52.png: ~22% of the mockup screen's width). Kept
- * fixed rather than viewport-relative so it can't grow into a corner-dial
- * on tablets. */
-const LIMIT_ROUNDEL_SIZE = 84;
-/** Real AU limit signs use a heavy red ring (~1/8 of the sign face). */
-const LIMIT_RING_WIDTH = 6;
+import { colors, radii, shadows, sizes, spacing, typography } from '../../theme/tokens';
 
 /**
- * The map's speed indicator (design reference Im52.png): a left-edge
- * vertical capsule pairing an Australian speed-limit sign with the
- * current-speed reading beneath it.
+ * The map's speed roundel (Stage 8 mockup, board 1): one 76px dial with
+ * the current GPS speed in big numerals and "km/h · 60" beneath when the
+ * posted limit for the driver's road is known. The ring turns amber when
+ * the driver is over that limit.
  *
- * - Top: the posted limit as a real sign - red ring, white face, bold
- *   dark number, "km/h" beneath. Rendered only when a limit is actually
- *   resolved for the driver's road (getCachedSpeedLimit; Overpass/OSM
- *   maxspeed on major roads). No fabricated default - on residential or
- *   untagged streets the sign half simply doesn't render.
- * - Below: current GPS speed in large white numerals - the part that
- *   always has data (driverSpeedKmh), so it shows even with no fix on a
- *   limit yet.
- *
- * The lookup is fire-and-forget per position fix, quantized to ~100m
- * cells by speedLimitLookup.ts, so repeat polls over the same stretch
- * cost nothing.
+ * The limit is only shown when actually resolved (getCachedSpeedLimit;
+ * Overpass/OSM maxspeed on major roads) - no fabricated default, so on
+ * residential or untagged streets the unit line is just "km/h". The
+ * lookup is fire-and-forget per position fix, quantized to ~100m cells by
+ * speedLimitLookup.ts, so repeat polls over the same stretch cost nothing.
  */
 export function Speedometer() {
   const speedKmh = useTripStore((state) => state.driverSpeedKmh);
@@ -55,78 +40,50 @@ export function Speedometer() {
     };
   }, [driverPosition]);
 
+  const speed = Math.round(speedKmh);
+  const overLimit = speedLimitKmh !== null && speed > speedLimitKmh;
+  const unitLine = speedLimitKmh !== null ? `km/h · ${speedLimitKmh}` : 'km/h';
+  const label =
+    speedLimitKmh !== null
+      ? `${speed} kilometres per hour, limit ${speedLimitKmh}${overLimit ? ', over the limit' : ''}`
+      : `${speed} kilometres per hour`;
+
   return (
-    <GlassView intensity={40} dim={0.45} style={styles.capsule}>
-      {speedLimitKmh !== null ? (
-        <View
-          style={styles.limitRoundel}
-          accessible
-          accessibilityLabel={`Speed limit ${speedLimitKmh} kilometres per hour`}
-        >
-          <Text style={styles.limitValue}>{speedLimitKmh}</Text>
-          <Text style={styles.limitUnit}>km/h</Text>
-        </View>
-      ) : null}
-      <View
-        style={styles.speedHalf}
-        accessible
-        accessibilityLabel={`Current speed ${Math.round(speedKmh)} kilometres per hour`}
-      >
-        <Text style={styles.speedValue}>{Math.round(speedKmh)}</Text>
-        <Text style={styles.speedUnit}>km/h</Text>
-      </View>
-    </GlassView>
+    <View style={[styles.roundel, overLimit && styles.roundelOver]} accessible accessibilityLabel={label}>
+      <Text style={styles.speedValue}>{speed}</Text>
+      <Text style={[styles.speedUnit, overLimit && styles.speedUnitOver]}>{unitLine}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  capsule: {
-    alignItems: 'center',
-    padding: spacing.xs,
-    gap: spacing.xs,
+  roundel: {
+    width: sizes.roundel,
+    height: sizes.roundel,
     borderRadius: radii.pill,
-    // The reference capsule's border is a neutral light ring, not teal -
-    // it reads as painted sign hardware, not an interactive control.
-    borderWidth: 1,
-    borderColor: alpha(colors.textPrimary, 0.3),
-  },
-  limitRoundel: {
-    width: LIMIT_ROUNDEL_SIZE,
-    height: LIMIT_ROUNDEL_SIZE,
-    borderRadius: LIMIT_ROUNDEL_SIZE / 2,
-    backgroundColor: colors.white,
-    borderWidth: LIMIT_RING_WIDTH,
-    borderColor: colors.critical,
+    backgroundColor: colors.surface,
+    borderWidth: spacing.xxs,
+    borderColor: colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadows.chrome,
   },
-  limitValue: {
-    fontFamily: typography.fontFamily.display,
-    fontSize: typography.fontSize.heading,
-    lineHeight: typography.fontSize.heading,
-    color: colors.charcoal,
-    fontVariant: ['tabular-nums'],
-  },
-  limitUnit: {
-    fontFamily: typography.fontFamily.displayMedium,
-    fontSize: typography.fontSize.eyebrow,
-    color: colors.charcoal,
-  },
-  speedHalf: {
-    alignItems: 'center',
-    paddingBottom: spacing.xxs,
+  roundelOver: {
+    borderColor: colors.caution,
   },
   speedValue: {
-    fontFamily: typography.fontFamily.display,
-    fontSize: typography.fontSize.stat,
-    lineHeight: typography.fontSize.stat,
+    fontFamily: typography.fontFamily.heavy,
+    fontSize: typography.fontSize.roundel,
+    lineHeight: typography.fontSize.roundel + spacing.xxs,
     color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
   },
   speedUnit: {
-    fontFamily: typography.fontFamily.displayMedium,
-    fontSize: typography.fontSize.eyebrow,
-    letterSpacing: typography.letterSpacing.tight,
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.fontSize.micro,
     color: colors.textSecondary,
+  },
+  speedUnitOver: {
+    color: colors.caution,
   },
 });

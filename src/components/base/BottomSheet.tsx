@@ -8,7 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { colors, radii, spacing } from '../../theme/tokens';
+import { colors, radii, shadows, sizes, spacing } from '../../theme/tokens';
 
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const HANDLE_ZONE_HEIGHT = 28;
@@ -127,29 +127,27 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: colors.border,
-    overflow: 'hidden',
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
+    ...shadows.sheet,
   },
   handleZone: {
-    paddingTop: spacing.sm,
-    paddingHorizontal: spacing.screenPadding,
+    paddingTop: spacing.compact,
+    paddingHorizontal: spacing.roomy,
     minHeight: HANDLE_ZONE_HEIGHT,
     gap: spacing.sm,
   },
   grabber: {
     alignSelf: 'center',
-    width: 36,
-    height: 4,
+    width: sizes.grabberWidth,
+    height: sizes.grabberHeight,
     borderRadius: radii.pill,
     backgroundColor: colors.slate,
   },
   body: {
     flex: 1,
-    paddingHorizontal: spacing.screenPadding,
+    paddingHorizontal: spacing.roomy,
     paddingBottom: spacing.lg,
+    paddingTop: spacing.sm,
   },
 });

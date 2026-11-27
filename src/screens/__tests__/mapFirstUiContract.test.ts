@@ -15,8 +15,9 @@ describe('simplified map-first UI contract', () => {
 
     const drive = source('src/screens/DriveScreen.tsx');
 
-    expect(drive).toContain('accessibilityLabel="Open settings"');
-    expect(drive).toContain('onOpenSettings');
+    const pill = source('src/screens/cruise/CruiseStatusPill.tsx');
+    expect(pill).toContain('accessibilityLabel="Open settings"');
+    expect(drive).toContain('onOpenSettings={onOpenSettings}');
   });
 
   it('makes the live map the Drive screen and keeps direct reporting available', () => {
@@ -25,15 +26,15 @@ describe('simplified map-first UI contract', () => {
     expect(drive).toContain('<RadarMap');
     expect(drive).toContain('minimal');
     expect(drive).toContain('<ReportBar');
-    expect(drive).toContain('alerts nearby');
+    expect(drive).toContain('Ahead of you');
     expect(drive).not.toContain('<ScrollView');
     expect(drive).toContain('latestAnnouncement');
-    expect(drive).toContain('SHOW ON MAP');
-    // RANGE and MUTE live in Settings, not on the map screen: the paired
-    // speed sign renders inside the map adapters (left-edge capsule),
-    // not as a bottom-row dial in DriveScreen.
+    expect(drive).toContain('onShowOnMap');
+    // Stage 8 (mockup board 1) puts mute back on the map as a round
+    // button beside the status pill; RANGE stays in Settings, and the
+    // speed roundel renders inside the map adapters, not DriveScreen.
+    expect(drive).toContain('onToggleMute={toggleMasterMute}');
     expect(drive).not.toContain('Toggle notification range');
-    expect(drive).not.toContain('Mute audio');
     expect(drive).not.toContain('<Speedometer');
 
     const map = source('src/screens/radar/RadarMap.tsx');
@@ -79,10 +80,10 @@ describe('simplified map-first UI contract', () => {
     // would have no human-in-the-loop checkpoint in the app.
     const drive = source('src/screens/DriveScreen.tsx');
 
-    expect(drive).toContain('COMMUNITY INTAKE');
+    expect(drive).toMatch(/community intake/i);
     expect(drive).toContain('useCommunityReportStore');
     expect(drive).toContain('dismissCandidate');
-    expect(drive).toContain('UNVERIFIED');
+    expect(drive).toMatch(/unverified/i);
 
     const nativeMap = source('src/screens/radar/RadarMap.tsx');
     expect(nativeMap).toContain('selectedAlert');
