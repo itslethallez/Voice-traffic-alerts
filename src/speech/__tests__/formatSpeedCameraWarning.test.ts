@@ -50,7 +50,7 @@ describe('formatSpeedCameraWarning', () => {
     // The speed limit was looked up for the driver's road, not the camera's.
     for (const road of [null, { kind: 'nearby' } as RoadContext]) {
       const text = formatSpeedCameraWarning('camera', 500, true, road);
-      expect(text).toBe('Speed camera nearby, 500 metres away.');
+      expect(text).toBe('Speed camera in your warning area, 500 metres away.');
       expect(text).not.toContain('ahead');
       expect(text).not.toContain('over the limit');
     }

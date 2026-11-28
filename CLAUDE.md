@@ -70,7 +70,7 @@ existing references to "stage 4", "stage 7" etc. stay valid.
 | 1 | Strip Navigate (PR #6) | merged |
 | 2 | Feed fixes (PRs #7, #8) | merged |
 | 3 | Cruise core | merged (PRs #14, #5); Valhalla follow-up is **PR #16** |
-| 3c | Direction-aware warning zone (see below) | agreed 28 Nov; build after #16 |
+| 3c | Direction-aware warning zone (see below) | built 28 Nov on top of #16 (`stage-3c-warning-zone`); awaiting drive test |
 | 8 | Visual refresh | |
 | 4 | Handoff (Waze / Google Maps / Apple Maps) | |
 | 5 | Reroute | |
@@ -93,7 +93,19 @@ its direction - this is a selling point over other apps:
 Shotgun still never *suggests* a reroute for police or cameras, behind or
 ahead - but the driver's own reroute control is always available.
 
-## Current status (as of 28 Nov 2026)
+**Built 28 Nov (branch `stage-3c-warning-zone`, on top of #16).** "Behind
+you" is only said when the alert is more than 90 degrees off the driver's
+heading: a police/mobile-camera report the router reaches only by a U-turn
+but that is in front (the SDB Drive case) is "in your warning area", never
+"behind you". Logic in `src/road/applyRoadContext.ts`
+(`ANNOUNCED_BEHIND_TYPES`, `BEHIND_YOU_MIN_BEARING_DEG`); Cruise
+pre-selects the full circle in `src/trip/tripRuntime.ts` (no extra
+lookups). 849/849 tests. iOS build 59 is built, but TestFlight upload is
+blocked on an unsigned Apple agreement (App Store Connect -> Business);
+resend with `eas submit -p ios --id d137230b-5c2c-4571-b375-f3e7ed9c1410`
+once it is signed. Awaiting the iPhone drive test.
+
+## Current status (as of 29 Nov 2026)
 
 **PRs #6, #14 and #5 are merged** into `claude/voice-traffic-alerts-os1jef`
 (in that order). Stage 3 Cruise core is done apart from Valhalla (PR #16).

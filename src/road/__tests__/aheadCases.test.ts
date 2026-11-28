@@ -150,7 +150,7 @@ describe('road matching: audit cases A-F', () => {
         ['turn', 'left', 'Parallel Road', 600],
       ]);
     expect(await spoken([alert('A', 'ACCIDENT', at, 'Parallel Rd')], driverAt(START, 0))).toBe(
-      'Crash reported nearby on Parallel Road, Elizabeth, 3.2 kilometres away.'
+      'Crash reported on Parallel Road, Elizabeth, in your warning area, 3.2 kilometres away.'
     );
   });
 
@@ -162,7 +162,7 @@ describe('road matching: audit cases A-F', () => {
         ['turn', 'right', 'Side Street', 700],
       ]);
     expect(await spoken([alert('B', 'ACCIDENT', at, 'Side St')], driverAt(START, 0))).toBe(
-      'Crash reported nearby on Side Street, Elizabeth, 1.4 kilometres away.'
+      'Crash reported on Side Street, Elizabeth, in your warning area, 1.4 kilometres away.'
     );
   });
 
@@ -282,7 +282,7 @@ describe('road matching: audit cases A-F', () => {
 
     const first = toDriverState({ latitude: START.latitude, longitude: START.longitude, heading: null, speed: 22 }, null);
     expect(first.headingReliable).toBe(false);
-    expect(await spoken([crash], first)).toBe('Crash reported nearby on Behind Road, Elizabeth, 1.5 kilometres away.');
+    expect(await spoken([crash], first)).toBe('Crash reported on Behind Road, Elizabeth, in your warning area, 1.5 kilometres away.');
     expect(requests).toHaveLength(0);
 
     // Next fix, 60m further south: a real heading (180) is derived, and the
@@ -339,7 +339,7 @@ describe('road matching: audit cases A-F', () => {
       routeFor = () => {
         throw new Error('Directions down');
       };
-      expect(await warning(driverAt(START, 0))).toBe('Speed camera nearby, 500 metres away.');
+      expect(await warning(driverAt(START, 0))).toBe('Speed camera in your warning area, 500 metres away.');
     });
 
     it('F-control. the same camera on your own road -> ahead on it, with the speeding claim', async () => {
@@ -372,7 +372,7 @@ describe('road matching: mobile-camera notices ("ahead on X" only while on X)', 
         ['new name', 'straight', 'Portrush Road', 510],
       ]);
     expect(await spoken([alert('G2', 'MOBILE_CAMERA', at, 'PORTRUSH RD', 'Maylands')], driverAt(START, 0))).toBe(
-      'Mobile camera nearby on Portrush Road, Maylands, 1.2 kilometres away.'
+      'Mobile camera on Portrush Road, Maylands, in your warning area, 1.2 kilometres away.'
     );
   });
 
@@ -418,7 +418,7 @@ describe('road matching: cost and fallbacks', () => {
     const at = destinationPoint(START, 1_500, 0);
     setForwardRouteFetcherForTests(() => Promise.reject(new Error('offline')));
     expect(await spoken([alert('fail', 'ACCIDENT', at, 'Main North Rd')], driverAt(START, 0))).toBe(
-      'Crash reported nearby on Main North Road, Elizabeth, 1.5 kilometres away.'
+      'Crash reported on Main North Road, Elizabeth, in your warning area, 1.5 kilometres away.'
     );
   });
 
@@ -480,12 +480,12 @@ describe('road matching: cost and fallbacks', () => {
     // Off the route but still heading the same way (GPS 60m out, or the
     // far side of a wide road): the same road, so still "nearby" - no request.
     const sameWay = driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 60, 90), 0);
-    expect(await spoken([crash], sameWay, NOW + 60_000)).toBe('Crash reported nearby on Side Street, Elizabeth, 600 metres away.');
+    expect(await spoken([crash], sameWay, NOW + 60_000)).toBe('Crash reported on Side Street, Elizabeth, in your warning area, 600 metres away.');
     expect(requests).toHaveLength(1);
     // Turned off instead (heading 90, off the route): a different road, so
     // ask again - once 30s have passed since the last lookup.
     const turnedOff = driverAt(destinationPoint(destinationPoint(START, 1_000, 0), 200, 90), 45);
-    expect(await spoken([crash], turnedOff, NOW + 20_000)).toBe('Crash reported nearby on Side Street, Elizabeth, 500 metres away.');
+    expect(await spoken([crash], turnedOff, NOW + 20_000)).toBe('Crash reported on Side Street, Elizabeth, in your warning area, 500 metres away.');
     expect(requests).toHaveLength(1);
     await spoken([crash], turnedOff, NOW + 61_000);
     expect(requests).toHaveLength(2);
@@ -501,7 +501,7 @@ describe('road matching: cost and fallbacks', () => {
       ]);
     const crash = alert('turn', 'ACCIDENT', at, 'Side St');
     expect(await spoken([crash], driverAt(START, 0))).toBe(
-      'Crash reported nearby on Side Street, Elizabeth, 1.6 kilometres away.'
+      'Crash reported on Side Street, Elizabeth, in your warning area, 1.6 kilometres away.'
     );
     expect(await spoken([crash], driverAt(destinationPoint(corner, 50, 90), 90))).toBe(
       'Crash reported, 300 metres ahead on Side Street.' // 350m along, rounded
@@ -520,7 +520,7 @@ describe('road matching: cost and fallbacks', () => {
         ['new name', 'straight', 'Side Road', 100],
       ]);
     expect(await spoken([alert('d25', 'ACCIDENT', at, 'Side Rd')], driverAt(START, 0))).toBe(
-      'Crash reported nearby on Side Road, Elizabeth, 1 kilometre away.'
+      'Crash reported on Side Road, Elizabeth, in your warning area, 1 kilometre away.'
     );
     resetRoadContext();
     routeFor = (to) => directionsBody(START, to, [['depart', null, 'Main North Road', 1_900]]);
@@ -579,8 +579,13 @@ describe('road matching: divided road - Sir Donald Bradman Drive (Stage 3 drive 
       );
   });
 
-  it('before turning onto SDB Drive: silent (a turn off my road, then a U-turn)', async () => {
-    expect(await spoken([report], driverAt(approach, 90))).toBeNull();
+  it('before turning onto SDB Drive: in your warning area (a turn off my road, then a U-turn - but it is in front, so never "behind you")', async () => {
+    // Was silent before Stage 3c (28 Nov 2026). The router's U-turn makes
+    // it "behind", but the report is straight ahead of the driver - its
+    // direction just isn't certain.
+    expect(await spoken([report], driverAt(approach, 90))).toBe(
+      'Police reported on Sir Donald Bradman Drive, Mile End South, in your warning area, 1.7 kilometres away.'
+    );
   });
 
   it('once on SDB Drive: "Police reported on Sir Donald Bradman Drive, X" - no side, no "ahead", no new request', async () => {
@@ -611,5 +616,60 @@ describe('road matching: divided road - Sir Donald Bradman Drive (Stage 3 drive 
     expect(
       formatSpeedCameraWarning('report', 500, true, { kind: 'onRoad', roadName: 'Sir Donald Bradman Drive', alongRoadMeters: 480 })
     ).toBe("Police reported on Sir Donald Bradman Drive, 500 metres, you're currently over the limit. Reduce speed immediately.");
+  });
+});
+
+describe('Stage 3c: direction-aware warning zone (behind you - police and mobile cameras, once)', () => {
+  // Cruise pre-selects with the full circle (trip/tripRuntime.ts), and the
+  // runtime records each "behind you" once it has been spoken.
+  async function heard(alerts: WazeAlert[], driver: DriverState, behindAnnounced: Set<string>): Promise<string | null> {
+    const radiusFor = alertDistanceFor('normal');
+    const settings = { maxDistanceMeters: 5_000, maxDistanceForType: radiusFor, maxBearingDiffDeg: 180 };
+    const pass = () =>
+      applyRoadContext(
+        selectAnnounceableAlerts(alerts, driver, new Map(), NOW, settings),
+        (target) => roadContextFor(target, driver, NOW),
+        radiusFor,
+        new Map(),
+        behindAnnounced
+      );
+    pass();
+    await flush();
+    const out = pass();
+    if (out.length === 0) return null;
+    if (out[0].road?.kind === 'behind') behindAnnounced.add(out[0].alert.alert_id);
+    return formatAnnouncement(out[0]);
+  }
+
+  const heading = 0; // north, up Main North Road
+  const behindPoint = destinationPoint(START, 800, 180);
+
+  it('police behind -> "behind you, X away", once, with no road lookup', async () => {
+    const said = new Set<string>();
+    const police = alert('police-behind', 'POLICE', behindPoint, 'Main North Rd');
+    expect(await heard([police], driverAt(START, heading), said)).toBe('Police reported behind you, 800 metres away.');
+    expect(await heard([police], driverAt(START, heading), said)).toBeNull();
+    expect(requests).toHaveLength(0);
+  });
+
+  it('mobile camera behind -> "behind you", spoken as a fact', async () => {
+    const camera = alert('mobile-behind', 'MOBILE_CAMERA', behindPoint, 'Main North Rd');
+    expect(await heard([camera], driverAt(START, heading), new Set())).toBe('Mobile camera behind you, 800 metres away.');
+  });
+
+  it.each([['ACCIDENT'], ['HAZARD'], ['ROAD_CLOSED'], ['FIXED_CAMERA']])('%s behind -> silent, as before', async (type) => {
+    const other = alert(`behind-${type}`, type, behindPoint, 'Main North Rd');
+    expect(await heard([other], driverAt(START, heading), new Set())).toBeNull();
+  });
+
+  it('police off to the side (60 degrees, direction not certain) -> silent, not "behind you"', async () => {
+    const side = alert('police-side', 'POLICE', destinationPoint(START, 800, 60), null);
+    expect(await heard([side], driverAt(START, heading), new Set())).toBeNull();
+  });
+
+  it('no usable heading -> police behind is not called "behind you" (direction not certain)', async () => {
+    const police = alert('police-noheading', 'POLICE', behindPoint, 'Main North Rd');
+    const said = await heard([police], { ...driverAt(START, heading), headingReliable: false }, new Set());
+    expect(said ?? '').not.toContain('behind you');
   });
 });

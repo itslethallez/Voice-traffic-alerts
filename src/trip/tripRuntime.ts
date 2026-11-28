@@ -103,6 +103,9 @@ let rateLimitBannerShown = false;
  * for which target id (a fixed camera or a corroborated police report)
  * this trip - see engine/selectSpeedCameraWarning.ts. */
 let speedWarningFiredCheckpoints: Map<string, Set<SpeedWarningCheckpoint>> = new Map();
+/** Alerts already announced "behind you" this trip - said once per alert
+ * (Stage 3c). Police and mobile cameras only (ANNOUNCED_BEHIND_TYPES). */
+let behindAnnounced: Set<string> = new Set();
 
 /**
  * The normalized-alerts counterpart of alertsCache: the latest
@@ -287,6 +290,7 @@ export function resetTripRuntime(): void {
   consecutiveRateLimitHits = 0;
   rateLimitBannerShown = false;
   speedWarningFiredCheckpoints = new Map();
+  behindAnnounced = new Set();
   corridorAlerts = [];
   resetRoadContext();
   roadDegradedNoticeSpoken = false;
@@ -655,6 +659,9 @@ async function checkSpeedCameraWarning(
  * background task with no React tree mounted at all). Only ever called
  * through handleDriverUpdate() above, which serializes it.
  */
+/** Cruise pre-selection cone: every bearing (see announceSettings). */
+const FULL_CIRCLE_DEG = 180;
+
 async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number): Promise<void> {
   // The position mirror was already written synchronously by
   // handleDriverUpdate() before this fix queued - nothing to redo here.
@@ -699,7 +706,11 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     enabledTypes: speakableTypesFromFilters(settings.categoriesEnabled, settings.alertTypeFilters),
     maxDistanceMeters: maxAlertDistanceMeters(settings.alertDistance),
     maxDistanceForType: radiusFor,
-    maxBearingDiffDeg: routeCorridor ? undefined : BEHIND_BEARING_DEG,
+    // Cruise: the full circle, so police / mobile cameras behind can be
+    // announced "behind you" (Stage 3c). Every other type behind is
+    // dropped by applyRoadContext; road matching answers "behind" past
+    // BEHIND_BEARING_DEG without a request, so this costs no lookups.
+    maxBearingDiffDeg: routeCorridor ? undefined : FULL_CIRCLE_DEG,
     routeCorridor,
   };
   const candidates = routeCorridor
@@ -708,7 +719,8 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
         selectAnnounceableAlerts(announceableSource, driver, new Map(), nowMs, announceSettings),
         roadLookup,
         radiusFor,
-        announcerState.announcedDistances
+        announcerState.announcedDistances,
+        behindAnnounced
       );
   announcerState = submitCandidates(announcerState, candidates);
 
@@ -722,6 +734,10 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
     (entry) => useTripStore.getState().pushAnnouncement(entry)
   );
   announcerState = result.state;
+  if (result.spoken?.candidate.road?.kind === 'behind') {
+    behindAnnounced.add(result.spoken.alertId);
+    console.log(`[road] ${result.spoken.alertId} announced behind (${Math.round(result.spoken.candidate.distanceMeters)}m) - once per alert`);
+  }
 
   // Fetch Google audio for what's about to be spoken - the queue, and
   // alerts about to cross into the warn radius - before tick() reaches it,
@@ -738,7 +754,7 @@ async function handleDriverUpdateSerialized(driver: DriverState, nowMs: number):
   );
   const approaching = routeCorridor
     ? approachingRaw
-    : applyRoadContextToApproaching(approachingRaw, (target) => peekRoadContext(target, driver, nowMs));
+    : applyRoadContextToApproaching(approachingRaw, (target) => peekRoadContext(target, driver, nowMs), behindAnnounced);
   prefetchSpeech(
     predictUpcomingAnnouncementTexts(announcerState.queue, approaching, driver, nowMs, Date.now())
   );
@@ -797,7 +813,7 @@ async function discloseLocationGaps(settings: ReturnType<typeof useSettingsStore
 }
 
 const ROAD_DEGRADED_BANNER_MESSAGE = "Road matching unavailable - alerts can't confirm what's ahead.";
-const ROAD_DEGRADED_SPOKEN_NOTICE = 'Road matching is unavailable. Alerts will say nearby, not ahead.';
+const ROAD_DEGRADED_SPOKEN_NOTICE = 'Road matching is unavailable. Alerts will say in your warning area, not ahead or behind.';
 let roadDegradedNoticeSpoken = false;
 
 /**

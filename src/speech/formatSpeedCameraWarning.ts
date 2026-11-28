@@ -32,7 +32,7 @@ export function formatSpeedCameraWarning(
   const subject = kind === 'camera' ? 'Speed camera' : 'Police reported';
   // Road matching (road/roadContextRuntime.ts) decides whether this is on
   // the driver's road. If it isn't - or that can't be confirmed - it's
-  // "nearby, X away" and makes no speeding claim: the speed limit was
+  // "in your warning area, X away" and makes no speeding claim: the speed limit was
   // looked up for the driver's road, not the camera's (case F in
   // road/__tests__/aheadCases.test.ts).
   if (road?.kind === 'onRoad') {
@@ -42,7 +42,7 @@ export function formatSpeedCameraWarning(
     return `${subject} on ${road.roadName}, ${checkpointMeters} metres${tail}`;
   }
   if (road?.kind !== 'ahead') {
-    return `${subject} nearby, ${checkpointMeters} metres away.`;
+    return `${subject} in your warning area, ${checkpointMeters} metres away.`;
   }
   const onRoad = road.roadName ? ` on ${road.roadName}` : '';
   if (!confirmedSpeeding) {

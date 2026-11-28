@@ -88,7 +88,7 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported nearby on North Terrace, Adelaide, 800 metres away.'
+      'Police reported on North Terrace, Adelaide, in your warning area, 800 metres away.'
     );
   });
 
@@ -103,7 +103,7 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police Visible reported nearby on North Terrace, Adelaide, 800 metres away.'
+      'Police Visible reported on North Terrace, Adelaide, in your warning area, 800 metres away.'
     );
   });
 
@@ -127,14 +127,14 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Crash reported nearby on North Terrace, Adelaide, 1.4 kilometres away.'
+      'Crash reported on North Terrace, Adelaide, in your warning area, 1.4 kilometres away.'
     );
   });
 
   it('never speaks a bare route/highway number as the street', () => {
     const candidate = makeCandidate({ street: 'US-101 N', city: 'Oakland' });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported nearby in Oakland, 800 metres away.'
+      'Police reported in Oakland, in your warning area, 800 metres away.'
     );
   });
 
@@ -154,13 +154,13 @@ describe('formatAnnouncement', () => {
   it('falls back to just the suburb when there is no usable street', () => {
     const candidate = makeCandidate({ street: null, city: 'Adelaide', driverHeadingDeg: 90 });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported nearby in Adelaide, 800 metres away.'
+      'Police reported in Adelaide, in your warning area, 800 metres away.'
     );
   });
 
   it('falls back to the bare distance wording when there is neither street nor suburb', () => {
     const candidate = makeCandidate({ street: null, city: null, distanceMeters: 800 });
-    expect(formatAnnouncement(candidate)).toBe('Police reported nearby, 800 metres away.');
+    expect(formatAnnouncement(candidate)).toBe('Police reported in your warning area, 800 metres away.');
   });
 
   it('never says a compass direction - that was the driver heading, not the alert road', () => {
@@ -248,20 +248,20 @@ describe('formatAnnouncement', () => {
 
   it('does not append an age note at exactly 10 minutes old (exclusive boundary)', () => {
     const candidate = makeCandidate({ street: null, city: null, ageMinutes: 10 });
-    expect(formatAnnouncement(candidate)).toBe('Police reported nearby, 800 metres away.');
+    expect(formatAnnouncement(candidate)).toBe('Police reported in your warning area, 800 metres away.');
   });
 
   it('appends the age note just past 10 minutes old', () => {
     const candidate = makeCandidate({ street: null, city: null, ageMinutes: 12 });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported nearby, 800 metres away. Reported 12 minutes ago.'
+      'Police reported in your warning area, 800 metres away. Reported 12 minutes ago.'
     );
   });
 
   it('rounds the appended age to the nearest whole minute', () => {
     const candidate = makeCandidate({ street: null, city: null, ageMinutes: 10.6 });
     expect(formatAnnouncement(candidate)).toBe(
-      'Police reported nearby, 800 metres away. Reported 11 minutes ago.'
+      'Police reported in your warning area, 800 metres away. Reported 11 minutes ago.'
     );
   });
 
@@ -296,7 +296,7 @@ describe('formatAnnouncement', () => {
       driverHeadingDeg: 0,
     });
     expect(formatAnnouncement(candidate)).toBe(
-      'Mobile camera nearby on Main South Road, Normanville, 1.4 kilometres away.'
+      'Mobile camera on Main South Road, Normanville, in your warning area, 1.4 kilometres away.'
     );
   });
 
@@ -308,14 +308,14 @@ describe('formatAnnouncement', () => {
       distanceMeters: 800,
       driverHeadingDeg: 90,
     });
-    expect(formatAnnouncement(candidate)).toBe('Fixed camera nearby in Adelaide, 800 metres away.');
+    expect(formatAnnouncement(candidate)).toBe('Fixed camera in Adelaide, in your warning area, 800 metres away.');
   });
 
   it('never appends a "Reported n minutes ago" note to a camera window', () => {
     // first_seen is the notice's start date - age describes the
     // publication schedule, not the camera's currency.
     const candidate = makeCandidate({ type: 'MOBILE_CAMERA', street: null, city: null, ageMinutes: 4320 });
-    expect(formatAnnouncement(candidate)).toBe('Mobile camera nearby, 800 metres away.');
+    expect(formatAnnouncement(candidate)).toBe('Mobile camera in your warning area, 800 metres away.');
   });
 });
 
